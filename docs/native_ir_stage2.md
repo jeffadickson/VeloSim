@@ -1,9 +1,16 @@
 # Native multibit process kernel — stage 2
 
-The next VeloSim prototype implements a C++ kernel for 1–64-bit four-state signals, parallel evaluation of edge-triggered processes, and simultaneous nonblocking-style commits. Seven new tests passed locally, including 1/2/4/8/16-thread equivalence, counter rollover, synchronous reset, and X/Z copy behavior.
+The tested C++ source is now committed at `native/ir/engine.cpp` with its Python/ctypes regression suite at `tests/test_ir_engine.py`.
 
-**Important:** The tested code is currently distributed as a separate source ZIP in the development conversation; it has not yet been imported into the GitHub repository. The current UHDM reader also remains uncompiled against the real library.
+The kernel supports 1–64-bit signals represented by value, X-mask and Z-mask, programmatically registered COPY/INC/RESET_INC edge-triggered processes, pre-commit snapshot evaluation, and worker counts 1/2/4/8/16.
 
-This kernel supports only programmatically registered COPY, INC and RESET_INC processes. It is not a complete IEEE event scheduler, and conservative X propagation for arithmetic is not fully standards-equivalent.
+The increment operator now preserves known bits when other input bits are X/Z. An exhaustive independent Python oracle enumerates all 256 four-state input combinations for a 4-bit increment, for each of 1, 4 and 16 workers (768 comparisons). The full 11-test native IR suite passed locally on Linux. This does **not** establish general SystemVerilog arithmetic conformance.
 
-Next: import the tested native source, compile the pinned UHDM reader, lower UHDM objects into a versioned IR, and run differential RTL tests.
+Run:
+```sh
+python3 -m unittest discover -s tests -p test_ir_engine.py -v
+```
+
+**Important limitations:** No Surelog/UHDM-to-IR lowering yet, no general expression interpreter, no full IEEE event-region scheduler, no persistent worker pool, no cocotb simulator adapter. The current UHDM inventory reader has not been compiled against real UHDM here.
+
+Next: compile UHDM reader with pinned UHDM; lower counter signals and always_ff process into a versioned executable IR; compare source-driven execution with Icarus/Verilator.
