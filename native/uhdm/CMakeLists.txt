@@ -7,3 +7,7 @@ find_library(UHDM_LIBRARY NAMES uhdm UHDM REQUIRED)
 add_executable(velosim-uhdm-inspect inspect.cpp)
 target_include_directories(velosim-uhdm-inspect PRIVATE "${UHDM_INCLUDE_DIR}")
 target_link_libraries(velosim-uhdm-inspect PRIVATE "${UHDM_LIBRARY}")
+
+add_executable(velosim-uhdm-normalize normalize.cpp)
+target_include_directories(velosim-uhdm-normalize PRIVATE "${UHDM_INCLUDE_DIR}")
+target_link_libraries(velosim-uhdm-normalize PRIVATE "${UHDM_LIBRARY}")
