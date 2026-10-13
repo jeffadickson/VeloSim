@@ -1,0 +1,11 @@
+{
+  "format": "velosim.ir.v1",
+  "signals": [
+    {"name":"clk","width":1,"value":0},
+    {"name":"rst_n","width":1,"value":0},
+    {"name":"count","width":8,"value":0}
+  ],
+  "processes": [
+    {"clock":"clk","destination":"count","source":"count","reset":"rst_n","edge":"posedge","operation":"reset_increment"}
+  ]
+}
