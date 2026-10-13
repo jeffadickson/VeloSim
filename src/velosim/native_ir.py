@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 
 class IRValidationError(ValueError): pass
-OPCODES={'copy':0,'increment':1,'reset_increment':2,'sv_if_reset_increment':3}
+OPCODES={'copy':0,'increment':1,'reset_increment':2,'sv_if_reset_increment':3,'sv_increment':4,'sv_if_reset_increment_strict':5}
 EDGES={'posedge':0,'negedge':1}
 
 def validate(ir):
