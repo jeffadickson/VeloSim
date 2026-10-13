@@ -33,7 +33,7 @@ def lower(data):
         require(const(yes.get('value'),0),'zero reset required')
         inc=no.get('value',{})
         require(inc.get('kind')=='add' and ref(inc.get('lhs'),dst) and const(inc.get('rhs'),1),'only count + 1 supported')
-        result.append({'clock':clk,'destination':dst,'source':dst,'reset':reset,'edge':e['edge'],'operation':'sv_if_reset_increment'})
+        result.append({'clock':clk,'destination':dst,'source':dst,'reset':reset,'edge':e['edge'],'operation':'sv_if_reset_increment_strict'})
     require(len({p['destination'] for p in result})==len(result),'multiple writers')
     ir={'format':'velosim.ir.v1','signals':[{'name':n,'width':w,'value':0} for n,w in names.items()],'processes':result}
     from .native_ir import validate
