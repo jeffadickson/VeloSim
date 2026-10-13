@@ -1,0 +1,39 @@
+name: Differential counter regression
+on:
+  push:
+    paths:
+      - 'tools/differential.py'
+      - 'verification/differential/**'
+      - 'tests/test_differential.py'
+      - 'native/ir/**'
+      - 'src/velosim/native_ir.py'
+      - '.github/workflows/differential.yml'
+  pull_request:
+  workflow_dispatch:
+jobs:
+  differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install independent reference simulators
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog verilator g++
+          iverilog -V | head -n 2
+          verilator --version
+      - name: Test harness
+        run: PYTHONPATH=src python3 -m unittest discover -s tests -p test_differential.py -v
+      - name: Compare 1-thread
+        run: PYTHONPATH=src python3 tools/differential.py --seed 42 --cycles 1000 --threads 1 --require-all --report-dir build/diff-1
+      - name: Compare 8-thread
+        run: PYTHONPATH=src python3 tools/differential.py --seed 20261012 --cycles 1000 --threads 8 --require-all --report-dir build/diff-8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: differential-reports
+          path: build/diff-*/
+          if-no-files-found: warn
