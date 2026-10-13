@@ -40,7 +40,12 @@ Word compute(const Proc& p,const std::vector<Word>& sig){
  if(p.opcode==0)return resize(a,w);
  Word next=increment(a,w);
  if(p.opcode==1)return next;
- if(p.opcode==2 || p.opcode==3){
+ // Strict IEEE arithmetic: any X/Z operand makes the arithmetic result unknown.
+ if(p.opcode==4 || p.opcode==5){
+   if(a.xmask || a.zmask)next=xword(w);
+   if(p.opcode==4)return next;
+ }
+ if(p.opcode==2 || p.opcode==3 || p.opcode==5){
    int r=scalar(sig[p.reset]);
    if(r==0)return Word{0,0,0,w};
    if(r==2 && p.opcode==2){
@@ -60,7 +65,7 @@ int vs_ir_signal(void* p,uint32_t width,uint64_t value,uint64_t xmask,uint64_t z
  try {auto& e=*static_cast<Engine*>(p);e.sig.push_back(normalize(Word{value,xmask,zmask,width}));return int(e.sig.size()-1);}catch(...){return -1;}
 }
 int vs_ir_process(void* p,uint32_t clk,uint32_t dst,uint32_t a,uint32_t reset,uint8_t edge,uint8_t op) noexcept {
- if(!p||edge>1||op>3)return -1;
+ if(!p||edge>1||op>5)return -1;
  auto& e=*static_cast<Engine*>(p);auto n=e.sig.size();
  if(clk>=n||dst>=n||a>=n||reset>=n||e.sig[clk].width!=1)return -1;
  for(auto q:e.proc)if(q.dst==dst)return -2;
