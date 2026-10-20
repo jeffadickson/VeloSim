@@ -21,7 +21,7 @@ internal static class Build
             if (command == "help")
             {
                 if (args.Length != 1) throw new ArgumentException("usage: VeloSim.Build help");
-                Console.WriteLine("VeloSim.Build: build, test, coverage, native-coverage, publish, bundle, bundle-check <directory>, doctor, coverage-check [Cobertura.xml]. Set VELOSIM_JOBS=1..256."); return 0;
+                Console.WriteLine("VeloSim.Build: build, test, coverage, native-coverage, benchmark, publish, bundle, bundle-check <directory>, doctor, coverage-check [Cobertura.xml]. Set VELOSIM_JOBS=1..256."); return 0;
             }
             if (command == "bundle-check")
             {
@@ -42,7 +42,7 @@ internal static class Build
                 string result = BuildDiagnostics.CheckCoverage(path, BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_MANAGED_LINE")), BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_NATIVE_LINE")));
                 Console.Write(result); return CoveragePassed(result) ? 0 : 1;
             }
-            if (args.Length > 1 || command is not ("build" or "test" or "coverage" or "native-coverage" or "publish" or "bundle"))
+            if (args.Length > 1 || command is not ("build" or "test" or "coverage" or "native-coverage" or "publish" or "bundle" or "benchmark"))
                 throw new ArgumentException("usage: VeloSim.Build [build|test|coverage|native-coverage|publish|help]");
             Console.WriteLine($"VeloSim {command}, Ninja parallel jobs={Jobs}");
             if (command == "native-coverage")
@@ -53,14 +53,29 @@ internal static class Build
             await ConfigureNative(Native, false);
             await Run("dotnet", ["build", "VeloSim.slnx", "-c", "Release", $"-m:{Jobs}"]);
             if (command == "build") return 0;
+            if (command == "benchmark")
+            {
+                var directory = Path.Combine(Artifacts, "benchmarks"); Directory.CreateDirectory(directory);
+                string executable = Path.Combine(Artifacts, "publish", "VeloSim.Bench", "VeloSim.Bench"), stamp = executable + ".source-sha256";
+                if (File.Exists(executable) && File.Exists(stamp) && File.ReadAllText(stamp).Trim() == BenchmarkSourceStamp())
+                    await Run(executable, ["--report", Path.Combine(directory, RunId + ".json")], nativeDirectory: Path.Combine(Native, "lib"));
+                else await Run("dotnet", ["src/VeloSim.Bench/bin/Release/net10.0/VeloSim.Bench.dll", "--report", Path.Combine(directory, RunId + ".json")], nativeDirectory: Path.Combine(Native, "lib"));
+                return 0;
+            }
             if (command is "publish" or "bundle")
             {
                 if (!OperatingSystem.IsLinux() || System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture != System.Runtime.InteropServices.Architecture.X64)
                     throw new PlatformNotSupportedException("The current native publishing target is linux-x64; run inside WSL Ubuntu.");
-                foreach (string project in new[] { "src/VeloSim.Tools", "tools/VeloSim.Build" })
+                string benchmarkSource = BenchmarkSourceStamp();
+                foreach (string project in new[] { "src/VeloSim.Tools", "tools/VeloSim.Build", "src/VeloSim.Bench" })
                     await Run("dotnet", ["publish", project, "-c", "Release", "-r", "linux-x64", "-p:PublishAot=true", "-o", Path.Combine(Artifacts, "publish", Path.GetFileName(project)), $"-m:{Jobs}"]);
                 foreach (string file in Directory.GetFiles(Path.Combine(Native, "lib"), "*.so"))
+                {
                     File.Copy(file, Path.Combine(Artifacts, "publish", "VeloSim.Tools", Path.GetFileName(file)), true);
+                    File.Copy(file, Path.Combine(Artifacts, "publish", "VeloSim.Bench", Path.GetFileName(file)), true);
+                }
+                if (BenchmarkSourceStamp() != benchmarkSource) throw new IOException("Benchmark sources changed during publication; refusing to mark native executable current.");
+                await File.WriteAllTextAsync(Path.Combine(Artifacts, "publish", "VeloSim.Bench", "VeloSim.Bench.source-sha256"), benchmarkSource + "\n");
                 if (command == "bundle") await CreateBundle();
                 return 0;
             }
@@ -99,6 +114,39 @@ internal static class Build
         using var document = System.Text.Json.JsonDocument.Parse(json);
         return document.RootElement.GetProperty("status").GetString() == "pass";
     }
+    private static string BenchmarkSourceStamp()
+    {
+        var files = new[] { "src/VeloSim.Core", "src/VeloSim.Bench" }.SelectMany(directory => Directory.EnumerateFiles(Path.Combine(Root, directory), "*", SearchOption.AllDirectories)
+            .Where(file => !Path.GetRelativePath(Path.Combine(Root, directory), file).Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj") && (file.EndsWith(".cs", StringComparison.Ordinal) || file.EndsWith(".csproj", StringComparison.Ordinal) || file.EndsWith("packages.lock.json", StringComparison.Ordinal))))
+            .Concat(new[] { "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "global.json", "NuGet.config" }.Select(file => Path.Combine(Root, file)).Where(File.Exists)).Order(StringComparer.Ordinal);
+        using var digest = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+        foreach (var file in files)
+        {
+            digest.AppendData(System.Text.Encoding.UTF8.GetBytes(Path.GetRelativePath(Root, file).Replace('\\', '/') + "\n"));
+            digest.AppendData(System.Security.Cryptography.SHA256.HashData(file.EndsWith("packages.lock.json", StringComparison.Ordinal) ? BenchmarkDependencySnapshot(file) : File.ReadAllBytes(file)));
+        }
+        return Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant();
+    }
+    private static byte[] BenchmarkDependencySnapshot(string path)
+    {
+        // NativeAOT restore adds compiler-only runtime entries; ordinary build
+        // removes them. Keep application dependency hashes stable across that
+        // restore-mode change while retaining every noncompiler dependency.
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(path));
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var framework in document.RootElement.GetProperty("dependencies").EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
+            {
+                var packages = framework.Value.EnumerateObject().Where(p => p.Name != "Microsoft.DotNet.ILCompiler" && !(p.Name.StartsWith("runtime.", StringComparison.Ordinal) && p.Name.EndsWith(".Microsoft.DotNet.ILCompiler", StringComparison.Ordinal))).OrderBy(p => p.Name, StringComparer.Ordinal).ToArray();
+                if (packages.Length == 0 && framework.Name.Contains('/')) continue;
+                writer.WriteStartObject(framework.Name); foreach (var package in packages) { writer.WritePropertyName(package.Name); package.Value.WriteTo(writer); } writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+        }
+        return stream.ToArray();
+    }
 
     private static async Task CreateBundle()
     {
@@ -115,6 +163,7 @@ internal static class Build
         {
             ["VeloSim.Tools"] = Path.Combine(Artifacts, "publish", "VeloSim.Tools", "VeloSim.Tools"),
             ["VeloSim.Build"] = Path.Combine(Artifacts, "publish", "VeloSim.Build", "VeloSim.Build"),
+            ["VeloSim.Bench"] = Path.Combine(Artifacts, "publish", "VeloSim.Bench", "VeloSim.Bench"),
             ["libvelosim_ir.so"] = Path.Combine(install, "lib", "libvelosim_ir.so"),
             ["libvelosim_scheduler.so"] = Path.Combine(install, "lib", "libvelosim_scheduler.so"),
             ["include/velosim.h"] = Path.Combine(install, "include", "velosim.h"),
@@ -131,6 +180,7 @@ internal static class Build
         if (File.ReadAllText(smoke).Replace("\r\n", "\n", StringComparison.Ordinal).Trim() != "cycle 1 count=(8,0,0,0) rst_n=(1,0,0,0)\ncycle 2 count=(8,1,0,0) rst_n=(1,1,0,0)\ncycle 3 count=(8,2,0,0) rst_n=(1,1,0,0)") throw new IOException("Packaged native simulation smoke trace differs from expected reset/increment values.");
         await Run(Path.Combine(bundle, "VeloSim.Build"), ["help"], workingDirectory: bundle);
         await Run(Path.Combine(bundle, "VeloSim.Build"), ["bundle-check", "."], workingDirectory: bundle);
+        await Run(Path.Combine(bundle, "VeloSim.Bench"), ["--processes", "2", "--cycles", "8", "--workers", "1,2", "--repeat", "1", "--warmup", "0"], nativeDirectory: bundle, workingDirectory: bundle);
         string archive = Path.Combine(stage, "velosim-linux-x64.tar.gz"); NativeBundle.Archive(bundle, archive);
         await File.WriteAllTextAsync(Path.Combine(Artifacts, "bundles", "latest.txt"), archive + "\n"); Console.WriteLine("Native bundle: " + archive);
     }

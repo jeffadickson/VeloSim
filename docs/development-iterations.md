@@ -109,6 +109,31 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 |098|Create validated compressed tar archives preserving native executable permissions.|
 |099|Include source revision/dirty state, compiler/generator settings and tool diagnostics.|
 |100|Integrate Make bundle orchestration and isolated native execution smoke checks.|
+|101|Emit supported scalar scheduler operators as independent SystemVerilog expressions.|
+|102|Generate atomic-drive/NBA testbenches with startup guarding and feedback rejection.|
+|103|Parse exact scheduler dimensions, step/tick/activation and four-state reference traces.|
+|104|Compile/run fresh Icarus scheduler references with bounded subprocesses.|
+|105|Compare Icarus, native worker matrices and the managed scheduler oracle.|
+|106|Record scheduler fixture/source/native/tool/version/command provenance.|
+|107|Write typed scheduler pass/fail/incomplete reports with mismatch precedence.|
+|108|Expose compiled scheduler differential execution through CLI.|
+|109|Generate reproducible seeded multiclock four-state scheduler fixtures.|
+|110|Run built-in independent scheduler conformance batches with evidence indexes.|
+|111|Validate bounded multiactive-process benchmark plans before native allocation.|
+|112|Build deterministic native counter workloads and verify activation/tick/result checksums.|
+|113|Measure fresh-engine warmups and repeated worker configurations.|
+|114|Record explicit managed-drive/native timing boundaries with monotonic clocks.|
+|115|Calculate finite min/median/nearest-rank-P95/max statistics and baseline ratios.|
+|116|Preserve partial benchmark outcomes during cancellation and bound total work.|
+|117|Record native/host fingerprints, CPU count and runtime capabilities.|
+|118|Expose the compiled native optimization profile through the C ABI.|
+|119|Add a standalone compiled/native-publishable benchmark CLI.|
+|120|Integrate benchmark builds, NativeAOT packaging and bundle smoke into Make workflows.|
+|121|Structurally inspect scheduler reports independently of current artifact availability.|
+|122|Validate scheduler replay hashes, emitted source/fixture binding and exact tool roles.|
+|123|Expose scheduler inspection and replay eligibility summaries through CLI.|
+|124|Replay scheduler cases with pinned tools, fresh artifacts and saved worker matrices.|
+|125|Persist first-mismatch prefix fixtures and explicit reproduction commands.|
 ## Peer reviews and validation
 
 - 010: independent simulation and tooling reviewers inspected the foundation. Fixed scheduler allocation exception ownership, added genuinely parallel native tests, fixed standalone native coverage builds, propagated instrumentation to UHDM tools, included JSON coverage and moved initialization under error handling. Native CTest 2/2 passes; C# build helper compiles without warnings. Core 011–015 focused NUnit 5/5 passes.
@@ -120,11 +145,11 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 
 ## Local commit checkpoints
 
-025 `6a97ab2`: compiled helper foundation and frontend/native C# port, including prior local Surelog fixes. 050 `2072450`;075 `3b31a1d`. Pending100,125,150,175,200.
+025 `6a97ab2`: compiled helper foundation and frontend/native C# port, including prior local Surelog fixes. 050 `2072450`;075 `3b31a1d`. 100 `55e9cd6`. Pending125,150,175,200.
 
 ## Full build checkpoints
 
-050 complete;100 validation underway; remaining150,200. Full validation includes managed tests, compiled native tests, coverage and NativeAOT publish/smoke where supported. Coverage percentages will be recorded from actual reports, separately for managed and native code.
+050 and100 complete; remaining150,200. Full validation includes managed tests, compiled native tests, coverage and NativeAOT publish/smoke where supported. Coverage percentages will be recorded from actual reports, separately for managed and native code.
 
 050: two independent AI peer reviews completed and findings fixed/confirmed. Full coverage build: NUnit41/41, CTest2/2, managed line90%, native96.3%, combined91%, branch67.5%; report artifacts/coverage/20261020-191133-7245342. NativeAOT1000-cycle actual-RTL three-engine comparison passed. Native publish dispatch uses managed bootstrap to prevent self-overwrite.
 
@@ -147,3 +172,11 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 100 fullcoverage:86regularNUnit/3nativeCTest pass. Report artifacts/coverage/20261020-193947-4151949: combined87.7% lines/69.1%branches; managed(Core+Build)86.8%, core96.7%, native98.2%. Including build-helper code adds denominator; CLI bootstrap is not directly measured. LLVM missing C-test binary triggered external debug lookup; fixed by including every instrumented object, disabling debuginfod and requiring all profile binary IDs to resolve locally. New fullcoverage passes without lookup.
 
 100 NativeAOTbundle success: artifacts/bundles/20261020-194012-4322870/velosim-linux-x64.tar.gz. Packaged CLI exactreset/increment trace and standaloneBuildhelp/bundle-check pass withbundlelibraries explicitlyselected. ASan/UBSan nativeCTest3/3 passes. Optionalactual16-bit1000cycleAOTcomparison/replay running;86NUnit/3CTestfullbuild,coverageandnativepublicationcomplete.
+
+100 optionalNativeAOTreal16bit1000-cyclethree-enginecomparison/replay/inspectionallpass. 110 bothpeerreviewsfoundnoblockingissues;96NUnitpass, actualIcarusfourcasebatch×workers1/2/4/8allpass. 120 root5benchmarktests pass; actualbenchmark/alltestsunderway.
+
+120 bothreviewsacceptedbenchmarkcorrectness; fixedJITimplementationidentity withCore/entryassemblyhashes andsource-content-stamped AOTpreference. Nativewarmup/repetition/cancellation tests5/5pass; initialcombined101NUnitpasses; actualmanagedbenchmarkpasses. NativeAOTBenchvalidationwillrunafter125Corefreeze. Source-stampnormalizescompiler-onlyNativeAOTrestoreentries whilepreservingapplicationdependencyhashes.
+
+125:106regularNUnitpass, actualfourcaseIcarusconformance workers1/4 pass, strict500stepseededmulticlock replaypass. Prefix reduction explicitly means prefix throughfirstmismatch, notgeneral delta debugging. Corefrozenfornativepublication/benchmarkdispatchvalidation.
+
+125 NativeAOTpublicationpassedallthreehelpers. makebenchmark selectedactualnative artifacts/publish/VeloSim.Bench/VeloSim.Bench (source-contentstampmatchedafterstandardrestore), report artifacts/benchmarks/20261020-195733-8892514.json pass withoptimizednativekernel. BothCLIandbenchmarkexecuteELFbinarypaths; nativepreference/provenancefixvalidated.

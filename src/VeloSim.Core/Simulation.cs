@@ -61,10 +61,12 @@ internal static partial class NativeMethods
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_read")] internal static partial int Read(EngineHandle handle, uint id, out ulong value, out ulong x, out ulong z);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_drive")] internal static unsafe partial int Drive(EngineHandle handle, uint* ids, ulong* values, ulong* xs, ulong* zs, uint count, uint workers);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_ticks")] internal static partial ulong Ticks(EngineHandle handle);
+    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_build_profile")] internal static partial uint BuildProfile();
 }
 
 public sealed class Simulation : IDisposable
 {
+    public static string NativeBuildProfile => NativeMethods.BuildProfile() switch { 0 => "debug", 1 => "optimized", _ => throw new InvalidOperationException("Unknown native build profile.") };
     public static string NativeLibraryPath
     {
         get

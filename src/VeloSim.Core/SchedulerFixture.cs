@@ -60,5 +60,16 @@ public sealed class SchedulerFixture
         }
         return steps.AsReadOnly();
     }
+    public string ToJson()
+    {
+        using var stream = new MemoryStream(); using (var w = new Utf8JsonWriter(stream, new() { Indented = true }))
+        {
+            w.WriteStartObject(); w.WriteString("format", "velosim.scheduler.v1"); w.WriteNumber("signal_count", SignalCount); w.WriteStartArray("processes");
+            foreach (var p in Processes) { w.WriteStartObject(); w.WriteNumber("clock", p.Clock); w.WriteNumber("destination", p.Destination); w.WriteNumber("a", p.A); w.WriteNumber("b", p.B); w.WriteString("edge", p.Edge == IrEdge.Posedge ? "posedge" : "negedge"); w.WriteString("operation", p.Operation.ToString().ToLowerInvariant()); w.WriteEndObject(); }
+            w.WriteEndArray(); w.WriteStartArray("drives"); foreach (var drive in Drives) { w.WriteStartArray(); foreach (var (id, value) in drive) { w.WriteStartObject(); w.WriteNumber("signal", id); w.WriteString("value", ScalarLogic.Format(value).ToString()); w.WriteEndObject(); } w.WriteEndArray(); } w.WriteEndArray();
+            w.WriteStartArray("observed"); foreach (var signal in Observed) w.WriteNumberValue(signal); w.WriteEndArray(); w.WriteEndObject();
+        }
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray()) + "\n";
+    }
 }
 public sealed record SchedulerStep(ulong Tick, int ActivatedProcesses, string Values);

@@ -6,7 +6,7 @@ using System.Text.Json;
 
 public static class NativeBundle
 {
-    private static readonly string[] Required = ["VeloSim.Tools", "VeloSim.Build", "libvelosim_ir.so", "libvelosim_scheduler.so", "include/velosim.h", "examples/counter.ir.json", "README.txt", "build.txt"];
+    private static readonly string[] Required = ["VeloSim.Tools", "VeloSim.Build", "VeloSim.Bench", "libvelosim_ir.so", "libvelosim_scheduler.so", "include/velosim.h", "examples/counter.ir.json", "README.txt", "build.txt"];
     public static void Create(string directory, IReadOnlyDictionary<string, string> inputs, string revision, string buildMetadata)
     {
         directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
@@ -25,7 +25,7 @@ public static class NativeBundle
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
         {
-            writer.WriteStartObject(); writer.WriteString("format", "velosim.native.bundle.v1"); writer.WriteString("runtime", "linux-x64"); writer.WriteString("source_revision", revision);
+            writer.WriteStartObject(); writer.WriteString("format", "velosim.native.bundle.v2"); writer.WriteString("runtime", "linux-x64"); writer.WriteString("source_revision", revision);
             writer.WriteStartArray("files");
             foreach (var relative in files)
             {
@@ -46,7 +46,7 @@ public static class NativeBundle
         using var document = JsonDocument.Parse(File.ReadAllText(manifest));
         var root = document.RootElement;
         RequireFields(root, ["format", "runtime", "source_revision", "files"]);
-        if (root.GetProperty("format").GetString() != "velosim.native.bundle.v1" || root.GetProperty("runtime").GetString() != "linux-x64" || string.IsNullOrWhiteSpace(root.GetProperty("source_revision").GetString())) throw new IOException("Unsupported bundle metadata.");
+        if (root.GetProperty("format").GetString() != "velosim.native.bundle.v2" || root.GetProperty("runtime").GetString() != "linux-x64" || string.IsNullOrWhiteSpace(root.GetProperty("source_revision").GetString())) throw new IOException("Unsupported bundle metadata.");
         var actual = Walk(directory).ToHashSet(StringComparer.Ordinal);
         var expected = new HashSet<string>(StringComparer.Ordinal) { "manifest.json" };
         if (root.GetProperty("files").GetArrayLength() > 4096) throw new IOException("Bundle manifest has too many files.");

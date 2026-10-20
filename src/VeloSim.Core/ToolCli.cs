@@ -27,6 +27,44 @@ public static class ToolCli
     private static void WriteError(TextWriter writer, Exception exception) { if (writer is ErrorCapture capture) capture.Cause = exception; writer.WriteLine(exception.Message); }
     private static async Task<int> RunCoreAsync(string[] args, TextWriter output, TextWriter error, IProcessRunner? runner, CancellationToken cancellationToken)
     {
+        if (args.Length > 0 && args[0] is "scheduler-inspect" or "scheduler-replay" or "scheduler-reduce")
+        {
+            bool inspect = args[0] == "scheduler-inspect";
+            if (inspect && args.Length != 2 || !inspect && (args.Length != 4 || args[2] != "--output-dir")) throw new ArgumentException("Usage: scheduler-inspect <report.json> | scheduler-replay|scheduler-reduce <report.json> --output-dir <directory>");
+            if (new FileInfo(args[1]).Length > 64 * 1024 * 1024) throw new ArgumentException("Scheduler report exceeds 64 MiB inspection/replay limit.");
+            var json = await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false);
+            if (inspect) { var report = SchedulerReportReader.Parse(json); output.WriteLine($"{report.Status} steps={report.Fixture.Drives.Count} workers={string.Join(',', report.RequestedWorkers)}; {SchedulerReportReader.ReplayAvailability(report)}"); return 0; }
+            if (args[0] == "scheduler-reduce") { var path = await SchedulerReproduction.SavePrefixAsync(SchedulerReportReader.Parse(json), args[3], cancellationToken).ConfigureAwait(false); output.WriteLine("first-mismatch prefix fixture: " + path); return 0; }
+            var input = SchedulerReplay.Validate(json); var replay = await SchedulerReplay.RunAsync(input, args[3], runner, cancellationToken).ConfigureAwait(false); output.WriteLine(replay.Status); return replay.Status == "pass" ? 0 : 1;
+        }
+        if (args.Length > 0 && args[0] is "scheduler-differential" or "scheduler-conformance" or "scheduler-generate")
+        {
+            bool differential = args[0] == "scheduler-differential", generate = args[0] == "scheduler-generate";
+            if (differential && args.Length < 2) throw new ArgumentException("Scheduler fixture path required.");
+            string? destination = null, compiler = null, runtime = null; int[] workers = [1, 2, 4, 8]; int steps = 500; uint seed = 42;
+            for (int i = differential ? 2 : 1; i < args.Length; i += 2)
+            {
+                if (i + 1 == args.Length) throw new ArgumentException("Incomplete scheduler workflow option.");
+                switch (args[i])
+                {
+                    case "--output-dir" when !generate: destination = args[i + 1]; break; case "--output" when generate: destination = args[i + 1]; break;
+                    case "--iverilog" when !generate: compiler = args[i + 1]; break; case "--vvp" when !generate: runtime = args[i + 1]; break;
+                    case "--workers" when !generate: workers = args[i + 1].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid worker count.")).ToArray(); break;
+                    case "--steps" when generate: if (!int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out steps)) throw new ArgumentException("Invalid step count."); break;
+                    case "--seed" when generate: if (!uint.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out seed)) throw new ArgumentException("Invalid seed."); break;
+                    default: throw new ArgumentException("Unknown scheduler workflow option: " + args[i]);
+                }
+            }
+            if (destination is null) throw new ArgumentException("Scheduler workflow output path required.");
+            if (generate) { await WriteNewAsync(destination, SchedulerStimulus.Generate(seed, steps).ToJson(), cancellationToken).ConfigureAwait(false); output.WriteLine(Path.GetFullPath(destination)); return 0; }
+            if (differential)
+            {
+                if (new FileInfo(args[1]).Length > ConformanceLimits.MaxFixtureCharacters) throw new ArgumentException("Scheduler fixture exceeds input size limit.");
+                var fixture = SchedulerFixture.Parse(await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false));
+                var report = await new SchedulerDifferential(runner).RunAsync(fixture, workers, destination, compiler, runtime, cancellationToken).ConfigureAwait(false); output.WriteLine(report.Status + " " + Path.Combine(Path.GetFullPath(destination), "scheduler-report.json")); return report.Status == "pass" ? 0 : 1;
+            }
+            var results = await SchedulerConformance.RunAsync(workers, destination, runner, compiler, runtime, cancellationToken).ConfigureAwait(false); foreach (var result in results) output.WriteLine(result.Status + " " + result.Name); return results.All(r => r.Status == "pass") ? 0 : 1;
+        }
         if (args.Length > 0 && args[0] == "matrix-inspect")
         {
             if (args.Length != 2) throw new ArgumentException("Usage: matrix-inspect <matrix.json>");

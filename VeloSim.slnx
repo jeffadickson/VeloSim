@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="src/VeloSim.Core/VeloSim.csproj" />
   <Project Path="src/VeloSim.Tools/VeloSim.Tools.csproj" />
+  <Project Path="src/VeloSim.Bench/VeloSim.Bench.csproj" />
   <Project Path="tests/VeloSim.Tests/VeloSim.Tests.csproj" />
   <Project Path="tools/VeloSim.Build/VeloSim.Build.csproj" />
 </Solution>
