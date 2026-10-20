@@ -29,8 +29,10 @@ public sealed class WordFixture
         {
             using var document = JsonDocument.Parse(json); var root = document.RootElement;
             JsonShape.Fields(root, ["format", "design", "drives", "workers"], ["checkpoints"]);
-            if (root.GetProperty("format").GetString() != "velosim.word.fixture.v1") throw new IrValidationException("Unsupported word fixture.");
+            var format = root.GetProperty("format").GetString();
+            if (format is not ("velosim.word.fixture.v1" or "velosim.word.fixture.v2")) throw new IrValidationException("Unsupported word fixture.");
             var design = IrDesign.Parse(root.GetProperty("design").GetRawText());
+            if (format == "velosim.word.fixture.v1" && design.Format != "velosim.ir.v1" || format == "velosim.word.fixture.v2" && design.Format != "velosim.ir.v2") throw new IrValidationException("Word fixture and embedded IR versions differ.");
             IReadOnlyDictionary<string, FourStateWord> Values(JsonElement element)
             {
                 if (element.ValueKind != JsonValueKind.Object) throw new IrValidationException("Expected signal drive object.");
@@ -61,7 +63,7 @@ public sealed class WordFixture
         using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
         {
             void Values(IReadOnlyDictionary<string, FourStateWord> values) { writer.WriteStartObject(); foreach (var (name, word) in values) writer.WriteString(name, FourStateCodec.FormatBinary(word)); writer.WriteEndObject(); }
-            writer.WriteStartObject(); writer.WriteString("format", "velosim.word.fixture.v1"); writer.WritePropertyName("design"); writer.WriteRawValue(Design.ToJson());
+            writer.WriteStartObject(); writer.WriteString("format", Design.Format == "velosim.ir.v2" ? "velosim.word.fixture.v2" : "velosim.word.fixture.v1"); writer.WritePropertyName("design"); writer.WriteRawValue(Design.ToJson());
             writer.WriteStartArray("drives"); foreach (var drive in Drives) Values(drive); writer.WriteEndArray(); writer.WriteStartArray("workers"); foreach (var count in Workers) writer.WriteNumberValue(count); writer.WriteEndArray();
             writer.WriteStartArray("checkpoints"); foreach (var checkpoint in Checkpoints)
             {

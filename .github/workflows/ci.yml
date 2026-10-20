@@ -22,9 +22,12 @@ jobs:
       - name: Managed and native coverage
         if: runner.os == 'Linux'
         run: make coverage JOBS=4
+      - name: Verify coverage source and binary evidence
+        if: runner.os == 'Linux'
+        run: make coverage-current JOBS=4
       - name: NativeAOT publishing
         if: runner.os == 'Linux'
-        run: make publish JOBS=4
+        run: make bundle JOBS=4
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -33,3 +36,4 @@ jobs:
             artifacts/coverage/
             artifacts/tests/
             artifacts/native-coverage/html/
+            artifacts/bundles/

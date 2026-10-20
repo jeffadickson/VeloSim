@@ -9,7 +9,7 @@
 #include "../include/velosim.h"
 namespace {
 struct Word {uint64_t value, xmask, zmask; uint32_t width;};
-struct Proc {uint32_t clk,dst,a,reset; uint8_t edge,opcode;};
+struct Proc {uint32_t clk,dst,a,reset,b; uint8_t edge,opcode;};
 struct Engine {std::vector<Word> sig; std::vector<Proc> proc; uint64_t time=0;};
 uint64_t mask(uint32_t w){return w==64?UINT64_MAX:((uint64_t{1}<<w)-1);}
 Word normalize(Word a){auto m=mask(a.width);a.value &=m;a.xmask &=m;a.zmask &=m;a.xmask &=~a.zmask;a.value &=~(a.xmask|a.zmask);return a;}
@@ -39,6 +39,21 @@ Word increment(Word a,uint32_t width){
 Word compute(const Proc& p,const std::vector<Word>& sig){
  const Word a=sig[p.a];auto w=sig[p.dst].width;
  if(p.opcode==0)return resize(a,w);
+ if(p.opcode>=6){
+   const Word original_b=sig[p.b];
+   if(p.opcode>=10){
+     if(a.xmask||a.zmask||original_b.xmask||original_b.zmask)return xword(w);
+     uint64_t result=p.opcode==10?a.value+original_b.value:p.opcode==11?a.value-original_b.value:a.value*original_b.value;
+     return normalize(Word{result,0,0,w});
+   }
+   const Word lhs=resize(a,w),rhs=resize(original_b,w);auto m=mask(w);
+   auto ax=lhs.xmask|lhs.zmask,bx=rhs.xmask|rhs.zmask;
+   auto az=~(lhs.value|ax)&m,bz=~(rhs.value|bx)&m;
+   if(p.opcode==6){auto one=lhs.value&rhs.value;return Word{one,m&~(one|az|bz),0,w};}
+   if(p.opcode==7){auto one=lhs.value|rhs.value;return Word{one,m&~(one|(az&bz)),0,w};}
+   if(p.opcode==8)return Word{(lhs.value^rhs.value)&~(ax|bx)&m,(ax|bx)&m,0,w};
+   return Word{az,ax,0,w}; // Bitwise NOT converts input Z to X.
+ }
  Word next=increment(a,w);
  if(p.opcode==1)return next;
  // Strict IEEE arithmetic: any X/Z operand makes the arithmetic result unknown.
@@ -59,7 +74,7 @@ Word compute(const Proc& p,const std::vector<Word>& sig){
 }
 }
 extern "C" {
-uint32_t vs_ir_abi_version() noexcept {return 1;}
+uint32_t vs_ir_abi_version() noexcept {return 2;}
 uint32_t vs_ir_build_profile() noexcept {
 #ifdef NDEBUG
  return 1;
@@ -74,13 +89,17 @@ int vs_ir_signal(void* p,uint32_t width,uint64_t value,uint64_t xmask,uint64_t z
  if(!p||width<1||width>64||(xmask&zmask))return -1;
  try {auto& e=*static_cast<Engine*>(p);e.sig.push_back(normalize(Word{value,xmask,zmask,width}));return int(e.sig.size()-1);}catch(...){return -1;}
 }
-int vs_ir_process(void* p,uint32_t clk,uint32_t dst,uint32_t a,uint32_t reset,uint8_t edge,uint8_t op) noexcept {
- if(!p||edge>1||op>5)return -1;
+int vs_ir_process_v2(void* p,uint32_t clk,uint32_t dst,uint32_t a,uint32_t b,uint32_t reset,uint8_t edge,uint8_t op) noexcept {
+ if(!p||edge>1||op>12)return -1;
  auto& e=*static_cast<Engine*>(p);auto n=e.sig.size();
- if(clk>=n||dst>=n||a>=n||reset>=n||e.sig[clk].width!=1)return -1;
+ if(clk>=n||dst>=n||a>=n||b>=n||reset>=n||e.sig[clk].width!=1)return -1;
  if((op==2||op==3||op==5)&&e.sig[reset].width!=1)return -1;
  for(auto q:e.proc)if(q.dst==dst)return -2;
- try{e.proc.push_back(Proc{clk,dst,a,reset,edge,op});return 0;}catch(...){return -1;}
+ try{e.proc.push_back(Proc{clk,dst,a,reset,b,edge,op});return 0;}catch(...){return -1;}
+}
+int vs_ir_process(void* p,uint32_t clk,uint32_t dst,uint32_t a,uint32_t reset,uint8_t edge,uint8_t op) noexcept {
+ if(op>5)return -1;
+ return vs_ir_process_v2(p,clk,dst,a,a,reset,edge,op);
 }
 int vs_ir_read(void* p,uint32_t id,uint64_t* value,uint64_t* xmask,uint64_t* zmask) noexcept {
  if(!p||!value||!xmask||!zmask)return -1;

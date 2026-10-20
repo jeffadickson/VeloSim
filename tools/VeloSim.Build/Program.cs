@@ -21,7 +21,7 @@ internal static class Build
             if (command == "help")
             {
                 if (args.Length != 1) throw new ArgumentException("usage: VeloSim.Build help");
-                Console.WriteLine("VeloSim.Build: build, test, coverage, native-coverage, benchmark, publish, bundle, bundle-check <directory>, doctor, coverage-check [Cobertura.xml]. Set VELOSIM_JOBS=1..256."); return 0;
+                Console.WriteLine("VeloSim.Build: build, test, coverage, native-coverage, benchmark, publish, bundle, bundle-check <directory>, doctor, coverage-check [Cobertura.xml], coverage-current [Cobertura.xml]. Set VELOSIM_JOBS=1..256."); return 0;
             }
             if (command == "bundle-check")
             {
@@ -30,16 +30,18 @@ internal static class Build
             }
             Root = FindRoot();
             Jobs = GetJobs();
+            IReadOnlyDictionary<string, string>? coverageSources = command == "coverage" ? SourceEvidence.Capture(Root) : null;
             if (command == "doctor")
             {
                 if (args.Length != 1) throw new ArgumentException("usage: VeloSim.Build doctor");
                 string path = Path.Combine(Artifacts, "doctor.json"); await BuildDiagnostics.WriteDoctorAsync(path, Jobs); Console.WriteLine(path); return 0;
             }
-            if (command == "coverage-check")
+            if (command is "coverage-check" or "coverage-current")
             {
                 if (args.Length > 2) throw new ArgumentException("usage: VeloSim.Build coverage-check [Cobertura.xml]");
                 string path = args.Length == 2 ? Path.GetFullPath(args[1]) : File.ReadAllText(Path.Combine(Artifacts, "coverage", "latest.txt")).Trim();
-                string result = BuildDiagnostics.CheckCoverage(path, BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_MANAGED_LINE")), BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_NATIVE_LINE")));
+                if (command == "coverage-current") { VerifyCoverageEvidence(path); SourceEvidence.VerifyCurrent(Root, Path.Combine(Path.GetDirectoryName(path)!, "sources.json")); }
+                string result = CoverageGate(path);
                 Console.Write(result); return CoveragePassed(result) ? 0 : 1;
             }
             if (args.Length > 1 || command is not ("build" or "test" or "coverage" or "native-coverage" or "publish" or "bundle" or "benchmark"))
@@ -68,7 +70,7 @@ internal static class Build
                     throw new PlatformNotSupportedException("The current native publishing target is linux-x64; run inside WSL Ubuntu.");
                 string benchmarkSource = BenchmarkSourceStamp();
                 foreach (string project in new[] { "src/VeloSim.Tools", "tools/VeloSim.Build", "src/VeloSim.Bench" })
-                    await Run("dotnet", ["publish", project, "-c", "Release", "-r", "linux-x64", "-p:PublishAot=true", "-o", Path.Combine(Artifacts, "publish", Path.GetFileName(project)), $"-m:{Jobs}"]);
+                    await Run("dotnet", ["publish", project, "-c", "Release", "-r", "linux-x64", "-p:PublishAot=true", $"-p:VeloSimNativeJobs={Jobs}", "-o", Path.Combine(Artifacts, "publish", Path.GetFileName(project)), $"-m:{Jobs}"]);
                 foreach (string file in Directory.GetFiles(Path.Combine(Native, "lib"), "*.so"))
                 {
                     File.Copy(file, Path.Combine(Artifacts, "publish", "VeloSim.Tools", Path.GetFileName(file)), true);
@@ -94,15 +96,17 @@ internal static class Build
                 await Run("dotnet", ["tool", "restore"]);
                 await Run("dotnet", ["tool", "run", "reportgenerator", $"-reports:{results}/**/coverage.cobertura.xml;{NativeCoverage}/native.lcov", $"-targetdir:{Artifacts}/coverage/{RunId}", "-reporttypes:Html;TextSummary;Cobertura"]);
                 string report = Path.Combine(Artifacts, "coverage", RunId, "Cobertura.xml");
-                string gate = BuildDiagnostics.CheckCoverage(report, BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_MANAGED_LINE")), BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_NATIVE_LINE")));
+                if (SourceEvidence.Digest(coverageSources!) != SourceEvidence.Digest(SourceEvidence.Capture(Root))) throw new IOException("Coverage sources changed during build/tests; refusing current-source report.");
+                string gate = CoverageGate(report);
                 await File.WriteAllTextAsync(Path.Combine(Artifacts, "coverage", RunId, "gate.json"), gate);
                 if (!CoveragePassed(gate)) throw new IOException("Coverage thresholds failed; see gate.json.");
+                await SaveCoverageEvidence(report, coverageSources!);
                 await File.WriteAllTextAsync(Path.Combine(Artifacts, "coverage", "latest.txt"), report + "\n");
                 Console.WriteLine($"Coverage report: {Artifacts}/coverage/{RunId}/index.html");
             }
             return 0;
         }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException or System.Text.Json.JsonException or System.Xml.XmlException or System.ComponentModel.Win32Exception or PlatformNotSupportedException or TimeoutException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or FormatException or OverflowException or KeyNotFoundException or InvalidOperationException or System.Text.Json.JsonException or System.Xml.XmlException or System.ComponentModel.Win32Exception or PlatformNotSupportedException or TimeoutException)
         {
             Console.Error.WriteLine(error.Message);
             return 1;
@@ -114,9 +118,45 @@ internal static class Build
         using var document = System.Text.Json.JsonDocument.Parse(json);
         return document.RootElement.GetProperty("status").GetString() == "pass";
     }
+    private static string CoverageGate(string path) => BuildDiagnostics.CheckCoverage(path,
+        BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_MANAGED_LINE")), BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_NATIVE_LINE")),
+        BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_MANAGED_BRANCH")), BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_NATIVE_BRANCH")));
+    private static string FileDigest(string path) { using var input = File.OpenRead(path); return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(input)).ToLowerInvariant(); }
+    private static async Task SaveCoverageEvidence(string report, IReadOnlyDictionary<string, string> sources)
+    {
+        string directory = Path.GetDirectoryName(report)!; SourceEvidence.Save(Path.Combine(directory, "sources.json"), sources);
+        await BuildDiagnostics.WriteDoctorAsync(Path.Combine(directory, "doctor.json"), Jobs);
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream, new() { Indented = true }))
+        {
+            writer.WriteStartObject(); writer.WriteString("format", "velosim.coverage.evidence.v1"); writer.WriteString("run_id", RunId); writer.WriteNumber("jobs", Jobs);
+            writer.WriteStartArray("reports"); foreach (var name in new[] { "Cobertura.xml", "gate.json", "sources.json", "doctor.json" }) { writer.WriteStartObject(); writer.WriteString("path", name); writer.WriteString("sha256", FileDigest(Path.Combine(directory, name))); writer.WriteEndObject(); } writer.WriteEndArray();
+            writer.WriteString("llvm_version", await BuildDiagnostics.ProbeVersionAsync(Llvm("llvm-cov"), "--version", TimeSpan.FromSeconds(15)));
+            writer.WriteStartArray("native_objects"); foreach (var relative in new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests" }) { var file = Path.Combine(NativeCoverage, relative); writer.WriteStartObject(); writer.WriteString("path", file); writer.WriteString("sha256", FileDigest(file)); writer.WriteEndObject(); } writer.WriteEndArray();
+            writer.WriteStartArray("managed_objects"); foreach (var file in ManagedCoverageObjects()) { writer.WriteStartObject(); writer.WriteString("path", file); writer.WriteString("sha256", FileDigest(file)); writer.WriteEndObject(); } writer.WriteEndArray(); writer.WriteEndObject();
+        }
+        await File.WriteAllTextAsync(Path.Combine(directory, "evidence.json"), System.Text.Encoding.UTF8.GetString(stream.ToArray()) + "\n");
+    }
+    private static void VerifyCoverageEvidence(string report)
+    {
+        string directory = Path.GetDirectoryName(report)!;
+        if (Path.GetFileName(report) != "Cobertura.xml") throw new IOException("Current coverage checks require the recorded Cobertura.xml report.");
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "evidence.json")));
+        if (document.RootElement.GetProperty("format").GetString() != "velosim.coverage.evidence.v1") throw new IOException("Unsupported coverage evidence.");
+        var expected = new HashSet<string>(["Cobertura.xml", "gate.json", "sources.json", "doctor.json"], StringComparer.Ordinal);
+        foreach (var entry in document.RootElement.GetProperty("reports").EnumerateArray()) { string name = entry.GetProperty("path").GetString()!; if (!expected.Remove(name) || FileDigest(Path.Combine(directory, name)) != entry.GetProperty("sha256").GetString()) throw new IOException("Coverage report evidence mismatch."); }
+        if (expected.Count != 0) throw new IOException("Coverage evidence omits reports.");
+        var native = new HashSet<string>(new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests" }.Select(relative => Path.Combine(NativeCoverage, relative)), StringComparer.Ordinal);
+        foreach (var entry in document.RootElement.GetProperty("native_objects").EnumerateArray()) { string file = entry.GetProperty("path").GetString()!; if (!native.Remove(file) || FileDigest(file) != entry.GetProperty("sha256").GetString()) throw new IOException("Coverage native binaries changed; measure again."); }
+        if (native.Count != 0) throw new IOException("Coverage evidence omits native objects.");
+        var managed = new HashSet<string>(ManagedCoverageObjects(), StringComparer.Ordinal);
+        foreach (var entry in document.RootElement.GetProperty("managed_objects").EnumerateArray()) { string file = entry.GetProperty("path").GetString()!; if (!managed.Remove(file) || FileDigest(file) != entry.GetProperty("sha256").GetString()) throw new IOException("Coverage managed binaries changed; measure again."); }
+        if (managed.Count != 0) throw new IOException("Coverage evidence omits managed objects.");
+    }
+    private static IEnumerable<string> ManagedCoverageObjects() => new[] { "VeloSim.dll", "VeloSim.Build.dll", "VeloSim.Tests.dll" }.Select(name => Path.Combine(Root, "tests/VeloSim.Tests/bin/Release/net10.0", name));
     private static string BenchmarkSourceStamp()
     {
-        var files = new[] { "src/VeloSim.Core", "src/VeloSim.Bench" }.SelectMany(directory => Directory.EnumerateFiles(Path.Combine(Root, directory), "*", SearchOption.AllDirectories)
+        var files = new[] { "src/VeloSim.Core", "src/VeloSim.Bench", "tools/VeloSim.Build" }.SelectMany(directory => Directory.EnumerateFiles(Path.Combine(Root, directory), "*", SearchOption.AllDirectories)
             .Where(file => !Path.GetRelativePath(Path.Combine(Root, directory), file).Split(Path.DirectorySeparatorChar).Any(part => part is "bin" or "obj") && (file.EndsWith(".cs", StringComparison.Ordinal) || file.EndsWith(".csproj", StringComparison.Ordinal) || file.EndsWith("packages.lock.json", StringComparison.Ordinal))))
             .Concat(new[] { "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "global.json", "NuGet.config" }.Select(file => Path.Combine(Root, file)).Where(File.Exists)).Order(StringComparer.Ordinal);
         using var digest = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
@@ -224,7 +264,7 @@ internal static class Build
         string merged = Path.Combine(profiles, "merged.profdata");
         await Run(Llvm("llvm-profdata"), new[] { "merge", "-sparse", "-o", merged }.Concat(raw));
         string executable = Path.Combine(NativeCoverage, "bin", "velosim_native_tests");
-        string[] objects = ["-object", Path.Combine(NativeCoverage, "lib", "libvelosim_ir.so"), "-object", Path.Combine(NativeCoverage, "lib", "libvelosim_scheduler.so"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_json_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_c_abi_tests")];
+        string[] objects = ["-object", Path.Combine(NativeCoverage, "lib", "libvelosim_ir.so"), "-object", Path.Combine(NativeCoverage, "lib", "libvelosim_scheduler.so"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_json_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_c_abi_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_word_tests")];
         var localCoverage = new Dictionary<string, string> { ["DEBUGINFOD_URLS"] = "" };
         await Run(Llvm("llvm-cov"), new[] { "export", executable, "--debuginfod=false", "--check-binary-ids", "-format=lcov", $"-instr-profile={merged}", "-ignore-filename-regex=/tests/|/external/" }.Concat(objects), environment: localCoverage, output: Path.Combine(NativeCoverage, "native.lcov"));
         await Run(Llvm("llvm-cov"), new[] { "show", executable, "--debuginfod=false", "--check-binary-ids", "-format=html", $"-instr-profile={merged}", $"-output-dir={NativeCoverage}/html", "-ignore-filename-regex=/tests/|/external/" }.Concat(objects), environment: localCoverage);

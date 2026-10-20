@@ -134,6 +134,31 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 |123|Expose scheduler inspection and replay eligibility summaries through CLI.|
 |124|Replay scheduler cases with pinned tools, fresh artifacts and saved worker matrices.|
 |125|Persist first-mismatch prefix fixtures and explicit reproduction commands.|
+|126|Version the native IR ABI2 and add validated second-source process registration.|
+|127|Execute four-state word AND/OR/XOR/NOT with unsigned width conversion.|
+|128|Execute modular unsigned add/subtract/multiply with strict unknown propagation.|
+|129|Cross-check extended word operators, widths and precommit behavior in independent C++ tests.|
+|130|Exercise ABI2 from C11 and integrate complete coverage objects plus bounded NativeAOT compilation.|
+|131|Model typed second operands with backward-compatible IR version inference.|
+|132|Validate and serialize strict IRv2 word-operator schemas.|
+|133|Dispatch managed IRv2 registration through the versioned native ABI.|
+|134|Independently model width-converted four-state bitwise operations.|
+|135|Independently model modular unsigned arithmetic and original-operand unknowns.|
+|136|Read and execute version-two word conformance fixtures.|
+|137|Generate deterministic operand boundary and high-X/Z stimuli.|
+|138|Expose compiled extended-word conformance commands.|
+|139|Exercise all seven word operators across unequal and full word widths.|
+|140|Validate actual native word conformance across worker configurations and independent review.|
+|141|Move benchmark command behavior into the measured C# core.|
+|142|Validate benchmark output destinations and cancellation before reporting.|
+|143|Measure managed and native branch counters separately.|
+|144|Enforce optional independent branch coverage thresholds.|
+|145|Require instrumentation for the compiled build helper and core native modules.|
+|146|Capture first-party source, dependency and build inputs before and after coverage.|
+|147|Bind coverage reports to source, tool and measured native/managed binary fingerprints.|
+|148|Verify current-source coverage independently with the compiled coverage-current command.|
+|149|Integrate coverage freshness and native bundle artifacts into CI and negative regression checks.|
+|150|Review and validate the integrated Ninja, coverage and bounded NativeAOT checkpoint.|
 ## Peer reviews and validation
 
 - 010: independent simulation and tooling reviewers inspected the foundation. Fixed scheduler allocation exception ownership, added genuinely parallel native tests, fixed standalone native coverage builds, propagated instrumentation to UHDM tools, included JSON coverage and moved initialization under error handling. Native CTest 2/2 passes; C# build helper compiles without warnings. Core 011–015 focused NUnit 5/5 passes.
@@ -145,7 +170,7 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 
 ## Local commit checkpoints
 
-025 `6a97ab2`: compiled helper foundation and frontend/native C# port, including prior local Surelog fixes. 050 `2072450`;075 `3b31a1d`. 100 `55e9cd6`. Pending125,150,175,200.
+025 `6a97ab2`: compiled helper foundation and frontend/native C# port, including prior local Surelog fixes. 050 `2072450`;075 `3b31a1d`. 100 `55e9cd6`. 125 `0f26330`. Pending150,175,200.
 
 ## Full build checkpoints
 
@@ -180,3 +205,7 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 125:106regularNUnitpass, actualfourcaseIcarusconformance workers1/4 pass, strict500stepseededmulticlock replaypass. Prefix reduction explicitly means prefix throughfirstmismatch, notgeneral delta debugging. Corefrozenfornativepublication/benchmarkdispatchvalidation.
 
 125 NativeAOTpublicationpassedallthreehelpers. makebenchmark selectedactualnative artifacts/publish/VeloSim.Bench/VeloSim.Bench (source-contentstampmatchedafterstandardrestore), report artifacts/benchmarks/20261020-195733-8892514.json pass withoptimizednativekernel. BothCLIandbenchmarkexecuteELFbinarypaths; nativepreference/provenancefixvalidated.
+
+130:106NUnit/4nativeCTest pass; nativewordtruth/width/arithmetic/NBAchecks pass. MSBuildtarget emitsrequested --parallelism:3 andpublisherpassesJobs. Twopeerreviewsacceptednativeoperators/ABI/coverage/parallelsetup; requiredprefixreproduction topreserve customIcaruspaths, beingfixedbefore140.
+
+150: Both independent peer reviews completed and findings fixed: dependency locks/nested build inputs/HDL includes now tracked, and measured managed DLL hashes join native object evidence. Full coverage passes124NUnit/4CTest; managed86.5% line68.3% branch, native98.4% line86.0% branch, combined87.4% line69.6% branch. Report artifacts/coverage/20261020-201601-0317469. coverage-current passes. All three NativeAOT helpers publish with compiler --parallelism:4; native bundle artifacts/bundles/20261020-201631-9281075 passes packaged simulation/integrity/benchmark smoke. ASan/UBSan4CTest pass. Published scheduler fourcase and35wordcase matrices pass; actualcounter1000cycle comparison finishing.

@@ -23,6 +23,7 @@ public sealed class IrOracle
         {
             if (!ScalarLogic.IsEdge(p.Edge, FourStateCodec.BitAt(state[p.Clock], 0), FourStateCodec.BitAt(precommit[p.Clock], 0))) continue;
             var source = precommit[p.Source]; var width = precommit[p.Destination].Width;
+            var second = precommit[p.SourceB ?? p.Source];
             var result = p.Operation switch
             {
                 IrOperation.Copy => FourStateCodec.Resize(source, width),
@@ -31,6 +32,11 @@ public sealed class IrOracle
                 IrOperation.ResetIncrement => FourStateArithmetic.ResetIncrement(source, precommit[p.Reset], width, false, false),
                 IrOperation.SvIfResetIncrement => FourStateArithmetic.ResetIncrement(source, precommit[p.Reset], width, true, false),
                 IrOperation.SvIfResetIncrementStrict => FourStateArithmetic.ResetIncrement(source, precommit[p.Reset], width, true, true),
+                IrOperation.And => FourStateLogic.Evaluate(ScalarOperation.And, FourStateCodec.Resize(source, width), FourStateCodec.Resize(second, width)),
+                IrOperation.Or => FourStateLogic.Evaluate(ScalarOperation.Or, FourStateCodec.Resize(source, width), FourStateCodec.Resize(second, width)),
+                IrOperation.Xor => FourStateLogic.Evaluate(ScalarOperation.Xor, FourStateCodec.Resize(source, width), FourStateCodec.Resize(second, width)),
+                IrOperation.Not => FourStateLogic.Evaluate(ScalarOperation.Not, FourStateCodec.Resize(source, width), FourStateCodec.Resize(source, width)),
+                IrOperation.UnsignedAdd or IrOperation.UnsignedSubtract or IrOperation.UnsignedMultiply => UnsignedWordArithmetic.Evaluate(p.Operation, source, second, width),
                 _ => throw new IrValidationException("Unsupported oracle operation.")
             };
             scheduled.Add((p.Destination, result));

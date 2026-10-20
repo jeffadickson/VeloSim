@@ -27,6 +27,25 @@ public static class ToolCli
     private static void WriteError(TextWriter writer, Exception exception) { if (writer is ErrorCapture capture) capture.Cause = exception; writer.WriteLine(exception.Message); }
     private static async Task<int> RunCoreAsync(string[] args, TextWriter output, TextWriter error, IProcessRunner? runner, CancellationToken cancellationToken)
     {
+        if (args.Length > 0 && args[0] is "word-boundaries" or "word-operation-conformance")
+        {
+            bool boundaries = args[0] == "word-boundaries"; if (boundaries && args.Length < 2) throw new ArgumentException("IR path required.");
+            string? destination = null; int[] workers = [1, 4];
+            for (int i = boundaries ? 2 : 1; i < args.Length; i += 2)
+            {
+                if (i + 1 == args.Length) throw new ArgumentException("Incomplete word operation option.");
+                if (args[i] == (boundaries ? "--output" : "--output-dir")) destination = args[i + 1];
+                else if (args[i] == "--workers") workers = args[i + 1].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid worker count.")).ToArray();
+                else throw new ArgumentException("Unknown word operation option: " + args[i]);
+            }
+            if (destination is null) throw new ArgumentException("Output path required.");
+            if (boundaries)
+            {
+                if (new FileInfo(args[1]).Length > ConformanceLimits.MaxFixtureCharacters) throw new ArgumentException("IR file exceeds input limit.");
+                var design = IrDesign.Parse(await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false)); var fixture = IrStimulus.GenerateBoundaries(design, workers); await WriteNewAsync(destination, fixture.ToJson(), cancellationToken).ConfigureAwait(false); output.WriteLine(Path.GetFullPath(destination)); return 0;
+            }
+            var results = IrOperationConformance.Run(destination, workers, cancellationToken); output.WriteLine($"{(results.All(r => r.Passed) ? "pass" : "fail")} cases={results.Count} " + Path.Combine(Path.GetFullPath(destination), "word-operations-report.json")); return results.All(r => r.Passed) ? 0 : 1;
+        }
         if (args.Length > 0 && args[0] is "scheduler-inspect" or "scheduler-replay" or "scheduler-reduce")
         {
             bool inspect = args[0] == "scheduler-inspect";

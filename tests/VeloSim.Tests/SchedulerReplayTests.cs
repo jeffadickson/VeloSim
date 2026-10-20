@@ -76,6 +76,10 @@ public class SchedulerReplayTests
             var report = await new SchedulerDifferential(new ReferenceRunner(Fixture()) { Mismatch = true }).RunAsync(Fixture(), [1, 4], Path.Combine(directory, "original")); Assert.That(report.FirstMismatchPrefixSteps, Is.EqualTo(1));
             var path = await SchedulerReproduction.SavePrefixAsync(report, Path.Combine(directory, "prefix")); var prefix = SchedulerFixture.Parse(File.ReadAllText(path)); Assert.That(prefix.Drives.Count, Is.EqualTo(1));
             using var metadata = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "prefix", "reproduction.json"))); Assert.That(metadata.RootElement.GetProperty("reduction_kind").GetString(), Is.EqualTo("first_mismatch_prefix_not_general_delta_debugging"));
+            var custom = report with { Toolchain = new("/custom/iverilog", "/custom/vvp") };
+            await SchedulerReproduction.SavePrefixAsync(custom, Path.Combine(directory, "custom-prefix"));
+            using var customMetadata = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "custom-prefix", "reproduction.json")));
+            Assert.That(customMetadata.RootElement.GetProperty("arguments").EnumerateArray().Select(e => e.GetString()), Does.Contain("/custom/iverilog").And.Contain("/custom/vvp"));
             var rerun = await new SchedulerDifferential(new ReferenceRunner(prefix) { Mismatch = true }).RunAsync(prefix, [1, 4], Path.Combine(directory, "rerun")); Assert.That(rerun.Status, Is.EqualTo("fail")); Assert.That(rerun.FirstMismatchPrefixSteps, Is.EqualTo(1));
         }
         finally { Directory.Delete(directory, true); }

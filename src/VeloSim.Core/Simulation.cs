@@ -49,7 +49,8 @@ internal static partial class NativeMethods
             var symbol = name == "velosim_ir" ? "vs_ir_abi_version" : "vs_sched_abi_version";
             if (!NativeLibrary.TryGetExport(module, symbol, out var address)) throw new EntryPointNotFoundException($"{name} lacks {symbol}; rebuild the native libraries.");
             var version = ((delegate* unmanaged[Cdecl]<uint>)address)();
-            if (version != 1) throw new BadImageFormatException($"{name} ABI version {version} is unsupported; expected1. Rebuild the native libraries.");
+            uint expected = name == "velosim_ir" ? 2U : 1U;
+            if (version != expected) throw new BadImageFormatException($"{name} ABI version {version} is unsupported; expected{expected}. Rebuild the native libraries.");
             return module;
         }
         catch { NativeLibrary.Free(module); throw; }
@@ -58,6 +59,7 @@ internal static partial class NativeMethods
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_free")] internal static partial void Free(nint handle);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_signal")] internal static partial int Signal(EngineHandle handle, uint width, ulong value, ulong x, ulong z);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_process")] internal static partial int Process(EngineHandle handle, uint clock, uint dst, uint source, uint reset, byte edge, byte op);
+    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_process_v2")] internal static partial int ProcessV2(EngineHandle handle, uint clock, uint dst, uint source, uint sourceB, uint reset, byte edge, byte op);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_read")] internal static partial int Read(EngineHandle handle, uint id, out ulong value, out ulong x, out ulong z);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_drive")] internal static unsafe partial int Drive(EngineHandle handle, uint* ids, ulong* values, ulong* xs, ulong* zs, uint count, uint workers);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_ticks")] internal static partial ulong Ticks(EngineHandle handle);
@@ -94,7 +96,7 @@ public sealed class Simulation : IDisposable
                 signals.Add(s.Name, ((uint)id, w.Width));
             }
             foreach (var p in design.Processes)
-                if (NativeMethods.Process(handle, signals[p.Clock].Id, signals[p.Destination].Id, signals[p.Source].Id, signals[p.Reset].Id, (byte)p.Edge, (byte)p.Operation) != 0)
+                if ((design.Format == "velosim.ir.v2" ? NativeMethods.ProcessV2(handle, signals[p.Clock].Id, signals[p.Destination].Id, signals[p.Source].Id, signals[p.SourceB ?? p.Source].Id, signals[p.Reset].Id, (byte)p.Edge, (byte)p.Operation) : NativeMethods.Process(handle, signals[p.Clock].Id, signals[p.Destination].Id, signals[p.Source].Id, signals[p.Reset].Id, (byte)p.Edge, (byte)p.Operation)) != 0)
                     throw new InvalidOperationException("Native process registration failed.");
         }
         catch { handle.Dispose(); throw; }

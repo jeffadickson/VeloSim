@@ -14,7 +14,9 @@ public static class SchedulerReproduction
         using var stream = new MemoryStream(); using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
         {
             writer.WriteStartObject(); writer.WriteString("schema", "velosim.scheduler.reproduction.v1"); writer.WriteString("reduction_kind", "first_mismatch_prefix_not_general_delta_debugging"); writer.WriteNumber("prefix_steps", count); writer.WriteString("command", "scheduler-differential");
-            writer.WriteStartArray("arguments"); foreach (var argument in new[] { fixturePath, "--output-dir", Path.Combine(output, "rerun"), "--workers", string.Join(',', report.RequestedWorkers) }) writer.WriteStringValue(argument); writer.WriteEndArray();
+            var arguments = new List<string> { fixturePath, "--output-dir", Path.Combine(output, "rerun"), "--workers", string.Join(',', report.RequestedWorkers) };
+            if (report.Toolchain is { } toolchain) arguments.AddRange(["--iverilog", toolchain.Compiler, "--vvp", toolchain.Runtime]);
+            writer.WriteStartArray("arguments"); foreach (var argument in arguments) writer.WriteStringValue(argument); writer.WriteEndArray();
             writer.WriteString("fixture_sha256", ArtifactMetadata.Fingerprint(fixturePath).Sha256); writer.WriteEndObject();
         }
         await File.WriteAllTextAsync(Path.Combine(output, "reproduction.json"), Encoding.UTF8.GetString(stream.ToArray()) + "\n", cancellationToken).ConfigureAwait(false); return fixturePath;
