@@ -17,7 +17,9 @@ public sealed class WordFixture
         var raw = drives.Take(ConformanceLimits.Default.MaxSteps + 1).ToArray(); var counts = workers.Take(257).ToArray();
         ConformanceLimits.Default.Validate(design, raw, counts);
         var updates = raw.Select(d => (IReadOnlyDictionary<string, FourStateWord>)new ReadOnlyDictionary<string, FourStateWord>(new Dictionary<string, FourStateWord>(d, StringComparer.Ordinal))).ToArray();
-        var expected = (checkpoints ?? []).Select(c => c with { Signals = new ReadOnlyDictionary<string, FourStateWord>(new Dictionary<string, FourStateWord>(c.Signals, StringComparer.Ordinal)) }).ToArray();
+        var points = (checkpoints ?? []).Take(updates.Length + 1).ToArray();
+        if (points.Length > updates.Length || points.Any(c => c is null || c.Signals is null || c.Signals.Count > design.Signals.Count)) throw new IrValidationException("Fixture checkpoint budget exceeded.");
+        var expected = points.Select(c => c with { Signals = new ReadOnlyDictionary<string, FourStateWord>(new Dictionary<string, FourStateWord>(c.Signals, StringComparer.Ordinal)) }).ToArray();
         var names = design.Signals.ToDictionary(s => s.Name, s => s.Initial.Width, StringComparer.Ordinal);
         if (expected.Select(c => c.Step).Distinct().Count() != expected.Length || expected.Any(c => c.Step < 0 || c.Step >= updates.Length || c.ActivatedProcesses < 0 || c.ActivatedProcesses > design.Processes.Count || c.Signals.Count == 0 && c.ActivatedProcesses is null || c.Signals.Any(s => !names.TryGetValue(s.Key, out var width) || width != s.Value.Width))) throw new IrValidationException("Invalid fixture checkpoint.");
         Drives = Array.AsReadOnly(updates); Workers = Array.AsReadOnly(counts); Checkpoints = Array.AsReadOnly(expected);

@@ -19,8 +19,33 @@ public static class SourceEvidence
         }
         foreach (var relative in new[] { "src", "native", "tests", "tools/VeloSim.Build", "examples" }) { var path = Path.Combine(root, relative); if (Directory.Exists(path)) Walk(new(path)); }
         paths.AddRange(new[] { "CMakeLists.txt", "Makefile", "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "global.json", "NuGet.config", "coverage.runsettings", "VeloSim.slnx", ".config/dotnet-tools.json" }.Select(p => Path.Combine(root, p)).Where(File.Exists));
-        return paths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToDictionary(p => Path.GetRelativePath(root, p).Replace('\\', '/'), p => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(p))).ToLowerInvariant(), StringComparer.Ordinal);
+        if (paths.Any(p => new FileInfo(p).LinkTarget is not null)) throw new IOException("Coverage source files cannot be symbolic links.");
+        return paths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToDictionary(p => Path.GetRelativePath(root, p).Replace('\\', '/'), p => Convert.ToHexString(SHA256.HashData(Path.GetFileName(p) == "packages.lock.json" ? DependencySnapshot(p) : File.ReadAllBytes(p))).ToLowerInvariant(), StringComparer.Ordinal);
     }
+    public static byte[] DependencySnapshot(string path)
+    {
+        // NativeAOT restore adds compiler-only runtime entries; ordinary build
+        // removes them. Keep application dependency hashes stable across that
+        // restore-mode change while retaining every noncompiler dependency.
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(path));
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            foreach (var property in document.RootElement.EnumerateObject().Where(p => p.Name != "dependencies").OrderBy(p => p.Name, StringComparer.Ordinal)) { writer.WritePropertyName(property.Name); property.Value.WriteTo(writer); }
+            writer.WriteStartObject("dependencies");
+            foreach (var framework in document.RootElement.GetProperty("dependencies").EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
+            {
+                var packages = framework.Value.EnumerateObject().Where(p => p.Name != "Microsoft.DotNet.ILCompiler" && !(p.Name.StartsWith("runtime.", StringComparison.Ordinal) && p.Name.EndsWith(".Microsoft.DotNet.ILCompiler", StringComparison.Ordinal))).OrderBy(p => p.Name, StringComparer.Ordinal).ToArray();
+                if (packages.Length == 0 && framework.Name.Contains('/')) continue;
+                writer.WriteStartObject(framework.Name); foreach (var package in packages) { writer.WritePropertyName(package.Name); package.Value.WriteTo(writer); } writer.WriteEndObject();
+            }
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+        return stream.ToArray();
+    }
+
     public static string Digest(IReadOnlyDictionary<string, string> sources)
     {
         using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -36,18 +61,24 @@ public static class SourceEvidence
         using var stream = new MemoryStream();
         using (var w = new Utf8JsonWriter(stream, new() { Indented = true }))
         {
-            w.WriteStartObject(); w.WriteString("format", "velosim.coverage.sources.v1"); w.WriteString("scope", "repository_first_party_inputs_excludes_generated_files_and_toolchain"); w.WriteString("source_sha256", Digest(sources));
+            w.WriteStartObject(); w.WriteString("format", "velosim.coverage.sources.v1"); w.WriteString("scope", "repository_first_party_inputs_compiler_normalized_locks_excludes_generated_files_and_toolchain"); w.WriteString("source_sha256", Digest(sources));
             w.WriteStartArray("sources"); foreach (var (file, hash) in sources.OrderBy(p => p.Key, StringComparer.Ordinal)) { w.WriteStartObject(); w.WriteString("path", file); w.WriteString("sha256", hash); w.WriteEndObject(); } w.WriteEndArray(); w.WriteEndObject();
         }
         File.WriteAllText(path, Encoding.UTF8.GetString(stream.ToArray()) + "\n");
     }
     public static void VerifyCurrent(string root, string manifest)
     {
+        if (new FileInfo(manifest).LinkTarget is not null) throw new IOException("Coverage source manifest cannot be a link.");
         if (new FileInfo(manifest).Length > 16 * 1024 * 1024) throw new IOException("Coverage source manifest exceeds size limit.");
         using var document = JsonDocument.Parse(File.ReadAllText(manifest)); var r = document.RootElement;
-        if (r.GetProperty("format").GetString() != "velosim.coverage.sources.v1" || r.GetProperty("scope").GetString() != "repository_first_party_inputs_excludes_generated_files_and_toolchain") throw new IOException("Unsupported coverage source manifest.");
+        CoverageEvidence.Fields(r, "format", "scope", "source_sha256", "sources");
+        if (r.GetProperty("format").GetString() != "velosim.coverage.sources.v1" || r.GetProperty("scope").GetString() != "repository_first_party_inputs_compiler_normalized_locks_excludes_generated_files_and_toolchain") throw new IOException("Unsupported coverage source manifest.");
         var recorded = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var entry in r.GetProperty("sources").EnumerateArray()) if (!recorded.TryAdd(entry.GetProperty("path").GetString() ?? throw new IOException("Missing source path."), entry.GetProperty("sha256").GetString() ?? throw new IOException("Missing source hash."))) throw new IOException("Duplicate coverage source path.");
+        foreach (var entry in r.GetProperty("sources").EnumerateArray())
+        {
+            CoverageEvidence.Fields(entry, "path", "sha256");
+            if (!recorded.TryAdd(entry.GetProperty("path").GetString() ?? throw new IOException("Missing source path."), entry.GetProperty("sha256").GetString() ?? throw new IOException("Missing source hash."))) throw new IOException("Duplicate coverage source path.");
+        }
         if (Digest(recorded) != r.GetProperty("source_sha256").GetString() || Digest(Capture(root)) != Digest(recorded)) throw new IOException("Coverage source inputs changed; run make coverage again.");
     }
 }

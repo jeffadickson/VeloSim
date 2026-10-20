@@ -3,14 +3,27 @@ using System.Text.Json;
 namespace VeloSim.Tests;
 public class CoverageEvidenceTests
 {
+    [Test] public void CompilerOnlyRestoreEntriesDoNotInvalidateMeasuredApplicationInputs()
+    {
+        var root = Temp(); try
+        {
+            var file = Path.Combine(root, "src", "packages.lock.json");
+            File.WriteAllText(file, "{\"dependencies\":{\"net10.0\":{\"Application\":{\"resolved\":\"1\"}}}}"); var before = SourceEvidence.Digest(SourceEvidence.Capture(root));
+            File.WriteAllText(file, "{\"dependencies\":{\"net10.0\":{\"Microsoft.DotNet.ILCompiler\":{\"resolved\":\"10\"},\"Application\":{\"resolved\":\"1\"}},\"net10.0/linux-x64\":{\"runtime.linux-x64.Microsoft.DotNet.ILCompiler\":{\"resolved\":\"10\"}}}}");
+            Assert.That(SourceEvidence.Digest(SourceEvidence.Capture(root)), Is.EqualTo(before));
+            File.WriteAllText(file, File.ReadAllText(file).Replace("\"Application\":{\"resolved\":\"1\"}", "\"Application\":{\"resolved\":\"2\"}")); Assert.That(SourceEvidence.Digest(SourceEvidence.Capture(root)), Is.Not.EqualTo(before));
+            var dependencies = SourceEvidence.Digest(SourceEvidence.Capture(root)); File.WriteAllText(file, File.ReadAllText(file).Replace("{\"dependencies\":", "{\"version\":2,\"dependencies\":")); Assert.That(SourceEvidence.Digest(SourceEvidence.Capture(root)), Is.Not.EqualTo(dependencies));
+        } finally { Directory.Delete(root, true); }
+    }
     [Test] public void SourceEvidenceIncludesDependencyBuildAndHdlInputs()
     {
         var root = Temp(); try
         {
             foreach (var relative in new[] { "NuGet.config", "src/packages.lock.json", "native/uhdm/CMakeLists.txt", "native/config.cmake", "examples/header.svh" })
             {
-                var file = Path.Combine(root, relative); Directory.CreateDirectory(Path.GetDirectoryName(file)!); File.WriteAllText(file, "before");
-                var manifest = Path.Combine(root, "sources.json"); SourceEvidence.Save(manifest, SourceEvidence.Capture(root)); File.WriteAllText(file, "after");
+                var file = Path.Combine(root, relative); Directory.CreateDirectory(Path.GetDirectoryName(file)!); bool dependency = relative.EndsWith("packages.lock.json", StringComparison.Ordinal);
+                File.WriteAllText(file, dependency ? "{\"dependencies\":{\"net10.0\":{\"Example\":{\"resolved\":\"1\"}}}}" : "before");
+                var manifest = Path.Combine(root, "sources.json"); SourceEvidence.Save(manifest, SourceEvidence.Capture(root)); File.WriteAllText(file, dependency ? "{\"dependencies\":{\"net10.0\":{\"Example\":{\"resolved\":\"2\"}}}}" : "after");
                 Assert.Throws<IOException>(() => SourceEvidence.VerifyCurrent(root, manifest), relative);
             }
         } finally { Directory.Delete(root, true); }

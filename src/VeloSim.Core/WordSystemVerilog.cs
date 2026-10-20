@@ -8,7 +8,9 @@ public static class WordSystemVerilog
     public static void Validate(WordFixture fixture)
     {
         ConformanceLimits.Default.Validate(fixture.Design, fixture.Drives, fixture.Workers);
-        if (fixture.Design.Signals.Count > 4096 || fixture.Design.Processes.Count > 4096 || fixture.Drives.Count > 100_000 || fixture.Drives.Sum(d => (long)d.Count) > 1_000_000 || fixture.Design.Signals.Sum(s => (long)s.Initial.Width) * fixture.Drives.Count * fixture.Workers.Count > 10_000_000) throw new ArgumentException("Word HDL fixture exceeds differential resource limits.");
+        long copies = fixture.Workers.Count + 2L; // Oracle and external reference are mandatory report dimensions.
+        long rows = fixture.Drives.Count * copies, values = rows * fixture.Design.Signals.Count, digits = fixture.Design.Signals.Sum(s => (long)s.Initial.Width) * rows;
+        if (fixture.Design.Signals.Count > 4096 || fixture.Design.Processes.Count > 4096 || fixture.Drives.Count > 100_000 || fixture.Drives.Sum(d => (long)d.Count) > 1_000_000 || digits > 10_000_000 || rows > WordEvidenceLimits.MaxTraceRows || values > WordEvidenceLimits.MaxTraceValues || rows * 128 + values * 40 + digits > 32 * 1024 * 1024) throw new ArgumentException("Word HDL fixture exceeds differential resource limits including oracle/reference report overhead.");
         if (fixture.Design.Processes.Any(p => p.Operation is IrOperation.Increment or IrOperation.ResetIncrement or IrOperation.SvIfResetIncrement)) throw new ArgumentException("Experimental bit-precise increment/reset operations are not strict SystemVerilog arithmetic and cannot enter HDL conformance.");
         var clocks = fixture.Design.Processes.Select(p => p.Clock).ToHashSet(StringComparer.Ordinal);
         if (fixture.Design.Processes.Any(p => clocks.Contains(p.Destination))) throw new ArgumentException("Computed-clock feedback is outside the atomic single-batch word contract.");

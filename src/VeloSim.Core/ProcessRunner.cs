@@ -38,7 +38,8 @@ public sealed partial class ProcessRunner : IProcessRunner
         if (ownGroup)
         {
             if (!File.Exists("/usr/bin/setsid")) throw new IOException("Linux process isolation requires /usr/bin/setsid.");
-            start.FileName = "/usr/bin/setsid"; start.ArgumentList.Add("--wait"); start.ArgumentList.Add("--"); start.ArgumentList.Add(executable);
+            var resolved = ArtifactMetadata.ResolveExecutable(executable, workingDirectory) ?? throw new System.ComponentModel.Win32Exception(2, "Executable not found: " + executable);
+            start.FileName = "/usr/bin/setsid"; start.ArgumentList.Add("--wait"); start.ArgumentList.Add("--"); start.ArgumentList.Add(resolved);
         }
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
         using var process = new Process { StartInfo = start };

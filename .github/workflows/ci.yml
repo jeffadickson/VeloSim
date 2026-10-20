@@ -2,6 +2,12 @@ name: VeloSim compiled CI
 on: [push, pull_request]
 jobs:
   compiled:
+    timeout-minutes: 45
+    env:
+      VELOSIM_MIN_MANAGED_LINE: 80
+      VELOSIM_MIN_NATIVE_LINE: 95
+      VELOSIM_MIN_MANAGED_BRANCH: 60
+      VELOSIM_MIN_NATIVE_BRANCH: 80
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -13,7 +19,7 @@ jobs:
           global-json-file: global.json
       - name: Install Ninja and LLVM (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build clang llvm
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang llvm iverilog
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja
@@ -28,6 +34,14 @@ jobs:
       - name: NativeAOT publishing
         if: runner.os == 'Linux'
         run: make bundle JOBS=4
+      - name: Independent Icarus conformance through native C# tools
+        if: runner.os == 'Linux'
+        env:
+          VELOSIM_NATIVE_DIR: ${{ github.workspace }}/artifacts/publish/VeloSim.Tools
+        run: |
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools scheduler-conformance --workers 1,4 --output-dir artifacts/scheduler-conformance
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools word-conformance --workers 1,4 --output-dir artifacts/word-conformance
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools word-seeded-conformance --workers 1,4 --steps 128 --seed 3735928559 --repetitions 2 --output-dir artifacts/word-seeded-conformance
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -37,3 +51,6 @@ jobs:
             artifacts/tests/
             artifacts/native-coverage/html/
             artifacts/bundles/
+            artifacts/scheduler-conformance/
+            artifacts/word-conformance/
+            artifacts/word-seeded-conformance/

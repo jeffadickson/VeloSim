@@ -184,6 +184,31 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 |173|Expose word report inspection and deterministic replay commands.|
 |174|Save first-mismatch word prefix reproduction with explicit compiler/runtime paths.|
 |175|Validate word report replay and prefix evidence before the local checkpoint.|
+|176|Expose reusable compiled coverage evidence validation for direct regression testing.|
+|177|Validate complete coverage manifest metadata and bound manifest size.|
+|178|Reject mutated reports, changed binaries and incomplete or duplicate object sets.|
+|179|Reject ambiguous duplicate and unknown coverage/source JSON properties.|
+|180|Reject linked evidence/source inputs and verify strict coverage integrity under independent review.|
+|181|Bound report text, aggregate trace rows/values and recorded command evidence before oracle reconstruction.|
+|182|Validate typed word trace dimensions and engine consistency before serialization.|
+|183|Reject contradictory command failures and duplicate or noncanonical engine evidence.|
+|184|Persist explicit incomplete reports for unavailable reference backends.|
+|185|Preserve completed native/reference traces and command evidence when a word run is canceled.|
+|186|Bound checkpoint enumeration while retaining intentional failing expectations as report evidence.|
+|187|Reject occupied and linked word output paths before expensive backend work.|
+|188|Generate deterministic known/four-state stimulus across all strict word operations and NBA history.|
+|189|Run and persist seeded external conformance across five word-width dimensions.|
+|190|Compare repeated full native traces and align generation/inspection evidence budgets under peer review.|
+|191|Normalize compiler-only NativeAOT lock entries while preserving application dependencies and lock metadata.|
+|192|Preserve missing-executable classification with owned Linux process-group launching and controlled CLI numeric overflow.|
+|193|Run native scalar, word-boundary and seeded Icarus conformance in CI with separate coverage thresholds.|
+|194|Update build-property CI triggers, job deadlines and validation artifact collection.|
+|195|Audit active helper languages, Release/Ninja configuration and declared native ABI exports.|
+|196|Complete the final Release/Ninja build and all 163 managed plus four native tests.|
+|197|Generate and verify current-source Coverlet/LLVM coverage with independent line and branch gates.|
+|198|Publish and smoke-test all three Linux-x64 NativeAOT C# tools with four compiler jobs.|
+|199|Validate native benchmark dispatch, actual 64-bit RTL comparison/replay and seeded four-state word replay.|
+|200|Complete independent final reviews, local checkpoint commit and verified native/coverage deliverables.|
 ## Peer reviews and validation
 
 - 010: independent simulation and tooling reviewers inspected the foundation. Fixed scheduler allocation exception ownership, added genuinely parallel native tests, fixed standalone native coverage builds, propagated instrumentation to UHDM tools, included JSON coverage and moved initialization under error handling. Native CTest 2/2 passes; C# build helper compiles without warnings. Core 011–015 focused NUnit 5/5 passes.
@@ -195,11 +220,11 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 
 ## Local commit checkpoints
 
-025 `6a97ab2`: compiled helper foundation and frontend/native C# port, including prior local Surelog fixes. 050 `2072450`;075 `3b31a1d`. 100 `55e9cd6`. 125 `0f26330`. Pending150,175,200.
+025 `6a97ab2`: compiled helper foundation and frontend/native C# port, including prior local Surelog fixes. 050 `2072450`;075 `3b31a1d`. 100 `55e9cd6`. 125 `0f26330`. 150 `fd102e0`;175 `d91f02f`. 200 is the final local commit for this ledger.
 
 ## Full build checkpoints
 
-050 and100 complete; remaining150,200. Full validation includes managed tests, compiled native tests, coverage and NativeAOT publish/smoke where supported. Coverage percentages will be recorded from actual reports, separately for managed and native code.
+050,100,150 and200 complete. Full validation includes managed tests, compiled native tests, coverage and NativeAOT publish/smoke where supported. Coverage percentages will be recorded from actual reports, separately for managed and native code.
 
 050: two independent AI peer reviews completed and findings fixed/confirmed. Full coverage build: NUnit41/41, CTest2/2, managed line90%, native96.3%, combined91%, branch67.5%; report artifacts/coverage/20261020-191133-7245342. NativeAOT1000-cycle actual-RTL three-engine comparison passed. Native publish dispatch uses managed bootstrap to prevent self-overwrite.
 
@@ -240,3 +265,9 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 160: Both reviewers accepted generated strictword SV semantics and provenance; actual52case Icarus matrix workers1/4/8 passes. New10regular capability tests pass; combined146NUnit. 170: Both reviews complete; orphan-descendant issue fixed with owned Linux processgroup and actual cleanup regression. Coverage integrity hardening continuing separately.
 
 175: Two additional independent reviews accept structural wordreport validation, exact provenance replay and first-mismatch prefix reproduction.152combinedNUnit pass; actual502step multiclock word replay across1/4/8workers passes at artifacts/word-replay175. Local175commit follows. Root176–180 coverage integrity changes remain outside this checkpoint commit.
+
+190: Both independent reviewers confirmed aggregate report limits now include oracle/reference/native traces and serialization size.163NUnit pass; actualseeded fivewidthcases×256steps×workers1/4/8 pass, all45 fulltrace repeated checks match. CLI hugeinteger errors are controlled.
+
+200 fullcoverage:163regularNUnit and4nativeCTest pass in Release and LLVM-instrumented runs. Managed(Core+Build)2430/2720=89.338%lines,3336/4725=70.603%branches; native188/189=99.471%lines,291/328=88.720%branches. Combined89.9%line71.7%branch, corealone97.3%line. Strictgatesmanaged80/native95line and60/80branch pass; coverage-current verifies source/report/native/managed binary hashes. artifacts/coverage/20261020-203452-9978053. Both finalpeerreviewsaccepted no blockers, nativepublication/actualAOTchecks complete (see final evidence below).
+
+200 finalnativeevidence: allthreeNativeAOThelpers publishwith --parallelism:4, packagedreset/increment/integrity/benchmarksmokepass. makebenchmark selectsactualELF, dynamic_code_supported=false andoptimizednativekernel; artifacts/benchmarks/20261020-203845-2407346.json passes. Published64-bit1000cycle Surelog-derived VeloSim/Icarus/Verilator comparison and strictreplay pass (artifacts/real200,artifacts/replay200). Publishedseededfivewidthcases256stepsworkers1/4/8repetitions3pass,all45fulltracechecks match;64→8wordreplaypass (artifacts/word-seeded200,artifacts/word-replay200). coverage-currentstillpassesafterNativeAOTpublication. Finalarchive is repackaged against the200localcommit for delivery. No push.

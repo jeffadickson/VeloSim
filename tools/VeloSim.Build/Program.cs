@@ -137,22 +137,8 @@ internal static class Build
         }
         await File.WriteAllTextAsync(Path.Combine(directory, "evidence.json"), System.Text.Encoding.UTF8.GetString(stream.ToArray()) + "\n");
     }
-    private static void VerifyCoverageEvidence(string report)
-    {
-        string directory = Path.GetDirectoryName(report)!;
-        if (Path.GetFileName(report) != "Cobertura.xml") throw new IOException("Current coverage checks require the recorded Cobertura.xml report.");
-        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "evidence.json")));
-        if (document.RootElement.GetProperty("format").GetString() != "velosim.coverage.evidence.v1") throw new IOException("Unsupported coverage evidence.");
-        var expected = new HashSet<string>(["Cobertura.xml", "gate.json", "sources.json", "doctor.json"], StringComparer.Ordinal);
-        foreach (var entry in document.RootElement.GetProperty("reports").EnumerateArray()) { string name = entry.GetProperty("path").GetString()!; if (!expected.Remove(name) || FileDigest(Path.Combine(directory, name)) != entry.GetProperty("sha256").GetString()) throw new IOException("Coverage report evidence mismatch."); }
-        if (expected.Count != 0) throw new IOException("Coverage evidence omits reports.");
-        var native = new HashSet<string>(new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests" }.Select(relative => Path.Combine(NativeCoverage, relative)), StringComparer.Ordinal);
-        foreach (var entry in document.RootElement.GetProperty("native_objects").EnumerateArray()) { string file = entry.GetProperty("path").GetString()!; if (!native.Remove(file) || FileDigest(file) != entry.GetProperty("sha256").GetString()) throw new IOException("Coverage native binaries changed; measure again."); }
-        if (native.Count != 0) throw new IOException("Coverage evidence omits native objects.");
-        var managed = new HashSet<string>(ManagedCoverageObjects(), StringComparer.Ordinal);
-        foreach (var entry in document.RootElement.GetProperty("managed_objects").EnumerateArray()) { string file = entry.GetProperty("path").GetString()!; if (!managed.Remove(file) || FileDigest(file) != entry.GetProperty("sha256").GetString()) throw new IOException("Coverage managed binaries changed; measure again."); }
-        if (managed.Count != 0) throw new IOException("Coverage evidence omits managed objects.");
-    }
+    private static void VerifyCoverageEvidence(string report) => CoverageEvidence.Validate(report,
+        new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests" }.Select(relative => Path.Combine(NativeCoverage, relative)), ManagedCoverageObjects());
     private static IEnumerable<string> ManagedCoverageObjects() => new[] { "VeloSim.dll", "VeloSim.Build.dll", "VeloSim.Tests.dll" }.Select(name => Path.Combine(Root, "tests/VeloSim.Tests/bin/Release/net10.0", name));
     private static string BenchmarkSourceStamp()
     {
@@ -163,31 +149,10 @@ internal static class Build
         foreach (var file in files)
         {
             digest.AppendData(System.Text.Encoding.UTF8.GetBytes(Path.GetRelativePath(Root, file).Replace('\\', '/') + "\n"));
-            digest.AppendData(System.Security.Cryptography.SHA256.HashData(file.EndsWith("packages.lock.json", StringComparison.Ordinal) ? BenchmarkDependencySnapshot(file) : File.ReadAllBytes(file)));
+            digest.AppendData(System.Security.Cryptography.SHA256.HashData(file.EndsWith("packages.lock.json", StringComparison.Ordinal) ? SourceEvidence.DependencySnapshot(file) : File.ReadAllBytes(file)));
         }
         return Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant();
     }
-    private static byte[] BenchmarkDependencySnapshot(string path)
-    {
-        // NativeAOT restore adds compiler-only runtime entries; ordinary build
-        // removes them. Keep application dependency hashes stable across that
-        // restore-mode change while retaining every noncompiler dependency.
-        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(path));
-        using var stream = new MemoryStream();
-        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
-        {
-            writer.WriteStartObject();
-            foreach (var framework in document.RootElement.GetProperty("dependencies").EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
-            {
-                var packages = framework.Value.EnumerateObject().Where(p => p.Name != "Microsoft.DotNet.ILCompiler" && !(p.Name.StartsWith("runtime.", StringComparison.Ordinal) && p.Name.EndsWith(".Microsoft.DotNet.ILCompiler", StringComparison.Ordinal))).OrderBy(p => p.Name, StringComparer.Ordinal).ToArray();
-                if (packages.Length == 0 && framework.Name.Contains('/')) continue;
-                writer.WriteStartObject(framework.Name); foreach (var package in packages) { writer.WritePropertyName(package.Name); package.Value.WriteTo(writer); } writer.WriteEndObject();
-            }
-            writer.WriteEndObject();
-        }
-        return stream.ToArray();
-    }
-
     private static async Task CreateBundle()
     {
         string stage = Path.Combine(Artifacts, "bundles", RunId); Directory.CreateDirectory(stage);

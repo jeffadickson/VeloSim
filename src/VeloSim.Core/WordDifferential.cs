@@ -11,6 +11,7 @@ public sealed record WordDifferentialReport(WordFixture Fixture, IReadOnlyList<W
     {
         get
         {
+            WordReportValidation.Validate(this);
             var differences = new List<WordDifference>();
             void Compare(string name, IReadOnlyList<WordHdlStep> expected, IReadOnlyList<WordHdlStep> actual)
             {
@@ -52,26 +53,44 @@ public sealed record WordDifferentialReport(WordFixture Fixture, IReadOnlyList<W
             w.WriteStartArray("differences"); foreach (var difference in Differences) { w.WriteStartObject(); w.WriteString("comparison", difference.Comparison); w.WriteNumber("step", difference.Step); w.WriteString("signal", difference.Signal); w.WriteString("expected", difference.Expected); w.WriteString("actual", difference.Actual); w.WriteEndObject(); } w.WriteEndArray();
             w.WriteStartObject("toolchain"); w.WriteString("compiler", Toolchain.Compiler); w.WriteString("runtime", Toolchain.Runtime); w.WriteEndObject(); Metadata.Write(w); w.WriteEndObject();
         }
-        return Encoding.UTF8.GetString(stream.ToArray()) + "\n";
+        var json = Encoding.UTF8.GetString(stream.ToArray()) + "\n";
+        if (json.Length > WordEvidenceLimits.MaxReportCharacters) throw new IrValidationException("Word report serialization exceeds text budget; reduce fixture or backend diagnostics.");
+        return json;
     }
 }
 public sealed class WordDifferential(IProcessRunner? runner = null)
 {
     public async Task<WordDifferentialReport> RunAsync(WordFixture fixture, string outputDirectory, string? compiler = null, string? runtime = null, CancellationToken cancellationToken = default)
     {
-        WordSystemVerilog.Validate(fixture); cancellationToken.ThrowIfCancellationRequested(); var directory = Path.GetFullPath(outputDirectory);
-        if (Directory.Exists(directory) && Directory.EnumerateFileSystemEntries(directory).Any()) throw new IOException("Word differential output must be empty."); Directory.CreateDirectory(directory);
-        var input = Path.Combine(directory, "fixture.json"); var ir = Path.Combine(directory, "design.ir.json"); await File.WriteAllTextAsync(input, fixture.ToJson(), cancellationToken).ConfigureAwait(false); await File.WriteAllTextAsync(ir, fixture.Design.ToJson(), cancellationToken).ConfigureAwait(false);
-        var recording = new RecordingProcessRunner(runner ?? new ProcessRunner()); var errors = new Dictionary<string, string>(); var native = new Dictionary<int, IReadOnlyList<WordHdlStep>>(); var oracle = WordHdlTrace.Oracle(fixture, cancellationToken);
+        WordSystemVerilog.Validate(fixture); cancellationToken.ThrowIfCancellationRequested(); var directory = WordEvidenceLimits.FreshOutput(outputDirectory);
+        // Complete the independent oracle before starting a run that promises a report.
+        var oracle = WordHdlTrace.Oracle(fixture, cancellationToken); Directory.CreateDirectory(directory);
+        var input = Path.Combine(directory, "fixture.json"); var ir = Path.Combine(directory, "design.ir.json"); await File.WriteAllTextAsync(input, fixture.ToJson(), CancellationToken.None).ConfigureAwait(false); await File.WriteAllTextAsync(ir, fixture.Design.ToJson(), CancellationToken.None).ConfigureAwait(false);
+        var recording = new RecordingProcessRunner(runner ?? new ProcessRunner()); var errors = new Dictionary<string, string>(); var native = new Dictionary<int, IReadOnlyList<WordHdlStep>>();
+        string Diagnostic(Exception ex) => (ex is System.ComponentModel.Win32Exception or FileNotFoundException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException ? "backend unavailable: " : ex is FormatException ? "malformed backend evidence: " : "backend failed: ") + ex.Message;
         bool Failure(Exception ex) => ex is ArgumentException or IOException or FormatException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException;
-        foreach (var workers in fixture.Workers) { cancellationToken.ThrowIfCancellationRequested(); try { native.Add(workers, WordHdlTrace.Native(fixture, workers, cancellationToken)); } catch (Exception ex) when (Failure(ex)) { errors.Add("native-" + workers, ex.Message); } }
+        void Canceled() => errors.TryAdd("canceled", "Run canceled; completed backend traces and command evidence retained.");
+        foreach (var workers in fixture.Workers)
+        {
+            try { cancellationToken.ThrowIfCancellationRequested(); native.Add(workers, WordHdlTrace.Native(fixture, workers, cancellationToken)); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { Canceled(); break; }
+            catch (Exception ex) when (Failure(ex)) { errors.Add("native-" + workers, Diagnostic(ex)); }
+        }
         var executable = ArtifactMetadata.ResolveExecutable(compiler ?? "iverilog", directory) ?? compiler ?? "iverilog"; var interpreter = ArtifactMetadata.ResolveExecutable(runtime ?? "vvp", directory) ?? runtime ?? "vvp"; IReadOnlyList<WordHdlStep>? reference = null;
-        try { reference = await new WordIcarus(recording).RunAsync(fixture, Path.Combine(directory, "icarus"), executable, interpreter, cancellationToken).ConfigureAwait(false); } catch (Exception ex) when (Failure(ex)) { errors.Add("icarus", ex.Message); }
+        if (!errors.ContainsKey("canceled"))
+            try { reference = await new WordIcarus(recording).RunAsync(fixture, Path.Combine(directory, "icarus"), executable, interpreter, cancellationToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { Canceled(); }
+            catch (Exception ex) when (Failure(ex)) { errors.Add("icarus", Diagnostic(ex)); }
         var versions = new Dictionary<string, string>(); var probe = Path.Combine(Path.GetTempPath(), "velosim-word-version-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(probe);
         try
         {
             foreach (var tool in new[] { executable, interpreter }.Distinct())
-                try { var version = await recording.RunAsync(tool, ["-V"], probe, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false); versions.Add(tool, "exit=" + version.ExitCode + "\n" + version.StandardOutput + "\n" + version.StandardError); } catch (Exception ex) when (Failure(ex)) { versions.Add(tool, "unavailable: " + ex.Message); }
+            {
+                if (errors.ContainsKey("canceled")) break;
+                try { var version = await recording.RunAsync(tool, ["-V"], probe, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false); versions.Add(tool, "exit=" + version.ExitCode + "\n" + version.StandardOutput + "\n" + version.StandardError); }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { Canceled(); break; }
+                catch (Exception ex) when (Failure(ex)) { versions.Add(tool, "unavailable: " + ex.Message); }
+            }
         }
         finally { Directory.Delete(probe, true); }
         FileFingerprint? library = null; if (native.Count > 0) try { library = ArtifactMetadata.Fingerprint(Simulation.NativeLibraryPath); } catch (Exception ex) when (Failure(ex)) { errors.Add("native_metadata", ex.Message); }
@@ -79,7 +98,8 @@ public sealed class WordDifferential(IProcessRunner? runner = null)
         foreach (var name in new[] { "word.sv", "word.vvp" }) { var path = Path.Combine(directory, "icarus", name); if (File.Exists(path)) sources.Add(ArtifactMetadata.Fingerprint(path)); }
         var binaries = recording.Commands.Select(c => ArtifactMetadata.ResolveExecutable(c.Executable, c.WorkingDirectory)).OfType<string>().Distinct().Select(ArtifactMetadata.Fingerprint).ToArray();
         var report = new WordDifferentialReport(fixture, oracle, reference, native, errors, new(sources, library, recording.Commands.ToArray(), versions, binaries), new(executable, interpreter));
-        if (report.FirstMismatchPrefixSteps is not null) await WordReproduction.SavePrefixAsync(report, Path.Combine(directory, "first-mismatch-prefix"), cancellationToken).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(directory, "word-differential-report.json"), report.ToJson(), cancellationToken).ConfigureAwait(false); return report;
+        if (cancellationToken.IsCancellationRequested) Canceled();
+        if (report.FirstMismatchPrefixSteps is not null) await WordReproduction.SavePrefixAsync(report, Path.Combine(directory, "first-mismatch-prefix"), CancellationToken.None).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "word-differential-report.json"), report.ToJson(), CancellationToken.None).ConfigureAwait(false); return report;
     }
 }

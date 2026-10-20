@@ -43,6 +43,7 @@ public class ResourceBoundaryTests
         Assert.That(error.StandardError.Length, Is.EqualTo(16));
         Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () => await runner.RunAsync("/no-such-tool", [], Path.GetTempPath(), TimeSpan.FromDays(2)));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ProcessRunner(0));
+        Assert.ThrowsAsync<System.ComponentModel.Win32Exception>(async () => await runner.RunAsync("/no-such-tool", [], Path.GetTempPath(), TimeSpan.FromSeconds(1)));
     }
     [Test] public void SchedulerBudgetsWholeStateAndWorkerMatrix()
     {

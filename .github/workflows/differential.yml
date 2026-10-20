@@ -11,6 +11,8 @@ on:
       - 'Makefile'
       - 'global.json'
       - 'Directory.Build.props'
+      - 'Directory.Build.targets'
+      - 'NuGet.config'
       - 'VeloSim.slnx'
       - 'coverage.runsettings'
       - 'native/**'

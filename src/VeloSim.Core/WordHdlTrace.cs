@@ -7,6 +7,7 @@ public static class WordHdlTrace
 {
     public static IReadOnlyList<WordHdlStep> Parse(string output, WordFixture fixture)
     {
+        if (output.Length > WordEvidenceLimits.MaxCommandCharacters) throw new FormatException("Word HDL trace exceeds output evidence budget.");
         var rows = output.Split('\n').Select(line => line.TrimEnd('\r')).Where(line => line.StartsWith("VS_WORD", StringComparison.Ordinal)).Select(line => line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToArray(); int next = 0;
         string[] Row() => next < rows.Length ? rows[next++] : throw new FormatException("Incomplete word HDL trace.");
         string N(int n) => n.ToString(CultureInfo.InvariantCulture);

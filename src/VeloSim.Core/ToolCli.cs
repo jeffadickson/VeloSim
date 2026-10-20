@@ -10,7 +10,7 @@ public static class ToolCli
         using var capture = new ErrorCapture(); int result;
         try { cancellationToken.ThrowIfCancellationRequested(); result = await RunCoreAsync(args, output, capture, runner, cancellationToken).ConfigureAwait(false); }
         catch (OperationCanceledException ex) { WriteError(capture, ex); result = 130; }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or OverflowException or IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
         { WriteError(capture, ex); result = 1; }
         if (result == 0) return 0;
         var message = capture.ToString().Trim(); if (message.Length == 0) message = result == 130 ? "Command canceled." : "Command completed with failing results.";
@@ -27,6 +27,25 @@ public static class ToolCli
     private static void WriteError(TextWriter writer, Exception exception) { if (writer is ErrorCapture capture) capture.Cause = exception; writer.WriteLine(exception.Message); }
     private static async Task<int> RunCoreAsync(string[] args, TextWriter output, TextWriter error, IProcessRunner? runner, CancellationToken cancellationToken)
     {
+        if (args.Length > 0 && args[0] == "word-seeded-conformance")
+        {
+            string? destination = null, compiler = null, runtime = null; uint seed = 1; int steps = 128, repetitions = 2; int[] workers = [1, 4]; var seen = new HashSet<string>();
+            for (int i = 1; i < args.Length; i += 2)
+            {
+                if (i + 1 == args.Length || !seen.Add(args[i])) throw new ArgumentException("Incomplete or duplicate seeded word option.");
+                switch (args[i])
+                {
+                    case "--output-dir": destination = args[i + 1]; break; case "--iverilog": compiler = args[i + 1]; break; case "--vvp": runtime = args[i + 1]; break;
+                    case "--seed": seed = uint.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break;
+                    case "--steps": steps = int.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break;
+                    case "--repetitions": repetitions = int.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break;
+                    case "--workers": workers = args[i + 1].Split(',').Select(s => int.Parse(s, NumberStyles.None, CultureInfo.InvariantCulture)).ToArray(); break;
+                    default: throw new ArgumentException("Unknown seeded word option: " + args[i]);
+                }
+            }
+            if (destination is null) throw new ArgumentException("Seeded word output directory required.");
+            var status = await WordSeededConformance.RunAsync(destination, seed, steps, workers, repetitions, runner, compiler, runtime, cancellationToken).ConfigureAwait(false); output.WriteLine(status + " " + Path.Combine(Path.GetFullPath(destination), "word-seeded-conformance-report.json")); return status == "pass" ? 0 : 1;
+        }
         if (args.Length > 0 && args[0] is "word-inspect" or "word-replay" or "word-reduce")
         {
             bool inspect = args[0] == "word-inspect";
