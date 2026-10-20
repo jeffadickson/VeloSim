@@ -13,6 +13,6 @@ public sealed class CompiledRegression(IProcessRunner? runner = null)
         var observed = design.Signals.FirstOrDefault(s => s.Name == manifest.Observed);
         if (observed is null || observed.Initial.Width != manifest.Width) throw new IrValidationException("Observed signal width differs from manifest.");
         var test = new RegressionCase(manifest.Name, design, manifest.Clock, manifest.Observed, manifest.Expected.Count, manifest.Expected, manifest.ActiveLowReset);
-        return new(path, RegressionRunner.Run(test, manifest.WorkerCounts));
+        return new(path, RegressionRunner.Run(test, manifest.WorkerCounts, cancellationToken));
     }
 }

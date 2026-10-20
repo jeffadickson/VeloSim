@@ -4,10 +4,10 @@ JOBS ?= 4
 BUILD_DLL := tools/VeloSim.Build/bin/Release/net10.0/VeloSim.Build.dll
 NATIVE_BUILD_TOOL := artifacts/publish/VeloSim.Build/VeloSim.Build
 BUILD_SOURCES := $(wildcard tools/VeloSim.Build/*.cs tools/VeloSim.Build/*.csproj) Directory.Build.props global.json
-.PHONY: build test coverage native-coverage publish
+.PHONY: build test coverage native-coverage publish doctor coverage-check
 $(BUILD_DLL): $(BUILD_SOURCES)
 	$(DOTNET) build tools/VeloSim.Build -c Release -m:$(JOBS)
-build test coverage native-coverage publish: $(BUILD_DLL)
+build test coverage native-coverage publish doctor coverage-check: $(BUILD_DLL)
 	@use_native=true; for source in $(BUILD_SOURCES); do \
 	  if [ "$$source" -nt "$(NATIVE_BUILD_TOOL)" ]; then use_native=false; fi; done; \
 	if [ "$@" != publish ] && [ -x "$(NATIVE_BUILD_TOOL)" ] && [ "$$use_native" = true ]; then \

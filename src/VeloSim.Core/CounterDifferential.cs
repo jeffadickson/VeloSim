@@ -72,7 +72,7 @@ public sealed class CounterDifferential(IProcessRunner? runner = null)
                 else if (engine == "icarus") results.Add(engine, await new IcarusReference(recording).RunAsync([.. sources, tb], "velosim_reference_tb", Path.Combine(directory, engine), cycles, 8, tools["iverilog"], tools["vvp"], cancellationToken).ConfigureAwait(false));
                 else results.Add(engine, await new VerilatorReference(recording).RunAsync([.. sources, tb], "velosim_reference_tb", Path.Combine(directory, engine), cycles, 8, buildJobs, tools["verilator"], cancellationToken, tools["cmake"], tools["ninja"], tools["c++"]).ConfigureAwait(false));
             }
-            catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException) { errors.Add(engine, ex.Message); }
+            catch (Exception ex) when (ex is IOException or ArgumentException or FormatException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException) { errors.Add(engine, ex.Message); }
         }
         var versions = new Dictionary<string, string>();
         var versionDirectory = Path.Combine(Path.GetTempPath(), "velosim-versions-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(versionDirectory);

@@ -56,6 +56,9 @@
       },
       "velosim": {
         "type": "Project"
+      },
+      "velosim.build": {
+        "type": "Project"
       }
     }
   }

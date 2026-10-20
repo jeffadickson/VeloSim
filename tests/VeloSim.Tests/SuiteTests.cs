@@ -69,7 +69,7 @@ public class SuiteTests
             var suite = Suite(directory); var executor = new Executor();
             Assert.ThrowsAsync<ArgumentException>(async () => await new RegressionSuiteRunner(executor).RunAsync(suite with { JobBudget = 1 }, Path.Combine(directory, "results")));
             Assert.That(executor.Calls, Is.Zero);
-            var manifestPath = suite.Cases[0].ManifestPath; File.WriteAllText(manifestPath, (Case("case0") with { WorkerCounts = [3] }).ToJson());
+            var manifestPath = suite.Cases[0].ManifestPath; File.WriteAllText(manifestPath, (Case("case0") with { WorkerCounts = [5] }).ToJson());
             Assert.ThrowsAsync<ArgumentException>(async () => await new RegressionSuiteRunner(executor).RunAsync(suite, Path.Combine(directory, "results"))); Assert.That(executor.Calls, Is.Zero);
             await Task.CompletedTask;
         }

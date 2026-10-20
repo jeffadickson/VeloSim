@@ -4,11 +4,30 @@ Open-source experimental Verilog/SystemVerilog simulation project.
 
 ## Status
 
-Early research prototype. Native C++ scheduler, Python reference testbench runner, LLVM expression compilation, and cocotb test fixtures are separate experimental components; full SystemVerilog support and a unified native simulator are not yet implemented.
+Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET10 C# helpers validate IR, orchestrate frontends and run regressions. The verified real Surelog/UHDM path supports a restricted synchronous-reset counter, not arbitrary SystemVerilog.
+
+## Build and test
+
+Run in Linux or WSL with .NET10 SDK, CMake, Ninja, and a C++20 compiler:
+
+```sh
+make test JOBS=4
+make coverage JOBS=4
+make publish JOBS=4
+```
+
+Native builds use CMake's Ninja generator and an explicit parallel limit. The Makefile bootstraps a compiled C# build helper and prefers its current NativeAOT executable after publication. The published CLI is `artifacts/publish/VeloSim.Tools/VeloSim.Tools`; native libraries are copied beside it. NativeAOT publication currently targets Linux x64.
+
+Coverlet measures managed C# code under VSTest. LLVM source coverage measures native kernels and JSON escaping separately. ReportGenerator produces an HTML report containing both; native and managed coverage must not be confused. LLVM coverage requires a matching Clang/LLVM installation (`VELOSIM_LLVM_BIN` can select it). Reports are under `artifacts/coverage/` and `artifacts/native-coverage/html/`.
+
+The installed Surelog/UHDM tools are optional for basic IR tests. See [real HDL integration](docs/real_uhdm_gate.md) for the pinned revisions and [development checkpoints](docs/development-iterations.md) for iteration/review evidence. Upstream dependencies retain their own build generators.
 
 ## Project layout
 
-- `src/velosim/` — Python compiler/reference tooling
+- `src/VeloSim.Core/` — compiled C# validation, frontend and native interop library
+- `src/VeloSim.Tools/` — compiled CLI, publishable with NativeAOT
+- `tools/VeloSim.Build/` — compiled build/test/coverage helper
+- `src/velosim/` — historical Python compatibility reference
 - `native/` — C++ simulation and tracing experiments
 - `tests/` — unit and regression tests
 - `verification/cocotb/` — cocotb testbenches
@@ -17,4 +36,6 @@ Early research prototype. Native C++ scheduler, Python reference testbench runne
 - `tools/` — local test and differential runners
 - `.github/workflows/` — CI
 
-This repository is being populated from the tested v0.10 development snapshot. Do not infer feature completeness from directory names.
+Historical Python tests remain available as a reference but are not the active Makefile/CI helper path. Do not infer feature completeness from directory names or test counts.
+
+Run `make doctor JOBS=4` for a compiled tool/version report. `make coverage` validates separate managed/native coverage and writes fingerprinted `gate.json` evidence; optional `VELOSIM_MIN_MANAGED_LINE` and `VELOSIM_MIN_NATIVE_LINE` percentages enforce thresholds. `make coverage-check` rechecks the latest successful report. The build helper also accepts `coverage-check path/to/Cobertura.xml`.

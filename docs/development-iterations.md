@@ -59,6 +59,31 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 |048|Cross-check native scalar operators and edges against independent four-state tables.|
 |049|Execute strict JSON scheduler fixtures through compiled CLI commands.|
 |050|Compare multithread scheduler execution with independent precommit oracle traces.|
+|051|Preserve completed and canceled cases in partial suite reports.|
+|052|Select suite cases through validated include/exclude patterns.|
+|053|Assign stable SHA-based shards and retain selection metadata.|
+|054|Admit cases by aggregate worker weight without exceeding job budget.|
+|055|Return structured JSON CLI errors and cancellation exit130.|
+|056|Evaluate word bitwise operations through independent scalar truth tables.|
+|057|Evaluate increment/reset arithmetic with independent possible-carry sets.|
+|058|Encode canonical binary four-state words with unsigned resize semantics.|
+|059|Model IR edge activation and simultaneous commits independently in C#.|
+|060|Compare native IR traces, activation counts and all signals against the oracle.|
+|061|Load immutable strict IR word fixtures with validated binary drives.|
+|062|Assert explicit checkpoints and report native/oracle mismatches.|
+|063|Expose word conformance through CLI with exclusive report creation.|
+|064|Generate reproducible binary/four-state IR stimulus from a fixed seed.|
+|065|Bound conformance dimensions, memory/work estimates and CLI fixture size.|
+|066|Resolve required build tools explicitly and probe versions with enforced deadlines.|
+|067|Write a compiled build-doctor environment report without exporting environment secrets.|
+|068|Read actual managed/native covered-line denominators separately and reject missing reports.|
+|069|Apply validated optional managed/native line coverage thresholds.|
+|070|Fingerprint measured coverage inputs and integrate gate evidence into Make/build workflows.|
+|071|Validate immutable Surelog elaboration matrix plans and resource dimensions.|
+|072|Elaborate each case/worker combination into fresh isolated artifacts.|
+|073|Record source/tool/UHDM fingerprints, duration and process evidence.|
+|074|Parse strict complete-grid elaboration reports with explicit scope and statuses.|
+|075|Expose compiled matrix execution and inspection with sample configuration.|
 ## Peer reviews and validation
 
 - 010: independent simulation and tooling reviewers inspected the foundation. Fixed scheduler allocation exception ownership, added genuinely parallel native tests, fixed standalone native coverage builds, propagated instrumentation to UHDM tools, included JSON coverage and moved initialization under error handling. Native CTest 2/2 passes; C# build helper compiles without warnings. Core 011–015 focused NUnit 5/5 passes.
@@ -77,3 +102,13 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 Pending 050, 100, 150, 200. Full validation includes managed tests, compiled native tests, coverage and NativeAOT publish/smoke where supported. Coverage percentages will be recorded from actual reports, separately for managed and native code.
 
 050: two independent AI peer reviews completed and findings fixed/confirmed. Full coverage build: NUnit41/41, CTest2/2, managed line90%, native96.3%, combined91%, branch67.5%; report artifacts/coverage/20261020-191133-7245342. NativeAOT1000-cycle actual-RTL three-engine comparison passed. Native publish dispatch uses managed bootstrap to prevent self-overwrite.
+
+050 follow-up evidence: republished NativeAOT CLI replayed the1000-cycle report, inspected fingerprints, and passed scheduler worker matrix1/2/4/8. Both published helpers verified ELF native executables. Optional installed-UHDM tools build through root Ninja; ASan/UBSan native CTest2/2 passes. Commit2072450 is the050 local checkpoint.
+
+060: two independent reviews completed; fixes propagate native loop cancellation, classify malformed reference traces, update weighted-budget regression and CI paths. NUnit53/53 passes. Root066–070 focused diagnostics and coverage gate tests add5;58/58 passes before061–065 lands. Doctor and coverage-check ran successfully against actual050report.
+
+070: both independent reviews completed; required native-file/main-assembly coverage checks fixed and confirmed. Final NUnit63/63 passes. Doctor actualtoolreport and actual050coverage-check pass; malformed XML exits1 with controlled diagnostic. Coverage thresholds are opt-in, with nonempty expected modules always required.
+
+070 CLI smoke: generated1000 seeded four-state drives for real Surelog-derived counter IR; native/oracle/checkpoints pass across1/4/8 workers. The first CLI smoke found an old copied Core DLL; rebuilding the CLI resolved the stale artifact before validation.
+
+075: NUnit68/68 passes; actual Surelog matrix counter/FIFO/multiclock ×workers1/4 all6pass, artifacts/matrix075/matrix.json. Matrix results claim elaboration only. Coverage selection now includes the compiled build-helper assembly as well as core/CLI, so next100report includes this additional denominator.

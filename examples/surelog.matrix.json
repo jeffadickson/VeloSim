@@ -1,0 +1,10 @@
+{
+  "format": "velosim.elaboration.matrix.v1",
+  "name": "surelog-fixtures",
+  "cases": [
+    { "name": "counter", "top": "slang_counter", "sources": ["slang_counter.sv"] },
+    { "name": "fifo", "top": "surelog_fifo", "sources": ["surelog_fifo.sv"] },
+    { "name": "multiclock", "top": "multiclock", "sources": ["multiclock.sv"] }
+  ],
+  "workers": [1, 2, 4, 8]
+}

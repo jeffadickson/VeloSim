@@ -1,39 +1,54 @@
-name: Differential counter regression
+name: Compiled source differential regression
 on:
-  push:
-    paths:
-      - 'tools/differential.py'
-      - 'verification/differential/**'
-      - 'tests/test_differential.py'
-      - 'native/ir/**'
-      - 'src/velosim/native_ir.py'
-      - '.github/workflows/differential.yml'
-  pull_request:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/VeloSim.Core/**'
+      - 'src/VeloSim.Tools/**'
+      - 'tools/VeloSim.Build/**'
+      - 'tests/VeloSim.Tests/**'
+      - 'CMakeLists.txt'
+      - 'Makefile'
+      - 'global.json'
+      - 'Directory.Build.props'
+      - 'VeloSim.slnx'
+      - 'coverage.runsettings'
+      - 'native/**'
+      - 'examples/**'
+      - '.github/workflows/differential.yml'
 jobs:
   differential:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      - name: Install independent reference simulators
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install native build dependencies and independent simulators
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake g++ clang iverilog verilator default-jre-headless uuid-dev zlib1g-dev libssl-dev
+      - name: Build pinned upstream compiler using bounded Ninja
         run: |
-          sudo apt-get update
-          sudo apt-get install -y iverilog verilator g++
-          iverilog -V | head -n 2
-          verilator --version
-      - name: Test harness
-        run: PYTHONPATH=src python3 -m unittest discover -s tests -p test_differential.py -v
-      - name: Compare 1-thread
-        run: PYTHONPATH=src python3 tools/differential.py --seed 42 --cycles 1000 --threads 1 --require-all --report-dir build/diff-1
-      - name: Compare 8-thread
-        run: PYTHONPATH=src python3 tools/differential.py --seed 20261012 --cycles 1000 --threads 8 --require-all --report-dir build/diff-8
+          cmake -S external/Surelog -B artifacts/surelog -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=$PWD/artifacts/toolchain -DSURELOG_BUILD_TESTS=OFF -DUHDM_BUILD_TESTS=OFF -DSURELOG_WITH_TCMALLOC=OFF
+          cmake --build artifacts/surelog --parallel 2
+          cmake --install artifacts/surelog
+          cmake -S . -B artifacts/with-uhdm -G Ninja -DCMAKE_BUILD_TYPE=Release -DVELOSIM_BUILD_UHDM=ON -DCMAKE_PREFIX_PATH=$PWD/artifacts/toolchain
+          cmake --build artifacts/with-uhdm --parallel 4
+      - name: Compile C# helpers and native tools
+        run: make publish JOBS=4
+      - name: Compare actual RTL across three engines and worker configurations
+        env:
+          VELOSIM_SURELOG: ${{ github.workspace }}/artifacts/toolchain/bin/surelog
+          VELOSIM_UHDM_NORMALIZER: ${{ github.workspace }}/artifacts/with-uhdm/bin/velosim-uhdm-normalize
+        run: |
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools differential --top slang_counter --cycles 1000 --threads 1 --build-jobs 4 --output-dir artifacts/diff-1 examples/slang_counter.sv
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools differential --top slang_counter --cycles 1000 --threads 8 --build-jobs 4 --output-dir artifacts/diff-8 examples/slang_counter.sv
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools replay artifacts/diff-8/report.json --output-dir artifacts/diff-replay
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: differential-reports
-          path: build/diff-*/
+          name: source-differential-reports
+          path: artifacts/diff-*/
           if-no-files-found: warn

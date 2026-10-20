@@ -20,11 +20,23 @@ internal static class Build
             Root = FindRoot();
             Jobs = GetJobs();
             string command = args.Length == 0 ? "test" : args[0];
+            if (command == "doctor")
+            {
+                if (args.Length != 1) throw new ArgumentException("usage: VeloSim.Build doctor");
+                string path = Path.Combine(Artifacts, "doctor.json"); await BuildDiagnostics.WriteDoctorAsync(path, Jobs); Console.WriteLine(path); return 0;
+            }
+            if (command == "coverage-check")
+            {
+                if (args.Length > 2) throw new ArgumentException("usage: VeloSim.Build coverage-check [Cobertura.xml]");
+                string path = args.Length == 2 ? Path.GetFullPath(args[1]) : File.ReadAllText(Path.Combine(Artifacts, "coverage", "latest.txt")).Trim();
+                string result = BuildDiagnostics.CheckCoverage(path, BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_MANAGED_LINE")), BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_NATIVE_LINE")));
+                Console.Write(result); return CoveragePassed(result) ? 0 : 1;
+            }
             if (args.Length > 1 || command is not ("build" or "test" or "coverage" or "native-coverage" or "publish" or "help"))
                 throw new ArgumentException("usage: VeloSim.Build [build|test|coverage|native-coverage|publish|help]");
             if (command == "help")
             {
-                Console.WriteLine("VeloSim.Build: build, test, coverage, native-coverage, publish. Set VELOSIM_JOBS=1..256 to bound parallel builds.");
+                Console.WriteLine("VeloSim.Build: build, test, coverage, native-coverage, publish, doctor, coverage-check [Cobertura.xml]. Set VELOSIM_JOBS=1..256 to bound parallel builds.");
                 return 0;
             }
             Console.WriteLine($"VeloSim {command}, Ninja parallel jobs={Jobs}");
@@ -60,15 +72,26 @@ internal static class Build
                 await RunNativeCoverage();
                 await Run("dotnet", ["tool", "restore"]);
                 await Run("dotnet", ["tool", "run", "reportgenerator", $"-reports:{results}/**/coverage.cobertura.xml;{NativeCoverage}/native.lcov", $"-targetdir:{Artifacts}/coverage/{RunId}", "-reporttypes:Html;TextSummary;Cobertura"]);
+                string report = Path.Combine(Artifacts, "coverage", RunId, "Cobertura.xml");
+                string gate = BuildDiagnostics.CheckCoverage(report, BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_MANAGED_LINE")), BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_NATIVE_LINE")));
+                await File.WriteAllTextAsync(Path.Combine(Artifacts, "coverage", RunId, "gate.json"), gate);
+                if (!CoveragePassed(gate)) throw new IOException("Coverage thresholds failed; see gate.json.");
+                await File.WriteAllTextAsync(Path.Combine(Artifacts, "coverage", "latest.txt"), report + "\n");
                 Console.WriteLine($"Coverage report: {Artifacts}/coverage/{RunId}/index.html");
             }
             return 0;
         }
-        catch (Exception error) when (error is IOException or ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException or TimeoutException)
+        catch (Exception error) when (error is IOException or ArgumentException or InvalidOperationException or System.Xml.XmlException or System.ComponentModel.Win32Exception or PlatformNotSupportedException or TimeoutException)
         {
             Console.Error.WriteLine(error.Message);
             return 1;
         }
+    }
+
+    private static bool CoveragePassed(string json)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("status").GetString() == "pass";
     }
 
     private static async Task ConfigureNative(string directory, bool coverage)

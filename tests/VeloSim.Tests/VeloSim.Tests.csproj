@@ -6,5 +6,6 @@
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageReference Include="coverlet.collector" Version="10.1.0" PrivateAssets="all" />
     <ProjectReference Include="../../src/VeloSim.Core/VeloSim.csproj" />
+    <ProjectReference Include="../../tools/VeloSim.Build/VeloSim.Build.csproj" />
   </ItemGroup>
 </Project>

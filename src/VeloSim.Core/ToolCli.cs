@@ -6,6 +6,85 @@ public static class ToolCli
 {
     public static async Task<int> RunAsync(string[] args, TextWriter output, TextWriter error, IProcessRunner? runner = null, CancellationToken cancellationToken = default)
     {
+        var structured = args.Length > 0 && args[0] == "--json-errors"; if (structured) args = args[1..];
+        using var capture = new ErrorCapture(); int result;
+        try { cancellationToken.ThrowIfCancellationRequested(); result = await RunCoreAsync(args, output, capture, runner, cancellationToken).ConfigureAwait(false); }
+        catch (OperationCanceledException ex) { WriteError(capture, ex); result = 130; }
+        catch (Exception ex) when (ex is ArgumentException or FormatException or IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        { WriteError(capture, ex); result = 1; }
+        if (result == 0) return 0;
+        var message = capture.ToString().Trim(); if (message.Length == 0) message = result == 130 ? "Command canceled." : "Command completed with failing results.";
+        if (!structured) { error.WriteLine(message); return result; }
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject(); writer.WriteString("schema", "velosim.cli.error.v1"); writer.WriteString("command", args.FirstOrDefault() ?? ""); writer.WriteNumber("exit_code", result);
+            writer.WriteString("category", result == 130 ? "Canceled" : capture.Cause is null ? "CommandFailure" : RegressionSuiteReport.Classify(capture.Cause).ToString()); writer.WriteString("message", message); writer.WriteEndObject();
+        }
+        error.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray())); return result;
+    }
+    private sealed class ErrorCapture : StringWriter { public Exception? Cause { get; set; } }
+    private static void WriteError(TextWriter writer, Exception exception) { if (writer is ErrorCapture capture) capture.Cause = exception; writer.WriteLine(exception.Message); }
+    private static async Task<int> RunCoreAsync(string[] args, TextWriter output, TextWriter error, IProcessRunner? runner, CancellationToken cancellationToken)
+    {
+        if (args.Length > 0 && args[0] == "matrix-inspect")
+        {
+            if (args.Length != 2) throw new ArgumentException("Usage: matrix-inspect <matrix.json>");
+            var report = ElaborationMatrixReport.Parse(await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false)); output.WriteLine($"{report.Status} runs={report.Records.Count} elaboration-only"); return 0;
+        }
+        if (args.Length > 0 && args[0] == "elaboration-matrix")
+        {
+            string? config = null, root = null, directory = null, surelog = null; int[]? workers = null;
+            for (int i = 1; i < args.Length; i += 2)
+            {
+                if (i + 1 == args.Length) throw new ArgumentException("Incomplete matrix option.");
+                switch (args[i])
+                {
+                    case "--config": config = Path.GetFullPath(args[i + 1]); break; case "--root": root = Path.GetFullPath(args[i + 1]); break; case "--output-dir": directory = args[i + 1]; break; case "--surelog": surelog = args[i + 1]; break;
+                    case "--workers": workers = args[i + 1].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid matrix worker count.")).ToArray(); break;
+                    default: throw new ArgumentException("Unknown matrix option: " + args[i]);
+                }
+            }
+            if (directory is null || config is not null && root is not null) throw new ArgumentException("Matrix requires --output-dir and either --config or --root.");
+            var plan = config is null ? ElaborationMatrixPlan.Default(root ?? Environment.CurrentDirectory, workers) : ElaborationMatrixPlan.Parse(await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false), Path.GetDirectoryName(config)!);
+            if (config is not null && workers is not null) plan = new(plan.Name, plan.Cases, workers);
+            var report = await new ElaborationMatrix(runner).RunAsync(plan, directory, surelog, cancellationToken).ConfigureAwait(false);
+            foreach (var record in report.Records) output.WriteLine($"{record.Status} {record.Case} workers={record.Workers} seconds={record.ElapsedSeconds.ToString("F3", CultureInfo.InvariantCulture)}");
+            output.WriteLine(Path.Combine(Path.GetFullPath(directory), "matrix.json")); return report.Status == "canceled" ? 130 : report.Status == "pass" ? 0 : 1;
+        }
+        if (args.Length > 0 && args[0] is "word-check" or "word-generate")
+        {
+            if (args.Length < 2) throw new ArgumentException("Usage: word-check <fixture.json> [--report PATH] | word-generate <ir.json> --output PATH [--steps N] [--seed N] [--workers 1,4] [--four-state]");
+            if (new FileInfo(args[1]).Length > ConformanceLimits.MaxFixtureCharacters) throw new ArgumentException("Input file exceeds word workflow size limit.");
+            if (args[0] == "word-check")
+            {
+                if (args.Length != 2 && (args.Length != 4 || args[2] != "--report")) throw new ArgumentException("Usage: word-check <fixture.json> [--report PATH]");
+                if (args.Length == 4 && File.Exists(args[3])) throw new IOException("Report already exists.");
+                var fixture = WordFixture.Parse(await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false));
+                var results = WordFixtureRunner.Run(fixture, cancellationToken: cancellationToken); var report = WordFixtureRunner.ReportJson(results);
+                if (args.Length == 2) output.Write(report);
+                else { await WriteNewAsync(args[3], report, cancellationToken).ConfigureAwait(false); output.WriteLine(Path.GetFullPath(args[3])); }
+                return results.All(r => r.Failure is null) ? 0 : 1;
+            }
+            string? destination = null; int steps = 100; uint seed = 42; bool fourState = false; int[] workers = [1];
+            for (int i = 2; i < args.Length; i++)
+            {
+                if (args[i] == "--four-state") { fourState = true; continue; }
+                var option = args[i]; if (++i == args.Length) throw new ArgumentException("Incomplete generation option.");
+                switch (option)
+                {
+                    case "--output": destination = args[i]; break;
+                    case "--steps": if (!int.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out steps)) throw new ArgumentException("Invalid step count."); break;
+                    case "--seed": if (!uint.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out seed)) throw new ArgumentException("Invalid seed."); break;
+                    case "--workers": workers = args[i].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid worker count.")).ToArray(); break;
+                    default: throw new ArgumentException("Unknown generation option: " + option);
+                }
+            }
+            if (destination is null) throw new ArgumentException("Output fixture path required.");
+            var design = IrDesign.Parse(await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false));
+            var generated = IrStimulus.Generate(design, steps, seed, fourState, workers, cancellationToken);
+            await WriteNewAsync(destination, generated.ToJson(), cancellationToken).ConfigureAwait(false); output.WriteLine(Path.GetFullPath(destination)); return 0;
+        }
         if (args.Length > 0 && args[0] is "scheduler" or "scheduler-check")
         {
             try
@@ -23,18 +102,25 @@ public static class ToolCli
                 foreach (var workers in counts) foreach (var step in fixture.Run(workers, cancellationToken)) output.WriteLine($"workers={workers} tick={step.Tick} active={step.ActivatedProcesses} values={step.Values}");
                 return 0;
             }
-            catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException) { error.WriteLine(ex.Message); return 1; }
+            catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException) { WriteError(error, ex); return 1; }
         }
         if (args.Length > 0 && args[0] is "regression" or "suite")
         {
             try
             {
                 if (args.Length < 4) throw new ArgumentException("Usage: regression|suite <manifest.json> --output-dir <directory> [--surelog PATH] [--normalizer PATH]");
-                string? directory = null, surelog = null, normalizer = null;
+                string? directory = null, surelog = null, normalizer = null; string[]? include = null, exclude = null; int shardIndex = 0, shardCount = 1;
                 for (int i = 2; i < args.Length; i += 2)
                 {
                     if (i + 1 == args.Length) throw new ArgumentException("Incomplete option.");
-                    switch (args[i]) { case "--output-dir": directory = args[i + 1]; break; case "--surelog": surelog = args[i + 1]; break; case "--normalizer": normalizer = args[i + 1]; break; default: throw new ArgumentException("Unknown option: " + args[i]); }
+                    switch (args[i])
+                    {
+                        case "--output-dir": directory = args[i + 1]; break; case "--surelog": surelog = args[i + 1]; break; case "--normalizer": normalizer = args[i + 1]; break;
+                        case "--include" when args[0] == "suite": include = args[i + 1].Split(','); break; case "--exclude" when args[0] == "suite": exclude = args[i + 1].Split(','); break;
+                        case "--shard-index" when args[0] == "suite": if (!int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out shardIndex)) throw new ArgumentException("Invalid shard index."); break;
+                        case "--shard-count" when args[0] == "suite": if (!int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out shardCount)) throw new ArgumentException("Invalid shard count."); break;
+                        default: throw new ArgumentException("Unknown option: " + args[i]);
+                    }
                 }
                 if (directory is null) throw new ArgumentException("Output directory required.");
                 var manifestPath = Path.GetFullPath(args[1]); var json = await File.ReadAllTextAsync(manifestPath, cancellationToken).ConfigureAwait(false);
@@ -45,11 +131,11 @@ public static class ToolCli
                     foreach (var r in result.Results) output.WriteLine($"{(r.Mismatch is null ? "pass" : "fail")} {r.Name} workers={r.Workers}" + (r.Mismatch is null ? "" : $" first_mismatch={r.Mismatch.Index}"));
                     return result.Passed ? 0 : 1;
                 }
-                var suite = RegressionSuiteManifest.Parse(json, Path.GetDirectoryName(manifestPath)!);
+                var suite = SuiteSelector.Select(RegressionSuiteManifest.Parse(json, Path.GetDirectoryName(manifestPath)!), include, exclude, shardIndex, shardCount);
                 var report = await new RegressionSuiteRunner(new RegressionExecutor(runner)).RunAsync(suite, directory, surelog, normalizer, cancellationToken).ConfigureAwait(false);
-                output.WriteLine($"{(report.Passed ? "pass" : "fail")} cases={report.Cases.Count} " + Path.Combine(Path.GetFullPath(directory), "suite-report.json")); return report.Passed ? 0 : 1;
+                output.WriteLine($"{report.Status} cases={report.Cases.Count} " + Path.Combine(Path.GetFullPath(directory), "suite-report.json")); return report.Status == "canceled" ? 130 : report.Passed ? 0 : 1;
             }
-            catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException) { error.WriteLine(ex.Message); return 1; }
+            catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException) { WriteError(error, ex); return 1; }
         }
         if (args.Length > 0 && args[0] is "inspect-report" or "replay")
         {
@@ -60,7 +146,7 @@ public static class ToolCli
                 if (args[0] == "inspect-report") { output.WriteLine($"{replay.PreviousStatus} seed={replay.Seed} cycles={replay.Cycles} workers={replay.Workers}"); return 0; }
                 var report = await DifferentialReplay.RunAsync(replay, args[3], runner, cancellationToken).ConfigureAwait(false); output.WriteLine(report.Status); return report.Status == "pass" ? 0 : 1;
             }
-            catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or DllNotFoundException or EntryPointNotFoundException) { error.WriteLine(ex.Message); return 1; }
+            catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or DllNotFoundException or EntryPointNotFoundException) { WriteError(error, ex); return 1; }
         }
         if (args.Length > 0 && args[0] == "differential")
         {
@@ -91,7 +177,7 @@ public static class ToolCli
                 output.WriteLine(report.Status + " " + Path.Combine(Path.GetFullPath(directory), "report.json"));
                 return report.Status == "pass" ? 0 : 1;
             }
-            catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception) { error.WriteLine(ex.Message); return 1; }
+            catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception) { WriteError(error, ex); return 1; }
         }
         if (args.Length > 0 && args[0] is "validate-ir" or "lower")
         {
@@ -115,7 +201,7 @@ public static class ToolCli
                 }
                 return 0;
             }
-            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { error.WriteLine(ex.Message); return 1; }
+            catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { WriteError(error, ex); return 1; }
         }
         if (args.Length == 0 || args[0] != "compile") return Run(args, output, error);
         try
@@ -142,7 +228,12 @@ public static class ToolCli
             return 0;
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
-        { error.WriteLine(ex.Message); return 1; }
+        { WriteError(error, ex); return 1; }
+    }
+    private static async Task WriteNewAsync(string path, string content, CancellationToken cancellationToken)
+    {
+        using var stream = new FileStream(Path.GetFullPath(path), FileMode.CreateNew, FileAccess.Write);
+        using var writer = new StreamWriter(stream); await writer.WriteAsync(content.AsMemory(), cancellationToken).ConfigureAwait(false);
     }
     public static int Run(string[] args, TextWriter output, TextWriter error)
     {
@@ -175,6 +266,6 @@ public static class ToolCli
             return 0;
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or DllNotFoundException or EntryPointNotFoundException)
-        { error.WriteLine(ex.Message); return 1; }
+        { WriteError(error, ex); return 1; }
     }
 }
