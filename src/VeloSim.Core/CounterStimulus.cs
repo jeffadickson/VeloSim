@@ -22,6 +22,7 @@ public static class CounterStimulus
     {
         Validate(resets);
         cancellationToken.ThrowIfCancellationRequested();
+        var contract = CounterDesignContract.Inspect(design);
         foreach (var name in new[] { "clk", "rst_n", "count" }) if (!design.Signals.Any(s => s.Name == name)) throw new ArgumentException("Counter signal missing: " + name);
         if (design.Signals.First(s => s.Name == "clk").Initial.Width != 1 || design.Signals.First(s => s.Name == "rst_n").Initial.Width != 1) throw new ArgumentException("Counter inputs must be scalar.");
         using var sim = new Simulation(design); var samples = new List<TraceSample>();
@@ -31,6 +32,7 @@ public static class CounterStimulus
             sim.Drive(new Dictionary<string, FourStateWord> { ["clk"] = new(1), ["rst_n"] = new(1, (ulong)resets[i]) }, workers);
             sim.Drive(new Dictionary<string, FourStateWord> { ["clk"] = new(1, 1) }, workers);
             var value = sim.Read("count"); var bits = new char[value.Width];
+            if (value.Width != contract.Width) throw new InvalidOperationException("Native observed width differs from counter contract.");
             for (int bit = 0; bit < value.Width; bit++) { var mask = 1UL << bit; bits[value.Width - 1 - bit] = (value.ZMask & mask) != 0 ? 'z' : (value.XMask & mask) != 0 ? 'x' : (value.Value & mask) != 0 ? '1' : '0'; }
             samples.Add(new(i, new(bits)));
         }

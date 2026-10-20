@@ -55,7 +55,7 @@ public class CounterDifferentialTests
     [Test] public void ReportDistinguishesIncompleteMismatchAndTwoStateSemantics()
     {
         var results = new Dictionary<string, IReadOnlyList<TraceSample>> { ["velosim"] = [new(0, "0")], ["icarus"] = [new(0, "1")] };
-        var report = new CounterDifferentialReport(42, 1, 1, ["velosim", "icarus"], results, new Dictionary<string, string>());
+        var report = new CounterDifferentialReport(42, 1, 1, ["velosim", "icarus"], results, new Dictionary<string, string>()) { ObservedWidth = 1 };
         Assert.That(report.Status, Is.EqualTo("fail")); Assert.That(report.Differences["velosim:icarus"].Index, Is.Zero);
         var missing = report with { RequestedEngines = ["velosim", "icarus", "verilator"] }; Assert.That(missing.Status, Is.EqualTo("fail"));
         var incomplete = missing with { Results = new Dictionary<string, IReadOnlyList<TraceSample>> { ["velosim"] = [new(0, "0")] } }; Assert.That(incomplete.Status, Is.EqualTo("incomplete"));

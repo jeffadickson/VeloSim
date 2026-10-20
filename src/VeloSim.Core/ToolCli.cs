@@ -142,8 +142,9 @@ public static class ToolCli
             try
             {
                 if (args[0] == "inspect-report" && args.Length != 2 || args[0] == "replay" && (args.Length != 4 || args[2] != "--output-dir")) throw new ArgumentException("Usage: inspect-report <report.json> | replay <report.json> --output-dir <directory>");
-                var replay = DifferentialReplay.Validate(await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false));
-                if (args[0] == "inspect-report") { output.WriteLine($"{replay.PreviousStatus} seed={replay.Seed} cycles={replay.Cycles} workers={replay.Workers}"); return 0; }
+                var json = await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false);
+                if (args[0] == "inspect-report") { var inspection = DifferentialReportInspector.Inspect(json); output.WriteLine($"{inspection.Status} seed={inspection.Seed} cycles={inspection.Cycles} workers={inspection.Workers}; {inspection.ReplayMessage}"); return 0; }
+                var replay = DifferentialReplay.Validate(json);
                 var report = await DifferentialReplay.RunAsync(replay, args[3], runner, cancellationToken).ConfigureAwait(false); output.WriteLine(report.Status); return report.Status == "pass" ? 0 : 1;
             }
             catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or DllNotFoundException or EntryPointNotFoundException) { WriteError(error, ex); return 1; }

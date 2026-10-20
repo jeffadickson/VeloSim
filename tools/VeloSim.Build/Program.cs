@@ -17,9 +17,19 @@ internal static class Build
     {
         try
         {
+            string command = args.Length == 0 ? "test" : args[0];
+            if (command == "help")
+            {
+                if (args.Length != 1) throw new ArgumentException("usage: VeloSim.Build help");
+                Console.WriteLine("VeloSim.Build: build, test, coverage, native-coverage, publish, bundle, bundle-check <directory>, doctor, coverage-check [Cobertura.xml]. Set VELOSIM_JOBS=1..256."); return 0;
+            }
+            if (command == "bundle-check")
+            {
+                if (args.Length != 2) throw new ArgumentException("usage: VeloSim.Build bundle-check <directory>");
+                NativeBundle.Validate(args[1]); Console.WriteLine("Bundle integrity passes."); return 0;
+            }
             Root = FindRoot();
             Jobs = GetJobs();
-            string command = args.Length == 0 ? "test" : args[0];
             if (command == "doctor")
             {
                 if (args.Length != 1) throw new ArgumentException("usage: VeloSim.Build doctor");
@@ -32,13 +42,8 @@ internal static class Build
                 string result = BuildDiagnostics.CheckCoverage(path, BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_MANAGED_LINE")), BuildDiagnostics.Threshold(Environment.GetEnvironmentVariable("VELOSIM_MIN_NATIVE_LINE")));
                 Console.Write(result); return CoveragePassed(result) ? 0 : 1;
             }
-            if (args.Length > 1 || command is not ("build" or "test" or "coverage" or "native-coverage" or "publish" or "help"))
+            if (args.Length > 1 || command is not ("build" or "test" or "coverage" or "native-coverage" or "publish" or "bundle"))
                 throw new ArgumentException("usage: VeloSim.Build [build|test|coverage|native-coverage|publish|help]");
-            if (command == "help")
-            {
-                Console.WriteLine("VeloSim.Build: build, test, coverage, native-coverage, publish, doctor, coverage-check [Cobertura.xml]. Set VELOSIM_JOBS=1..256 to bound parallel builds.");
-                return 0;
-            }
             Console.WriteLine($"VeloSim {command}, Ninja parallel jobs={Jobs}");
             if (command == "native-coverage")
             {
@@ -48,7 +53,7 @@ internal static class Build
             await ConfigureNative(Native, false);
             await Run("dotnet", ["build", "VeloSim.slnx", "-c", "Release", $"-m:{Jobs}"]);
             if (command == "build") return 0;
-            if (command == "publish")
+            if (command is "publish" or "bundle")
             {
                 if (!OperatingSystem.IsLinux() || System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture != System.Runtime.InteropServices.Architecture.X64)
                     throw new PlatformNotSupportedException("The current native publishing target is linux-x64; run inside WSL Ubuntu.");
@@ -56,6 +61,7 @@ internal static class Build
                     await Run("dotnet", ["publish", project, "-c", "Release", "-r", "linux-x64", "-p:PublishAot=true", "-o", Path.Combine(Artifacts, "publish", Path.GetFileName(project)), $"-m:{Jobs}"]);
                 foreach (string file in Directory.GetFiles(Path.Combine(Native, "lib"), "*.so"))
                     File.Copy(file, Path.Combine(Artifacts, "publish", "VeloSim.Tools", Path.GetFileName(file)), true);
+                if (command == "bundle") await CreateBundle();
                 return 0;
             }
             await Run("ctest", ["--test-dir", Native, "--output-on-failure", "--parallel", Jobs.ToString(CultureInfo.InvariantCulture)]);
@@ -81,7 +87,7 @@ internal static class Build
             }
             return 0;
         }
-        catch (Exception error) when (error is IOException or ArgumentException or InvalidOperationException or System.Xml.XmlException or System.ComponentModel.Win32Exception or PlatformNotSupportedException or TimeoutException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException or System.Text.Json.JsonException or System.Xml.XmlException or System.ComponentModel.Win32Exception or PlatformNotSupportedException or TimeoutException)
         {
             Console.Error.WriteLine(error.Message);
             return 1;
@@ -94,15 +100,53 @@ internal static class Build
         return document.RootElement.GetProperty("status").GetString() == "pass";
     }
 
+    private static async Task CreateBundle()
+    {
+        string stage = Path.Combine(Artifacts, "bundles", RunId); Directory.CreateDirectory(stage);
+        string install = Path.Combine(stage, "install");
+        await Run("cmake", ["--install", Native, "--prefix", install]);
+        string revision = Path.Combine(stage, "revision.txt"), dirty = Path.Combine(stage, "dirty.txt");
+        await Run("git", ["rev-parse", "HEAD"], output: revision);
+        await Run("git", ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=dirty"], output: dirty);
+        string doctor = Path.Combine(stage, "doctor.json"); await BuildDiagnostics.WriteDoctorAsync(doctor, Jobs);
+        string readme = Path.Combine(stage, "README.txt");
+        await File.WriteAllTextAsync(readme, "VeloSim compiled tools for Linux x64 / WSL.\nRun ./VeloSim.Tools simulate examples/counter.ir.json --cycles 10 --release-reset\nRun ./VeloSim.Build bundle-check . to verify all files.\nThe example IR was generated from examples/slang_counter.sv through the pinned Surelog/UHDM pipeline.\nC++ runtime and standard Linux system libraries are required. Build commands require a source checkout and SDK; simulation does not require the .NET runtime.\n");
+        var inputs = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["VeloSim.Tools"] = Path.Combine(Artifacts, "publish", "VeloSim.Tools", "VeloSim.Tools"),
+            ["VeloSim.Build"] = Path.Combine(Artifacts, "publish", "VeloSim.Build", "VeloSim.Build"),
+            ["libvelosim_ir.so"] = Path.Combine(install, "lib", "libvelosim_ir.so"),
+            ["libvelosim_scheduler.so"] = Path.Combine(install, "lib", "libvelosim_scheduler.so"),
+            ["include/velosim.h"] = Path.Combine(install, "include", "velosim.h"),
+            ["examples/counter.ir.json"] = Path.Combine(Root, "examples", "counter.ir.json"),
+            ["README.txt"] = readme, ["doctor.json"] = doctor
+        };
+        string license = Path.Combine(Root, "LICENSE"); if (File.Exists(license)) inputs.Add("LICENSE", license);
+        string metadata = $"source_revision={File.ReadAllText(revision).Trim()}\nsource_tree_dirty={new FileInfo(dirty).Length > 0}\njobs={Jobs}\n" +
+            string.Join('\n', File.ReadLines(Path.Combine(Native, "CMakeCache.txt")).Where(line => line.StartsWith("CMAKE_BUILD_TYPE:", StringComparison.Ordinal) || line.StartsWith("CMAKE_GENERATOR:", StringComparison.Ordinal) || line.StartsWith("CMAKE_C_COMPILER:", StringComparison.Ordinal) || line.StartsWith("CMAKE_CXX_COMPILER:", StringComparison.Ordinal)));
+        string bundle = Path.Combine(stage, "velosim-linux-x64");
+        NativeBundle.Create(bundle, inputs, File.ReadAllText(revision).Trim(), metadata);
+        string smoke = Path.Combine(stage, "simulation-smoke.txt");
+        await Run(Path.Combine(bundle, "VeloSim.Tools"), ["simulate", "examples/counter.ir.json", "--cycles", "3", "--release-reset"], nativeDirectory: bundle, workingDirectory: bundle, output: smoke);
+        if (File.ReadAllText(smoke).Replace("\r\n", "\n", StringComparison.Ordinal).Trim() != "cycle 1 count=(8,0,0,0) rst_n=(1,0,0,0)\ncycle 2 count=(8,1,0,0) rst_n=(1,1,0,0)\ncycle 3 count=(8,2,0,0) rst_n=(1,1,0,0)") throw new IOException("Packaged native simulation smoke trace differs from expected reset/increment values.");
+        await Run(Path.Combine(bundle, "VeloSim.Build"), ["help"], workingDirectory: bundle);
+        await Run(Path.Combine(bundle, "VeloSim.Build"), ["bundle-check", "."], workingDirectory: bundle);
+        string archive = Path.Combine(stage, "velosim-linux-x64.tar.gz"); NativeBundle.Archive(bundle, archive);
+        await File.WriteAllTextAsync(Path.Combine(Artifacts, "bundles", "latest.txt"), archive + "\n"); Console.WriteLine("Native bundle: " + archive);
+    }
+
     private static async Task ConfigureNative(string directory, bool coverage)
     {
-        var arguments = new List<string> { "-S", Root, "-B", directory, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Debug", $"-DVELOSIM_COVERAGE={(coverage ? "ON" : "OFF")}" };
+        var arguments = new List<string> { "-S", Root, "-B", directory, "-G", "Ninja", $"-DCMAKE_BUILD_TYPE={(coverage ? "Debug" : "Release")}", $"-DVELOSIM_COVERAGE={(coverage ? "ON" : "OFF")}" };
         if (coverage)
         {
             string cov = Llvm("llvm-cov");
             string compiler = Path.IsPathRooted(cov) ? Path.Combine(Path.GetDirectoryName(cov)!, "clang++") : "clang++";
             if (Path.IsPathRooted(compiler) && !File.Exists(compiler)) throw new IOException($"Matching Clang compiler missing: {compiler}");
             arguments.Add($"-DCMAKE_CXX_COMPILER={compiler}");
+            string cCompiler = Path.IsPathRooted(compiler) ? Path.Combine(Path.GetDirectoryName(compiler)!, "clang") : "clang";
+            if (Path.IsPathRooted(cCompiler) && !File.Exists(cCompiler)) throw new IOException($"Matching Clang C compiler missing: {cCompiler}");
+            arguments.Add($"-DCMAKE_C_COMPILER={cCompiler}");
         }
         await Run("cmake", arguments);
         // Changing compilers can make CMake discard user cache options during
@@ -130,9 +174,10 @@ internal static class Build
         string merged = Path.Combine(profiles, "merged.profdata");
         await Run(Llvm("llvm-profdata"), new[] { "merge", "-sparse", "-o", merged }.Concat(raw));
         string executable = Path.Combine(NativeCoverage, "bin", "velosim_native_tests");
-        string[] objects = ["-object", Path.Combine(NativeCoverage, "lib", "libvelosim_ir.so"), "-object", Path.Combine(NativeCoverage, "lib", "libvelosim_scheduler.so"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_json_tests")];
-        await Run(Llvm("llvm-cov"), new[] { "export", executable, "-format=lcov", $"-instr-profile={merged}", "-ignore-filename-regex=/tests/|/external/" }.Concat(objects), output: Path.Combine(NativeCoverage, "native.lcov"));
-        await Run(Llvm("llvm-cov"), new[] { "show", executable, "-format=html", $"-instr-profile={merged}", $"-output-dir={NativeCoverage}/html", "-ignore-filename-regex=/tests/|/external/" }.Concat(objects));
+        string[] objects = ["-object", Path.Combine(NativeCoverage, "lib", "libvelosim_ir.so"), "-object", Path.Combine(NativeCoverage, "lib", "libvelosim_scheduler.so"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_json_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_c_abi_tests")];
+        var localCoverage = new Dictionary<string, string> { ["DEBUGINFOD_URLS"] = "" };
+        await Run(Llvm("llvm-cov"), new[] { "export", executable, "--debuginfod=false", "--check-binary-ids", "-format=lcov", $"-instr-profile={merged}", "-ignore-filename-regex=/tests/|/external/" }.Concat(objects), environment: localCoverage, output: Path.Combine(NativeCoverage, "native.lcov"));
+        await Run(Llvm("llvm-cov"), new[] { "show", executable, "--debuginfod=false", "--check-binary-ids", "-format=html", $"-instr-profile={merged}", $"-output-dir={NativeCoverage}/html", "-ignore-filename-regex=/tests/|/external/" }.Concat(objects), environment: localCoverage);
     }
 
     private static string Llvm(string tool)
@@ -142,9 +187,9 @@ internal static class Build
         return File.Exists($"/usr/lib/llvm-18/bin/{tool}") ? $"/usr/lib/llvm-18/bin/{tool}" : tool;
     }
 
-    private static async Task Run(string executable, IEnumerable<string> arguments, string? nativeDirectory = null, Dictionary<string, string>? environment = null, string? output = null)
+    private static async Task Run(string executable, IEnumerable<string> arguments, string? nativeDirectory = null, Dictionary<string, string>? environment = null, string? output = null, string? workingDirectory = null)
     {
-        var start = new ProcessStartInfo(executable) { WorkingDirectory = Root, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        var start = new ProcessStartInfo(executable) { WorkingDirectory = workingDirectory ?? Root, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (string argument in arguments) start.ArgumentList.Add(argument);
         if (nativeDirectory != null)
         {

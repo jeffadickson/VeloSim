@@ -19,10 +19,11 @@ public static class DifferentialReplay
         try
         {
             using var document = JsonDocument.Parse(json); var root = document.RootElement;
-            JsonShape.Fields(root, ["schema", "status", "velosim_source_mode", "verilator_semantics", "seed", "cycles", "workers", "reduction_kind", "first_mismatch_prefix_cycles", "requested_engines", "results", "errors", "differences", "metadata", "configuration"]);
-            if (root.GetProperty("schema").GetString() != "velosim.diff.v2" || root.GetProperty("velosim_source_mode").GetString() != "surelog_hdl_compilation") throw new IrValidationException("Unsupported differential report.");
+            JsonShape.Fields(root, ["schema", "status", "velosim_source_mode", "verilator_semantics", "seed", "cycles", "workers", "reduction_kind", "first_mismatch_prefix_cycles", "requested_engines", "results", "errors", "differences", "metadata", "configuration", "observed_width", "ir_artifact", "counter_specification", "failure_stages"]);
+            if (root.GetProperty("schema").GetString() != "velosim.diff.v3" || root.GetProperty("velosim_source_mode").GetString() != "surelog_hdl_compilation") throw new IrValidationException("Unsupported differential report; width-aware replay requires velosim.diff.v3.");
             if (root.GetProperty("verilator_semantics").GetString() != "two_state_reference_not_four_state_conformance" || root.GetProperty("reduction_kind").GetString() != "first_mismatch_prefix_not_general_delta_debugging") throw new IrValidationException("Invalid semantic or reduction label.");
             var seed = root.GetProperty("seed").GetUInt32(); var cycles = root.GetProperty("cycles").GetInt32(); var workers = root.GetProperty("workers").GetInt32();
+            var width = root.GetProperty("observed_width").GetInt32(); if (width is < 1 or > 64) throw new IrValidationException("Unsupported replay width.");
             if (cycles is < 1 or > 10_000_000 || workers is < 1 or > 256) throw new IrValidationException("Invalid replay limits.");
             var engines = root.GetProperty("requested_engines").EnumerateArray().Select(e => e.GetString()!).ToArray();
             if (engines.Length < 2 || !engines.Contains("velosim") || engines.Distinct().Count() != engines.Length || engines.Any(e => e is not ("velosim" or "icarus" or "verilator"))) throw new IrValidationException("Invalid replay engines.");
@@ -32,7 +33,7 @@ public static class DifferentialReplay
             if (surelog is null || normalizer is null || !Path.IsPathRooted(surelog) || !Path.IsPathRooted(normalizer)) throw new IrValidationException("Replay requires effective absolute frontend tool paths.");
             var sources = configuration.GetProperty("sources").EnumerateArray().Select(e => e.GetString()!).ToArray();
             if (jobs is < 1 or > 256 || sources.Length == 0 || sources.Any(s => !Path.IsPathRooted(s))) throw new IrValidationException("Invalid replay source configuration.");
-            CounterTestbench.Generate(top, 8, [0]);
+            CounterTestbench.Generate(top, width, [0]);
             var metadata = root.GetProperty("metadata"); JsonShape.Fields(metadata, ["source_hash_scope", "sources", "native_library", "tool_versions", "tool_binaries", "commands"]);
             if (metadata.GetProperty("source_hash_scope").GetString() != "explicit_sources_and_recursive_literal_relative_includes") throw new IrValidationException("Unsupported source hash scope.");
             var fingerprinted = new HashSet<string>(StringComparer.Ordinal);
@@ -42,11 +43,14 @@ public static class DifferentialReplay
                 if (!Path.IsPathRooted(path) || !string.Equals(ArtifactMetadata.Fingerprint(path).Sha256, hash, StringComparison.Ordinal)) throw new IOException("Replay file changed: " + path);
                 fingerprinted.Add(path);
             }
+            var irArtifact = root.GetProperty("ir_artifact"); Check(irArtifact);
+            var irPath = irArtifact.GetProperty("path").GetString()!;
+            if (CounterDesignContract.Inspect(IrDesign.Parse(File.ReadAllText(irPath))).Width != width) throw new IrValidationException("Replay width differs from compiled IR artifact.");
             foreach (var source in metadata.GetProperty("sources").EnumerateArray()) Check(source);
             var stimulusFiles = fingerprinted.Where(p => Path.GetFileName(p) == "stimulus.txt").ToArray();
             var testbenchFiles = fingerprinted.Where(p => Path.GetFileName(p) == "reference.sv").ToArray();
             var resets = CounterStimulus.Create(seed, cycles);
-            if (stimulusFiles.Length != 1 || File.ReadAllText(stimulusFiles[0]) != CounterStimulus.ToText(resets) || testbenchFiles.Length != 1 || File.ReadAllText(testbenchFiles[0]) != CounterTestbench.Generate(top, 8, resets)) throw new IrValidationException("Replay stimulus or testbench differs from configuration.");
+            if (stimulusFiles.Length != 1 || File.ReadAllText(stimulusFiles[0]) != CounterStimulus.ToText(resets) || testbenchFiles.Length != 1 || File.ReadAllText(testbenchFiles[0]) != CounterTestbench.Generate(top, width, resets)) throw new IrValidationException("Replay stimulus or testbench differs from configuration.");
             foreach (var source in sources) if (!fingerprinted.Contains(source)) throw new IrValidationException("Replay source lacks fingerprint: " + source);
             foreach (var source in ArtifactMetadata.SourceClosure(sources)) if (!fingerprinted.Contains(source.Path)) throw new IrValidationException("Replay include lacks fingerprint: " + source.Path);
             if (metadata.GetProperty("native_library").ValueKind != JsonValueKind.Object) throw new IrValidationException("Replay requires native library fingerprint.");
@@ -78,12 +82,18 @@ public static class DifferentialReplay
                 if (!engines.Contains(engine.Name) || !resultNames.Add(engine.Name)) throw new IrValidationException("Invalid replay result engine.");
                 var rows = engine.Value.EnumerateArray().Select(e => e.GetString()!).ToArray();
                 if (rows.Length != cycles) throw new IrValidationException("Replay result length mismatch.");
-                TraceComparison.Parse(string.Join('\n', rows.Select((r, i) => $"{i} {r}")), 8);
+                TraceComparison.Parse(string.Join('\n', rows.Select((r, i) => $"{i} {r}")), width);
             }
             var status = root.GetProperty("status").GetString(); if (status is not ("pass" or "fail" or "incomplete")) throw new IrValidationException("Invalid report status.");
             var traces = root.GetProperty("results").EnumerateObject().ToDictionary(e => e.Name, e => (IReadOnlyList<TraceSample>)e.Value.EnumerateArray().Select((row, i) => new TraceSample(i, row.GetString()!)).ToArray());
             var errors = root.GetProperty("errors").EnumerateObject().ToDictionary(e => e.Name, e => e.Value.GetString()!);
-            var computed = new CounterDifferentialReport(seed, cycles, workers, engines, traces, errors);
+            var expectedSpecification = CounterSpecification.Generate(resets, width);
+            var recordedSpecification = root.GetProperty("counter_specification").EnumerateArray().Select((e, i) => new TraceSample(i, e.GetString()!)).ToArray();
+            if (!expectedSpecification.SequenceEqual(recordedSpecification)) throw new IrValidationException("Recorded counter specification differs from seed and observed width.");
+            var stages = root.GetProperty("failure_stages").EnumerateObject().ToDictionary(e => e.Name, e => e.Value.GetString()!);
+            if (stages.Any(s => !errors.ContainsKey(s.Key) || s.Value is not ("frontend_compilation" or "counter_contract" or "native_execution" or "dependency_skipped" or "reference_trace" or "reference_execution"))) throw new IrValidationException("Invalid failure stage evidence.");
+            var computed = new CounterDifferentialReport(seed, cycles, workers, engines, traces, errors) { ObservedWidth = width, Specification = expectedSpecification };
+            computed.ValidateTraceShape();
             if (computed.Status != status || (root.GetProperty("first_mismatch_prefix_cycles").ValueKind == JsonValueKind.Null ? (int?)null : root.GetProperty("first_mismatch_prefix_cycles").GetInt32()) != computed.FirstMismatchPrefixCycles) throw new IrValidationException("Report summary disagrees with recorded traces.");
             var differences = new Dictionary<string, TraceMismatch>();
             foreach (var entry in root.GetProperty("differences").EnumerateArray())

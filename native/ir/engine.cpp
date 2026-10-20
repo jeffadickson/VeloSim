@@ -59,6 +59,8 @@ Word compute(const Proc& p,const std::vector<Word>& sig){
 }
 }
 extern "C" {
+uint32_t vs_ir_abi_version() noexcept {return 1;}
+uint64_t vs_ir_ticks(void* p) noexcept {return p?static_cast<Engine*>(p)->time:0;}
 void* vs_ir_new() noexcept {try{return new Engine;}catch(...){return nullptr;}}
 void vs_ir_free(void* p) noexcept {delete static_cast<Engine*>(p);}
 int vs_ir_signal(void* p,uint32_t width,uint64_t value,uint64_t xmask,uint64_t zmask) noexcept {

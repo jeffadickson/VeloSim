@@ -15,6 +15,7 @@ public static class IrConformance
             {
                 cancellationToken.ThrowIfCancellationRequested(); var expectedActive = oracle.Drive(drives[step]); var active = native.Drive(drives[step], count); completed++;
                 if (active != expectedActive) mismatch = new(step, "", null, null, expectedActive, active);
+                if (native.Ticks != oracle.Ticks) mismatch ??= new(step, "$ticks", new FourStateWord(64, oracle.Ticks), new FourStateWord(64, native.Ticks), expectedActive, active);
                 foreach (var signal in design.Signals)
                 {
                     var expected = oracle.Read(signal.Name); var actual = native.Read(signal.Name);

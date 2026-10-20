@@ -2,7 +2,7 @@
 
 Requested: 200 substantive engineering iterations; independent simulation and tooling AI peer reviews every 10; local commits every 25; full builds/tests every 50. Focused compilation/tests also run when needed to validate changes. A parameterized test row is not counted as an iteration. No push is authorized in this cycle.
 
-The previous uncommitted Surelog integration fixes are preserved in the first local checkpoint. Historical Python stays as a compatibility reference; active helper commands are being ported to compiled C#.
+The previous uncommitted Surelog integration fixes are preserved in the first local checkpoint. Historical Python sources are archived under historical/python; active helper commands use compiled C#.
 
 ## Implemented iterations
 
@@ -84,6 +84,31 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 |073|Record source/tool/UHDM fingerprints, duration and process evidence.|
 |074|Parse strict complete-grid elaboration reports with explicit scope and statuses.|
 |075|Expose compiled matrix execution and inspection with sample configuration.|
+|076|Archive historical Python sources outside active C# helper/test folders.|
+|077|Version native ABIs and reject missing/incompatible modules before engine allocation.|
+|078|Expose native IR ticks and compare oracle/native transition counts.|
+|079|Hide implementation symbols while exporting the declared C ABI.|
+|080|Compile and run a C11 consumer against both native libraries.|
+|081|Infer and validate supported counter widths1..64 from lowered IR.|
+|082|Compile RTL first and gate reference execution on a valid counter contract.|
+|083|Generate width-aware testbenches with runtime DUT port-width assertions.|
+|084|Negotiate reference trace widths explicitly and reject inconsistent output.|
+|085|Compare every engine against an independent counter/reset/rollover specification.|
+|086|Version width-aware differential reports with shape and specification validation.|
+|087|Bind replay width and specification to the fingerprinted compiled IR.|
+|088|Record frontend/contract/native/reference/dependency failure stages.|
+|089|Verify expected HDL semantic rejections without masking setup/tool failures.|
+|090|Run declared-width counter matrices with per-case evidence and ordered index.|
+|091|Build regular native kernels in Release while retaining Debug coverage instrumentation.|
+|092|Stage native libraries and C headers through CMake installation.|
+|093|Assemble a Linux-x64 native helper/library/example bundle.|
+|094|Record exact file sizes, hashes and executable modes in versioned bundle manifests.|
+|095|Validate bundle completeness, integrity, paths, links and resource limits.|
+|096|Expose standalone compiled bundle integrity checks.|
+|097|Make build-helper help usable outside a source checkout.|
+|098|Create validated compressed tar archives preserving native executable permissions.|
+|099|Include source revision/dirty state, compiler/generator settings and tool diagnostics.|
+|100|Integrate Make bundle orchestration and isolated native execution smoke checks.|
 ## Peer reviews and validation
 
 - 010: independent simulation and tooling reviewers inspected the foundation. Fixed scheduler allocation exception ownership, added genuinely parallel native tests, fixed standalone native coverage builds, propagated instrumentation to UHDM tools, included JSON coverage and moved initialization under error handling. Native CTest 2/2 passes; C# build helper compiles without warnings. Core 011–015 focused NUnit 5/5 passes.
@@ -95,11 +120,11 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 
 ## Local commit checkpoints
 
-025 `6a97ab2`: compiled helper foundation and frontend/native C# port, including prior local Surelog fixes. Pending050,075,100,125,150,175,200.
+025 `6a97ab2`: compiled helper foundation and frontend/native C# port, including prior local Surelog fixes. 050 `2072450`;075 `3b31a1d`. Pending100,125,150,175,200.
 
 ## Full build checkpoints
 
-Pending 050, 100, 150, 200. Full validation includes managed tests, compiled native tests, coverage and NativeAOT publish/smoke where supported. Coverage percentages will be recorded from actual reports, separately for managed and native code.
+050 complete;100 validation underway; remaining150,200. Full validation includes managed tests, compiled native tests, coverage and NativeAOT publish/smoke where supported. Coverage percentages will be recorded from actual reports, separately for managed and native code.
 
 050: two independent AI peer reviews completed and findings fixed/confirmed. Full coverage build: NUnit41/41, CTest2/2, managed line90%, native96.3%, combined91%, branch67.5%; report artifacts/coverage/20261020-191133-7245342. NativeAOT1000-cycle actual-RTL three-engine comparison passed. Native publish dispatch uses managed bootstrap to prevent self-overwrite.
 
@@ -112,3 +137,13 @@ Pending 050, 100, 150, 200. Full validation includes managed tests, compiled nat
 070 CLI smoke: generated1000 seeded four-state drives for real Surelog-derived counter IR; native/oracle/checkpoints pass across1/4/8 workers. The first CLI smoke found an old copied Core DLL; rebuilding the CLI resolved the stale artifact before validation.
 
 075: NUnit68/68 passes; actual Surelog matrix counter/FIFO/multiclock ×workers1/4 all6pass, artifacts/matrix075/matrix.json. Matrix results claim elaboration only. Coverage selection now includes the compiled build-helper assembly as well as core/CLI, so next100report includes this additional denominator.
+
+075 localcommit3b31a1d. 080 focusedbuild:69NUnit/3CTestpass. Nativecoverage compiler selection now explicitlymatches Clang forC andC++ after introducing the Cconsumer. Both080peerreviews completed; matrixexecutablebinding/version-probecancellation findings beingfixed before090.
+
+080 evidence: LLVM native coverage completes with matching Clang18 C/C++ (69 NUnit/3CTest). ABI999 negative CLI returns controlled BackendUnavailable/exit1. Export inspection confirms only declared C ABI functions on Linux.
+
+090 implementation: combined85NUnitpasses, real100cycle16/64-bit three-engine runs pass with4workers/4Ninjajobs; three expected realHDL rejection cases pass. Rootbundle5focusedtests pass; final100validationpendingreviews.
+
+100 fullcoverage:86regularNUnit/3nativeCTest pass. Report artifacts/coverage/20261020-193947-4151949: combined87.7% lines/69.1%branches; managed(Core+Build)86.8%, core96.7%, native98.2%. Including build-helper code adds denominator; CLI bootstrap is not directly measured. LLVM missing C-test binary triggered external debug lookup; fixed by including every instrumented object, disabling debuginfod and requiring all profile binary IDs to resolve locally. New fullcoverage passes without lookup.
+
+100 NativeAOTbundle success: artifacts/bundles/20261020-194012-4322870/velosim-linux-x64.tar.gz. Packaged CLI exactreset/increment trace and standaloneBuildhelp/bundle-check pass withbundlelibraries explicitlyselected. ASan/UBSan nativeCTest3/3 passes. Optionalactual16-bit1000cycleAOTcomparison/replay running;86NUnit/3CTestfullbuild,coverageandnativepublicationcomplete.

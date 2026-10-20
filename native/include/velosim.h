@@ -11,6 +11,9 @@ extern "C" {
 #else
 #define VS_NOEXCEPT
 #endif
+VS_API uint32_t vs_ir_abi_version(void) VS_NOEXCEPT;
+VS_API uint32_t vs_sched_abi_version(void) VS_NOEXCEPT;
+VS_API uint64_t vs_ir_ticks(void*) VS_NOEXCEPT;
 VS_API void* vs_ir_new(void) VS_NOEXCEPT;
 VS_API void vs_ir_free(void*) VS_NOEXCEPT;
 VS_API int vs_ir_signal(void*,uint32_t,uint64_t,uint64_t,uint64_t) VS_NOEXCEPT;

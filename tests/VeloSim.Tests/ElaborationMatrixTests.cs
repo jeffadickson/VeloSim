@@ -72,6 +72,7 @@ public class ElaborationMatrixTests
             var node = JsonNode.Parse(json)!; node["status"] = "fail"; Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
             node = JsonNode.Parse(json)!; node["records"]!.AsArray().RemoveAt(0); Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
             node = JsonNode.Parse(json)!; node["records"]![0]!["sources"]![0]!["sha256"] = null; Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
+            node = JsonNode.Parse(json)!; node["records"]![0]!["commands"]![0]!["executable"] = "/bin/false"; Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -84,6 +85,21 @@ public class ElaborationMatrixTests
             Assert.That(await ToolCli.RunAsync(["elaboration-matrix", "--config", config, "--output-dir", output, "--workers", "1", "--surelog", "/bin/true"], text, error, new MatrixRunner()), Is.Zero, error.ToString());
             Assert.That(ElaborationMatrixReport.Parse(File.ReadAllText(Path.Combine(output, "matrix.json"))).Records.Count, Is.EqualTo(2));
             Assert.That(await ToolCli.RunAsync(["matrix-inspect", Path.Combine(output, "matrix.json")], text, error), Is.Zero); Assert.That(text.ToString(), Does.Contain("pass runs=2 elaboration-only"));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+    private sealed class VersionCancellation(CancellationTokenSource cancellation) : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(string executable, IReadOnlyList<string> arguments, string workingDirectory, TimeSpan timeout, CancellationToken cancellationToken = default) { cancellation.Cancel(); cancellationToken.ThrowIfCancellationRequested(); throw new AssertionException("Cancellation expected."); }
+    }
+    [Test] public async Task VersionProbeCancellationPersistsAllCanceledMatrixRows()
+    {
+        var directory = Temp();
+        try
+        {
+            using var canceled = new CancellationTokenSource(); var output = Path.Combine(directory, "results");
+            var report = await new ElaborationMatrix(new VersionCancellation(canceled)).RunAsync(Plan(directory), output, "/bin/true", canceled.Token);
+            Assert.That(report.Status, Is.EqualTo("canceled")); Assert.That(report.Records.Count, Is.EqualTo(4)); Assert.That(report.Records.All(r => r.Status == "canceled"), Is.True); Assert.That(File.Exists(Path.Combine(output, "matrix.json")), Is.True);
         }
         finally { Directory.Delete(directory, true); }
     }

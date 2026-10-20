@@ -19,6 +19,7 @@ public sealed class ElaborationMatrix(IProcessRunner? runner = null)
         try
         {
             try { var result = await runner.RunAsync(executable, ["--version"], versionDirectory, TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false); version = $"exit={result.ExitCode}\n{result.StandardOutput}\n{result.StandardError}"; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { version = "canceled during version probe"; }
             catch (Exception ex) when (ex is IOException or TimeoutException or System.ComponentModel.Win32Exception) { version = "unavailable: " + ex.Message; }
         }
         finally { Directory.Delete(versionDirectory, true); }

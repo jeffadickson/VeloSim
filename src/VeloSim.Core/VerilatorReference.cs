@@ -5,7 +5,7 @@ namespace VeloSim;
 public sealed class VerilatorReference(IProcessRunner? runner = null)
 {
     private readonly IProcessRunner runner = runner ?? new ProcessRunner();
-    public async Task<IReadOnlyList<TraceSample>> RunAsync(IReadOnlyList<string> sources, string top, string outputDirectory, int cycles, int width, int buildJobs, string? compiler = null, CancellationToken cancellationToken = default, string? cmake = null, string? ninja = null, string? cxx = null)
+    public async Task<IReadOnlyList<TraceSample>> RunAsync(IReadOnlyList<string> sources, string top, string outputDirectory, int cycles, int width, int buildJobs, string? compiler = null, CancellationToken cancellationToken = default, string? cmake = null, string? ninja = null, string? cxx = null, bool requireWidthHeader = false)
     {
         if (buildJobs is < 1 or > 256) throw new ArgumentOutOfRangeException(nameof(buildJobs));
         if (sources.Count == 0 || sources.Any(string.IsNullOrWhiteSpace) || string.IsNullOrWhiteSpace(top)) throw new ArgumentException("Reference sources and top required.");
@@ -23,7 +23,7 @@ public sealed class VerilatorReference(IProcessRunner? runner = null)
         var executable = Path.Combine(objectDirectory, "reference" + (OperatingSystem.IsWindows() ? ".exe" : ""));
         if (!File.Exists(executable)) throw new IOException("Verilator produced no executable.");
         var result = await runner.RunAsync(executable, [], directory, TimeSpan.FromSeconds(90), cancellationToken).ConfigureAwait(false); IcarusReference.RequireSuccess(result, "Verilator execution");
-        return IcarusReference.ParseOutput(result.StandardOutput, cycles, width);
+        return IcarusReference.ParseOutput(result.StandardOutput, cycles, width, requireWidthHeader);
     }
     public static string GenerateCMake(string top, IReadOnlyList<string> sources)
     {

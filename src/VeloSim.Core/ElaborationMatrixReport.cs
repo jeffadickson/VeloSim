@@ -24,7 +24,8 @@ public sealed class ElaborationMatrixReport
             if (record.Status == "pass")
             {
                 bool Option(IReadOnlyList<string> args, string option, string value) { for (int i = 0; i + 1 < args.Count; i++) if (args[i] == option && args[i + 1] == value) return true; return false; }
-                if (!record.Commands.Any(c => c.ExitCode == 0 && c.Arguments.Contains("-elabuhdm") && Option(c.Arguments, "-top", record.Top) && Option(c.Arguments, "-mt", record.Workers.ToString(System.Globalization.CultureInfo.InvariantCulture)) && entry.Sources.All(c.Arguments.Contains))) throw new IrValidationException("Passing matrix record lacks successful elaboration command.");
+                var effectiveExecutable = ArtifactMetadata.ResolveExecutable(executable, record.OutputDirectory) ?? executable;
+                if (tool is not null && tool.Path != effectiveExecutable || !record.Commands.Any(c => c.ExitCode == 0 && (ArtifactMetadata.ResolveExecutable(c.Executable, c.WorkingDirectory) ?? c.Executable) == effectiveExecutable && c.Arguments.Contains("-elabuhdm") && Option(c.Arguments, "-top", record.Top) && Option(c.Arguments, "-mt", record.Workers.ToString(System.Globalization.CultureInfo.InvariantCulture)) && entry.Sources.All(c.Arguments.Contains))) throw new IrValidationException("Passing matrix record lacks successful elaboration command bound to the reported tool.");
                 var relative = Path.GetRelativePath(record.OutputDirectory, record.Uhdm!.Path);
                 if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)) throw new IrValidationException("UHDM artifact lies outside run directory.");
             }

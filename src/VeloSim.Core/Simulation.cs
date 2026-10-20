@@ -30,17 +30,29 @@ internal static partial class NativeMethods
                 directory = AppContext.BaseDirectory;
                 if (!File.Exists(Path.Combine(directory, filename)))
                 {
-                    var systemModule = NativeLibrary.Load(filename);
+                    var systemModule = CheckAbi(NativeLibrary.Load(filename), name);
                     loadedModules.Add(name, systemModule);
                     return systemModule; // The system loader did not provide an absolute metadata path.
                 }
             }
             var path = Path.Combine(Path.GetFullPath(directory), filename);
-            var library = NativeLibrary.Load(path);
+            var library = CheckAbi(NativeLibrary.Load(path), name);
             if (name == "velosim_ir") LoadedLibraryPath = path; else LoadedSchedulerPath = path;
             loadedModules.Add(name, library);
             return library;
         }
+    }
+    private static unsafe nint CheckAbi(nint module, string name)
+    {
+        try
+        {
+            var symbol = name == "velosim_ir" ? "vs_ir_abi_version" : "vs_sched_abi_version";
+            if (!NativeLibrary.TryGetExport(module, symbol, out var address)) throw new EntryPointNotFoundException($"{name} lacks {symbol}; rebuild the native libraries.");
+            var version = ((delegate* unmanaged[Cdecl]<uint>)address)();
+            if (version != 1) throw new BadImageFormatException($"{name} ABI version {version} is unsupported; expected1. Rebuild the native libraries.");
+            return module;
+        }
+        catch { NativeLibrary.Free(module); throw; }
     }
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_new")] internal static partial EngineHandle New();
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_free")] internal static partial void Free(nint handle);
@@ -48,6 +60,7 @@ internal static partial class NativeMethods
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_process")] internal static partial int Process(EngineHandle handle, uint clock, uint dst, uint source, uint reset, byte edge, byte op);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_read")] internal static partial int Read(EngineHandle handle, uint id, out ulong value, out ulong x, out ulong z);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_drive")] internal static unsafe partial int Drive(EngineHandle handle, uint* ids, ulong* values, ulong* xs, ulong* zs, uint count, uint workers);
+    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_ticks")] internal static partial ulong Ticks(EngineHandle handle);
 }
 
 public sealed class Simulation : IDisposable
@@ -64,6 +77,7 @@ public sealed class Simulation : IDisposable
     private readonly Dictionary<string, (uint Id, int Width)> signals = new(StringComparer.Ordinal);
     private readonly object gate = new();
     public IrDesign Design { get; }
+    public ulong Ticks { get { lock (gate) { ObjectDisposedException.ThrowIf(handle.IsClosed, this); return NativeMethods.Ticks(handle); } } }
     public Simulation(IrDesign design)
     {
         Design = design ?? throw new ArgumentNullException(nameof(design));

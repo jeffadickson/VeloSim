@@ -10,8 +10,11 @@ public class ReproducibilityTests
         var source = Path.Combine(directory, "counter.sv"); File.WriteAllText(source, "module counter; endmodule");
         var tb = Path.Combine(directory, "reference.sv"); var stimulus = Path.Combine(directory, "stimulus.txt"); var resets = CounterStimulus.Create(42, 2);
         File.WriteAllText(tb, CounterTestbench.Generate("counter", 8, resets)); File.WriteAllText(stimulus, CounterStimulus.ToText(resets));
+        var ir = Path.Combine(directory, "design.ir.json");
+        File.WriteAllText(ir, new IrDesign([new("clk", new(1)), new("rst_n", new(1)), new("count", new(8))], [new("clk", "count", "count", "rst_n", IrEdge.Posedge, IrOperation.SvIfResetIncrementStrict)]).ToJson());
         return new(42, 2, 1, ["velosim", "icarus"], new Dictionary<string, IReadOnlyList<TraceSample>> { ["velosim"] = [new(0, "00000000"), new(1, "00000001")], ["icarus"] = [new(0, "00000000"), new(1, "00000001")] }, new Dictionary<string, string>())
         {
+            IrArtifact = ArtifactMetadata.Fingerprint(ir), Specification = CounterSpecification.Generate(resets, 8),
             Configuration = new("counter", [source], 2, "/bin/true", "/bin/true", new Dictionary<string, string> { ["iverilog"] = "/bin/echo", ["vvp"] = "/bin/false" }),
             Metadata = new([ArtifactMetadata.Fingerprint(source), ArtifactMetadata.Fingerprint(tb), ArtifactMetadata.Fingerprint(stimulus)], ArtifactMetadata.Fingerprint(Simulation.NativeLibraryPath), [new("/bin/true", ["-elabuhdm", "-mt", "1", "-top", "counter", source], directory, 0, "", "", null), new("/bin/true", ["db.uhdm", Path.Combine(directory, "normalized.json"), "counter"], directory, 0, "", "", null), new("/bin/echo", ["-g2012", "-s", "velosim_reference_tb", "-o", "simulation.vvp"], directory, 0, "", "", null), new("/bin/false", ["simulation.vvp"], directory, 0, "", "", null)], new Dictionary<string, string>(), [ArtifactMetadata.Fingerprint("/bin/true"), ArtifactMetadata.Fingerprint("/bin/echo"), ArtifactMetadata.Fingerprint("/bin/false")])
         };

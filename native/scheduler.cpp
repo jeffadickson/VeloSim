@@ -27,6 +27,7 @@ uint8_t calc(const Process& p,const std::vector<uint8_t>& v){
 }
 }
 extern "C" {
+uint32_t vs_sched_abi_version() noexcept {return 1;}
 void* vs_sched_new(uint32_t n) noexcept {
  try {if(!n||n>1000000)return nullptr;auto s=std::make_unique<Sim>();s->sig.assign(n,X);return s.release();}
  catch(...){return nullptr;}

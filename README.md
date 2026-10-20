@@ -27,7 +27,7 @@ The installed Surelog/UHDM tools are optional for basic IR tests. See [real HDL 
 - `src/VeloSim.Core/` — compiled C# validation, frontend and native interop library
 - `src/VeloSim.Tools/` — compiled CLI, publishable with NativeAOT
 - `tools/VeloSim.Build/` — compiled build/test/coverage helper
-- `src/velosim/` — historical Python compatibility reference
+- `historical/python/` — archived Python prototype reference
 - `native/` — C++ simulation and tracing experiments
 - `tests/` — unit and regression tests
 - `verification/cocotb/` — cocotb testbenches
@@ -36,6 +36,10 @@ The installed Surelog/UHDM tools are optional for basic IR tests. See [real HDL 
 - `tools/` — local test and differential runners
 - `.github/workflows/` — CI
 
-Historical Python tests remain available as a reference but are not the active Makefile/CI helper path. Do not infer feature completeness from directory names or test counts.
+Historical Python sources remain archived as a reference but are not the active Makefile/CI helper path. Do not infer feature completeness from directory names or test counts.
 
 Run `make doctor JOBS=4` for a compiled tool/version report. `make coverage` validates separate managed/native coverage and writes fingerprinted `gate.json` evidence; optional `VELOSIM_MIN_MANAGED_LINE` and `VELOSIM_MIN_NATIVE_LINE` percentages enforce thresholds. `make coverage-check` rechecks the latest successful report. The build helper also accepts `coverage-check path/to/Cobertura.xml`.
+
+Native modules expose ABI version1 and reject incompatible versions before allocation. Rebuild shared libraries after ABI changes. Native IR ticks advance only after successful atomic drives. Linux exports are restricted to the declared C API; a compiled C11 consumer is included in CTest.
+
+`make bundle JOBS=4` publishes and stages native Linux-x64 tools, libraries, C headers and a runnable IR example, verifies file hashes, runs the packaged executables, and writes a compressed tar archive under `artifacts/bundles`. The bundled `VeloSim.Build bundle-check <directory>` verifies extracted files without requiring a checkout. The manifest records source revision; `build.txt` records whether the working tree was dirty.
