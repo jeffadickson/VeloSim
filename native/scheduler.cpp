@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <thread>
 #include <vector>
+#include <memory>
+#include "include/velosim.h"
 namespace {
 struct Process {uint32_t clk,dst,a,b; uint8_t edge,op;};
 struct Sim {std::vector<uint8_t> sig; std::vector<Process> procs; uint64_t tick=0;};
@@ -26,7 +28,7 @@ uint8_t calc(const Process& p,const std::vector<uint8_t>& v){
 }
 extern "C" {
 void* vs_sched_new(uint32_t n) noexcept {
- try {if(!n||n>1000000)return nullptr;auto* s=new Sim;s->sig.assign(n,X);return s;}
+ try {if(!n||n>1000000)return nullptr;auto s=std::make_unique<Sim>();s->sig.assign(n,X);return s.release();}
  catch(...){return nullptr;}
 }
 void vs_sched_free(void* p) noexcept {delete static_cast<Sim*>(p);}
@@ -59,7 +61,7 @@ int vs_sched_drive(void* p,const uint32_t* ids,const uint8_t* vals,uint32_t n,ui
   else{
    std::atomic<size_t> next{0};
    auto run=[&](){for(;;){size_t j=next.fetch_add(1);if(j>=active.size())break;work(j);}};
-   size_t count=std::min<size_t>(workers,active.size());std::vector<std::thread> threads;
+   size_t count=std::min<size_t>(workers,active.size());std::vector<std::jthread> threads;
    for(size_t i=1;i<count;i++)threads.emplace_back(run);
    run();for(auto& t:threads)t.join();
   }

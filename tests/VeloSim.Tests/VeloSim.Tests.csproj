@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsTestProject>true</IsTestProject><IsPackable>false</IsPackable><TestingPlatformDotnetTestSupport>false</TestingPlatformDotnetTestSupport></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    <PackageReference Include="coverlet.collector" Version="10.1.0" PrivateAssets="all" />
+    <ProjectReference Include="../../src/VeloSim.Core/VeloSim.csproj" />
+  </ItemGroup>
+</Project>

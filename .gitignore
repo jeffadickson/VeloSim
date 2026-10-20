@@ -6,3 +6,10 @@ __pycache__/
 *.ll
 build/
 .pytest_cache/
+artifacts/
+**/bin/
+**/obj/
+TestResults/
+.dotnet-home/
+.nuget/
+work/

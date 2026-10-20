@@ -1,14 +1,35 @@
-name: VeloSim prototype CI
+name: VeloSim compiled CI
 on: [push, pull_request]
 jobs:
-  scheduler:
+  compiled:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-dotnet@v4
         with:
-          python-version: '3.12'
-      - run: python3 -m unittest discover -s tests -v
+          global-json-file: global.json
+      - name: Install Ninja and LLVM (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang llvm
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - name: Build and test compiled C# and native kernels
+        run: make test JOBS=4
+      - name: Managed and native coverage
+        if: runner.os == 'Linux'
+        run: make coverage JOBS=4
+      - name: NativeAOT publishing
+        if: runner.os == 'Linux'
+        run: make publish JOBS=4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-${{ runner.os }}
+          path: |
+            artifacts/coverage/
+            artifacts/tests/
+            artifacts/native-coverage/html/

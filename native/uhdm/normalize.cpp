@@ -3,6 +3,7 @@
 // count <= '0; else count <= count + 1'b1;
 // Reject everything else. Requires pinned UHDM library to build.
 #include <uhdm/uhdm.h>
+#include <uhdm/ExprEval.h>
 #include <uhdm/vpi_user.h>
 #include <cstdint>
 #include <fstream>
@@ -129,7 +130,10 @@ int main(int argc,char** argv){
   check(kind(design)==vpiDesign,"not a UHDM design");
   auto modules=many(design,UHDM::uhdmtopModules);
   Handle mod=nullptr;
-  for(auto h:modules)if(name(h)==argv[3]){check(!mod,"duplicate top");mod=h;}
+  check(modules.size()==1,"expected exactly one top module");
+  for(auto h:modules)if(name(h)==argv[3] || name(h)==std::string("work@")+argv[3]){
+    check(!mod,"duplicate top");mod=h;
+  }
   check(mod!=nullptr,"top not found");
   check(many(mod,vpiModule).empty(),"nested modules unsupported");
   auto procs=many(mod,vpiProcess);
@@ -139,9 +143,22 @@ int main(int argc,char** argv){
   std::map<std::string,int> widths;
   for(int relation:{vpiPort,vpiNet,vpiReg,vpiVariables}){
     for(auto h:many(mod,relation)){
-      std::string n=name(h);int w=vpi_get(vpiSize,h);
+      std::string n=name(h);
       if(n.empty())continue;
-      check(w>=1&&w<=64,"signal width outside 1..64");
+      // Ports refer to their declared signal through Low_conn/Actual_group.
+      // UHDM nets do not expose vpiSize; its evaluator resolves packed ranges
+      // and parameter-dependent types in the elaborated module context.
+      Handle signal=h;
+      if(relation==vpiPort){
+        Handle connection=one(h,vpiLowConn);
+        signal=one(connection,vpiActual);
+        check(signal!=nullptr,"port has no resolved signal: "+n);
+      }
+      UHDM::ExprEval evaluator;
+      bool invalid=false;
+      auto bits=evaluator.size(signal,invalid,mod,Handle(nullptr),true,true);
+      check(!invalid&&bits>=1&&bits<=64,"signal width outside 1..64: "+n);
+      int w=static_cast<int>(bits);
       auto [it,inserted]=widths.emplace(n,w);
       check(inserted||it->second==w,"conflicting widths");
     }

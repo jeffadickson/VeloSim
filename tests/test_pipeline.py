@@ -43,7 +43,7 @@ pathlib.Path(sys.argv[2]).write_text("""+repr(content)+""")
             path=compile_design([ROOT/"examples/counter.sv"],top="counter",
                  output_dir=Path(td)/"out",surelog=surelog,normalizer=normalizer,threads=8)
             ir=json.loads(path.read_text())
-            self.assertEqual(ir["processes"][0]["operation"],"sv_if_reset_increment")
+            self.assertEqual(ir["processes"][0]["operation"],"sv_if_reset_increment_strict")
             with Simulation(ir,self.lib) as sim:
                 sim.drive({"clk":(0,0,0),"rst_n":(0,0,0)},8)
                 sim.drive({"clk":(1,0,0)},8)

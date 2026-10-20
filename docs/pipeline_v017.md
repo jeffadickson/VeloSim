@@ -10,8 +10,8 @@ python3 -m unittest discover -s tests -p test_pipeline.py -v
 
 Four local tests passed. They use **mock Surelog and mock UHDM normalization** but the real native C++ kernel. The counter test checks 269 increments and rollover at 8 workers.
 
-## Outstanding blocking task
+## Real frontend integration
 
-The `velosim-uhdm-normalize` executable is **not implemented yet**. The current UHDM process AST inspector emits structural data, not the normalized schema. Thus running the real Surelog frontend through to native simulation is still blocked. Do not report this as real source-driven HDL execution.
+The `velosim-uhdm-normalize` executable now builds and runs against the pinned UHDM API. The real counter smoke test passes through Surelog, binary UHDM normalization, strict lowering, and the native engine. See [the real UHDM gate](real_uhdm_gate.md) for revisions, commands, and the verified scope.
 
-The next implementation is a UHDM C++ normalizer using the pinned UHDM API, with explicit rejection of unsupported constructs, followed by actual Surelog smoke and differential tests.
+The next step is to extend supported process/expression shapes with explicit rejection of unsupported constructs and connect source-driven compilation to the differential harness.

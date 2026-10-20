@@ -6,6 +6,7 @@
 #include <thread>
 #include <algorithm>
 #include <limits>
+#include "../include/velosim.h"
 namespace {
 struct Word {uint64_t value, xmask, zmask; uint32_t width;};
 struct Proc {uint32_t clk,dst,a,reset; uint8_t edge,opcode;};
@@ -68,6 +69,7 @@ int vs_ir_process(void* p,uint32_t clk,uint32_t dst,uint32_t a,uint32_t reset,ui
  if(!p||edge>1||op>5)return -1;
  auto& e=*static_cast<Engine*>(p);auto n=e.sig.size();
  if(clk>=n||dst>=n||a>=n||reset>=n||e.sig[clk].width!=1)return -1;
+ if((op==2||op==3||op==5)&&e.sig[reset].width!=1)return -1;
  for(auto q:e.proc)if(q.dst==dst)return -2;
  try{e.proc.push_back(Proc{clk,dst,a,reset,edge,op});return 0;}catch(...){return -1;}
 }
@@ -95,7 +97,7 @@ int vs_ir_drive(void* p,const uint32_t* ids,const uint64_t* vals,const uint64_t*
  if(workers==1||active.size()<2){for(size_t j=0;j<active.size();j++)evaluate(j);}
  else{
    std::atomic<size_t> next{0};auto task=[&](){for(;;){auto j=next.fetch_add(1);if(j>=active.size())break;evaluate(j);}};
-   auto count=std::min<size_t>(workers,active.size());std::vector<std::thread> pool;
+   auto count=std::min<size_t>(workers,active.size());std::vector<std::jthread> pool;
    for(size_t i=1;i<count;i++)pool.emplace_back(task);
    task();for(auto& t:pool)t.join();
  }
