@@ -4,6 +4,12 @@ namespace VeloSim;
 
 public sealed class SchedulerFixture
 {
+    public const long MaximumWork = 100_000_000;
+    public void ValidateWork(int workerConfigurations = 1)
+    {
+        if (workerConfigurations is < 1 or > 256 || (long)(SignalCount + Processes.Count) * Drives.Count * workerConfigurations > MaximumWork)
+            throw new IrValidationException("Scheduler signal/process work budget exceeded.");
+    }
     public int SignalCount { get; }
     public IReadOnlyList<SchedulerProcess> Processes { get; }
     public IReadOnlyList<IReadOnlyDictionary<int, ScalarValue>> Drives { get; }
@@ -17,6 +23,7 @@ public sealed class SchedulerFixture
         if (updates.Length is < 1 or > 1_000_000 || updates.Any(d => d.Any(e => Invalid(e.Key) || !Enum.IsDefined(e.Value)))) throw new IrValidationException("Invalid scheduler drive.");
         if (outputs.Length == 0 || outputs.Any(Invalid) || outputs.Distinct().Count() != outputs.Length || (long)updates.Length * outputs.Length > 10_000_000) throw new IrValidationException("Invalid scheduler observations or trace size.");
         SignalCount = signalCount; Processes = Array.AsReadOnly(procs); Drives = Array.AsReadOnly(updates); Observed = Array.AsReadOnly(outputs);
+        ValidateWork();
     }
     public static SchedulerFixture Parse(string json)
     {

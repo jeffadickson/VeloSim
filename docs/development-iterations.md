@@ -159,6 +159,31 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 |148|Verify current-source coverage independently with the compiled coverage-current command.|
 |149|Integrate coverage freshness and native bundle artifacts into CI and negative regression checks.|
 |150|Review and validate the integrated Ninja, coverage and bounded NativeAOT checkpoint.|
+|151|Restrict external word comparisons to explicitly supported strict SystemVerilog semantics.|
+|152|Emit width-safe procedural word expressions preserving original arithmetic unknowns.|
+|153|Generate atomic drive batches with startup guards and NBA-complete observations.|
+|154|Parse exact ordered four-state word traces with dimensions, ticks and activation checks.|
+|155|Compile and execute generated word fixtures through Icarus.|
+|156|Compare native worker results with independent managed and Icarus traces.|
+|157|Persist typed word differential reports and artifact/tool/native provenance.|
+|158|Expose compiled word differential command workflows.|
+|159|Construct strict word/reset/width/multiclock conformance designs.|
+|160|Run actual 52-case Icarus conformance and independent semantic/tooling reviews.|
+|161|Bound captured subprocess output independently for stdout and stderr.|
+|162|Terminate overflowing or timed-out Linux commands through owned process groups.|
+|163|Retain typed bounded output-limit diagnostics in command provenance.|
+|164|Reject unsupported subprocess deadlines before launching tools.|
+|165|Bound scalar scheduler whole-state and process work per fixture.|
+|166|Apply aggregate scalar work budgets across worker matrices.|
+|167|Bound word conformance process evaluations separately from signal checks.|
+|168|Bound literal include provenance by depth, file count and total bytes.|
+|169|Check cancellation within independent oracle evaluation before atomic commits.|
+|170|Exercise actual output floods, exited-parent descendants and resource boundaries under peer review.|
+|171|Read structural word differential reports independently of replay freshness.|
+|172|Validate word replay against bound fixture, IR, HDL, compiled artifacts and exact tools.|
+|173|Expose word report inspection and deterministic replay commands.|
+|174|Save first-mismatch word prefix reproduction with explicit compiler/runtime paths.|
+|175|Validate word report replay and prefix evidence before the local checkpoint.|
 ## Peer reviews and validation
 
 - 010: independent simulation and tooling reviewers inspected the foundation. Fixed scheduler allocation exception ownership, added genuinely parallel native tests, fixed standalone native coverage builds, propagated instrumentation to UHDM tools, included JSON coverage and moved initialization under error handling. Native CTest 2/2 passes; C# build helper compiles without warnings. Core 011–015 focused NUnit 5/5 passes.
@@ -209,3 +234,9 @@ The previous uncommitted Surelog integration fixes are preserved in the first lo
 130:106NUnit/4nativeCTest pass; nativewordtruth/width/arithmetic/NBAchecks pass. MSBuildtarget emitsrequested --parallelism:3 andpublisherpassesJobs. Twopeerreviewsacceptednativeoperators/ABI/coverage/parallelsetup; requiredprefixreproduction topreserve customIcaruspaths, beingfixedbefore140.
 
 150: Both independent peer reviews completed and findings fixed: dependency locks/nested build inputs/HDL includes now tracked, and measured managed DLL hashes join native object evidence. Full coverage passes124NUnit/4CTest; managed86.5% line68.3% branch, native98.4% line86.0% branch, combined87.4% line69.6% branch. Report artifacts/coverage/20261020-201601-0317469. coverage-current passes. All three NativeAOT helpers publish with compiler --parallelism:4; native bundle artifacts/bundles/20261020-201631-9281075 passes packaged simulation/integrity/benchmark smoke. ASan/UBSan4CTest pass. Published scheduler fourcase and35wordcase matrices pass; actualcounter1000cycle comparison finishing.
+
+150 local commit fd102e0. Published actualRTL1000-cycle three-engine comparison passes at artifacts/real150/report.json. No remote push.
+
+160: Both reviewers accepted generated strictword SV semantics and provenance; actual52case Icarus matrix workers1/4/8 passes. New10regular capability tests pass; combined146NUnit. 170: Both reviews complete; orphan-descendant issue fixed with owned Linux processgroup and actual cleanup regression. Coverage integrity hardening continuing separately.
+
+175: Two additional independent reviews accept structural wordreport validation, exact provenance replay and first-mismatch prefix reproduction.152combinedNUnit pass; actual502step multiclock word replay across1/4/8workers passes at artifacts/word-replay175. Local175commit follows. Root176–180 coverage integrity changes remain outside this checkpoint commit.

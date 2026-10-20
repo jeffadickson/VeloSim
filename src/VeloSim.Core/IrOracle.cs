@@ -10,8 +10,9 @@ public sealed class IrOracle
         this.design = design; state = design.Signals.ToDictionary(s => s.Name, s => FourStateCodec.Resize(s.Initial, s.Initial.Width), StringComparer.Ordinal);
     }
     public FourStateWord Read(string name) => state[name];
-    public int Drive(IReadOnlyDictionary<string, FourStateWord> updates)
+    public int Drive(IReadOnlyDictionary<string, FourStateWord> updates, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var precommit = new Dictionary<string, FourStateWord>(state, StringComparer.Ordinal);
         foreach (var (name, word) in updates)
         {
@@ -21,6 +22,7 @@ public sealed class IrOracle
         var scheduled = new List<(string Name, FourStateWord Value)>();
         foreach (var p in design.Processes)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!ScalarLogic.IsEdge(p.Edge, FourStateCodec.BitAt(state[p.Clock], 0), FourStateCodec.BitAt(precommit[p.Clock], 0))) continue;
             var source = precommit[p.Source]; var width = precommit[p.Destination].Width;
             var second = precommit[p.SourceB ?? p.Source];
@@ -41,6 +43,7 @@ public sealed class IrOracle
             };
             scheduled.Add((p.Destination, result));
         }
+        cancellationToken.ThrowIfCancellationRequested();
         foreach (var result in scheduled) precommit[result.Name] = result.Value;
         state = precommit; Ticks++; return scheduled.Count;
     }

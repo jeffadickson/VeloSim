@@ -15,7 +15,10 @@ public static class SchedulerRegression
             foreach (var (signal, value) in drive) precommit[signal] = value;
             var scheduled = new List<(int Destination, ScalarValue Value)>();
             foreach (var p in fixture.Processes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (ScalarLogic.IsEdge(p.Edge, before[p.Clock], precommit[p.Clock])) scheduled.Add((p.Destination, ScalarLogic.Evaluate(p.Operation, precommit[p.A], precommit[p.B])));
+            }
             state = (ScalarValue[])precommit.Clone(); foreach (var update in scheduled) state[update.Destination] = update.Value;
             trace.Add(new(++tick, scheduled.Count, new string(fixture.Observed.Select(id => ScalarLogic.Format(state[id])).ToArray())));
         }
@@ -24,6 +27,7 @@ public static class SchedulerRegression
     public static IReadOnlyList<SchedulerWorkerResult> Run(SchedulerFixture fixture, IReadOnlyList<int> workers, CancellationToken cancellationToken = default)
     {
         if (workers.Count == 0 || workers.Distinct().Count() != workers.Count || workers.Any(w => w is < 1 or > 256)) throw new ArgumentException("Invalid scheduler worker matrix.");
+        fixture.ValidateWork(workers.Count);
         cancellationToken.ThrowIfCancellationRequested(); var expected = Oracle(fixture, cancellationToken); var results = new List<SchedulerWorkerResult>();
         foreach (var count in workers)
         {

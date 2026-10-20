@@ -20,7 +20,9 @@ public sealed class RecordingProcessRunner(IProcessRunner inner) : IProcessRunne
         }
         catch (Exception ex)
         {
-            commands.Add(new(executable, arguments.ToArray(), workingDirectory, null, ex is ProcessTimeoutException timed ? timed.StandardOutput : "", ex is ProcessTimeoutException timedError ? timedError.StandardError : "", ex.Message)); throw;
+            commands.Add(new(executable, arguments.ToArray(), workingDirectory, null,
+                ex switch { ProcessTimeoutException timed => timed.StandardOutput, ProcessOutputLimitException limited => limited.StandardOutput, _ => "" },
+                ex switch { ProcessTimeoutException timed => timed.StandardError, ProcessOutputLimitException limited => limited.StandardError, _ => "" }, ex.Message)); throw;
         }
     }
 }
@@ -46,19 +48,22 @@ public sealed record ArtifactMetadata(IReadOnlyList<FileFingerprint> Sources, Fi
     public static IReadOnlyList<FileFingerprint> SourceClosure(IEnumerable<string> sources)
     {
         var visited = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal); var result = new List<FileFingerprint>();
-        void Visit(string source)
+        long bytes = 0;
+        void Visit(string source, int depth)
         {
             var path = System.IO.Path.GetFullPath(source); if (!visited.Add(path)) return;
+            if (depth > 128 || visited.Count > 4096 || new FileInfo(path).Length > 64 * 1024 * 1024 - bytes) throw new IOException("Source include closure exceeds depth, file count or 64 MiB budget.");
+            bytes += new FileInfo(path).Length;
             result.Add(Fingerprint(path));
             foreach (var line in File.ReadLines(path))
             {
                 var trimmed = line.TrimStart(); if (!trimmed.StartsWith("`include", StringComparison.Ordinal)) continue;
                 var match = Regex.Match(trimmed, "^`include\\s+\"([^\"]+)\"", RegexOptions.CultureInvariant);
                 if (!match.Success) throw new IOException("Cannot fingerprint macro-based include in " + path);
-                Visit(System.IO.Path.GetFullPath(match.Groups[1].Value, System.IO.Path.GetDirectoryName(path)!));
+                Visit(System.IO.Path.GetFullPath(match.Groups[1].Value, System.IO.Path.GetDirectoryName(path)!), depth + 1);
             }
         }
-        foreach (var source in sources) Visit(source); return result.AsReadOnly();
+        foreach (var source in sources) Visit(source, 0); return result.AsReadOnly();
     }
     public void Write(Utf8JsonWriter w)
     {

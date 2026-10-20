@@ -27,6 +27,37 @@ public static class ToolCli
     private static void WriteError(TextWriter writer, Exception exception) { if (writer is ErrorCapture capture) capture.Cause = exception; writer.WriteLine(exception.Message); }
     private static async Task<int> RunCoreAsync(string[] args, TextWriter output, TextWriter error, IProcessRunner? runner, CancellationToken cancellationToken)
     {
+        if (args.Length > 0 && args[0] is "word-inspect" or "word-replay" or "word-reduce")
+        {
+            bool inspect = args[0] == "word-inspect";
+            if (inspect && args.Length != 2 || !inspect && (args.Length != 4 || args[2] != "--output-dir")) throw new ArgumentException("Usage: word-inspect <report.json> | word-replay|word-reduce <report.json> --output-dir <directory>");
+            if (new FileInfo(args[1]).Length > 64 * 1024 * 1024) throw new ArgumentException("Word report exceeds 64 MiB inspection/replay limit."); var json = await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false);
+            if (inspect) { var report = WordReportReader.Parse(json, cancellationToken); output.WriteLine($"{report.Status} steps={report.Fixture.Drives.Count} workers={string.Join(',', report.Fixture.Workers)}; {WordReportReader.ReplayAvailability(report)}"); return 0; }
+            if (args[0] == "word-reduce") { output.WriteLine("first-mismatch prefix fixture: " + await WordReproduction.SavePrefixAsync(WordReportReader.Parse(json, cancellationToken), args[3], cancellationToken).ConfigureAwait(false)); return 0; }
+            var replay = await WordReplay.RunAsync(WordReplay.Validate(json, cancellationToken), args[3], runner, cancellationToken).ConfigureAwait(false); output.WriteLine(replay.Status); return replay.Status == "pass" ? 0 : 1;
+        }
+        if (args.Length > 0 && args[0] is "word-differential" or "word-conformance")
+        {
+            bool differential = args[0] == "word-differential"; if (differential && args.Length < 2) throw new ArgumentException("Word fixture path required.");
+            string? destination = null, compiler = null, runtime = null; int[] workers = [1, 4, 8];
+            for (int i = differential ? 2 : 1; i < args.Length; i += 2)
+            {
+                if (i + 1 == args.Length) throw new ArgumentException("Incomplete word HDL workflow option.");
+                switch (args[i])
+                {
+                    case "--output-dir": destination = args[i + 1]; break; case "--iverilog": compiler = args[i + 1]; break; case "--vvp": runtime = args[i + 1]; break;
+                    case "--workers" when !differential: workers = args[i + 1].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid worker count.")).ToArray(); break;
+                    default: throw new ArgumentException("Unknown word HDL workflow option: " + args[i]);
+                }
+            }
+            if (destination is null) throw new ArgumentException("Word HDL output directory required.");
+            if (differential)
+            {
+                if (new FileInfo(args[1]).Length > ConformanceLimits.MaxFixtureCharacters) throw new ArgumentException("Word fixture exceeds input limit.");
+                var fixture = WordFixture.Parse(await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false)); var report = await new WordDifferential(runner).RunAsync(fixture, destination, compiler, runtime, cancellationToken).ConfigureAwait(false); output.WriteLine(report.Status + " " + Path.Combine(Path.GetFullPath(destination), "word-differential-report.json")); return report.Status == "pass" ? 0 : 1;
+            }
+            var results = await WordConformance.RunAsync(destination, workers, runner, compiler, runtime, cancellationToken).ConfigureAwait(false); output.WriteLine($"{(results.All(r => r.Status == "pass") ? "pass" : "fail")} cases={results.Count} " + Path.Combine(Path.GetFullPath(destination), "word-conformance-report.json")); return results.All(r => r.Status == "pass") ? 0 : 1;
+        }
         if (args.Length > 0 && args[0] is "word-boundaries" or "word-operation-conformance")
         {
             bool boundaries = args[0] == "word-boundaries"; if (boundaries && args.Length < 2) throw new ArgumentException("IR path required.");

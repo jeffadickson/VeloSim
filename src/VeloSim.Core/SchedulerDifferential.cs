@@ -45,6 +45,7 @@ public sealed class SchedulerDifferential(IProcessRunner? runner = null)
     public async Task<SchedulerDifferentialReport> RunAsync(SchedulerFixture fixture, IReadOnlyList<int> workers, string outputDirectory, string? compiler = null, string? runtime = null, CancellationToken cancellationToken = default)
     {
         SchedulerSystemVerilog.Validate(fixture);
+        fixture.ValidateWork(workers.Count);
         if (workers.Count is < 1 or > 256 || workers.Distinct().Count() != workers.Count || workers.Any(w => w is < 1 or > 256) || (long)workers.Count * fixture.Drives.Count * fixture.Observed.Count > 10_000_000) throw new ArgumentException("Invalid scheduler differential worker or trace budget.");
         cancellationToken.ThrowIfCancellationRequested(); var output = Path.GetFullPath(outputDirectory);
         if (Directory.Exists(output) && Directory.EnumerateFileSystemEntries(output).Any()) throw new IOException("Scheduler differential output must be empty."); Directory.CreateDirectory(output);
