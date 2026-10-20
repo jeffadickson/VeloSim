@@ -41,10 +41,10 @@ public class IntegrationTests
         var runner = new ProcessRunner();
         var result = await runner.RunAsync("/bin/sh", ["-c", "printf '%s' \"$1\"; printf diagnostic >&2; exit 7", "test", "spaces; $(literal)"], Path.GetTempPath(), TimeSpan.FromSeconds(5));
         Assert.That(result.ExitCode, Is.EqualTo(7)); Assert.That(result.StandardOutput, Is.EqualTo("spaces; $(literal)")); Assert.That(result.StandardError, Is.EqualTo("diagnostic"));
-        Assert.ThrowsAsync<TimeoutException>(async () => await runner.RunAsync("/bin/sleep", ["20"], Path.GetTempPath(), TimeSpan.FromMilliseconds(50)));
+        Assert.ThrowsAsync<ProcessTimeoutException>(async () => await runner.RunAsync("/bin/sleep", ["20"], Path.GetTempPath(), TimeSpan.FromMilliseconds(50)));
         using var canceled = new CancellationTokenSource(); canceled.Cancel();
         Assert.ThrowsAsync<OperationCanceledException>(async () => await runner.RunAsync("/bin/sleep", ["20"], Path.GetTempPath(), TimeSpan.FromSeconds(10), canceled.Token));
-        Assert.ThrowsAsync<TimeoutException>(async () => await runner.RunAsync("/bin/sh", ["-c", "(sleep 1)& exit 0"], Path.GetTempPath(), TimeSpan.FromMilliseconds(50)));
+        Assert.ThrowsAsync<ProcessTimeoutException>(async () => await runner.RunAsync("/bin/sh", ["-c", "(sleep 1)& exit 0"], Path.GetTempPath(), TimeSpan.FromMilliseconds(50)));
         Assert.ThrowsAsync<OperationCanceledException>(async () => await runner.RunAsync("/nonexistent/no-start", [], Path.GetTempPath(), TimeSpan.FromSeconds(1), canceled.Token));
     }
     private sealed class FakeRunner(Func<string, IReadOnlyList<string>, string, ProcessResult> action) : IProcessRunner

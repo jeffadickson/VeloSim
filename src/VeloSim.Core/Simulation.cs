@@ -12,14 +12,35 @@ internal sealed class EngineHandle : SafeHandleZeroOrMinusOneIsInvalid
 
 internal static partial class NativeMethods
 {
+    internal static string? LoadedLibraryPath { get; private set; }
+    internal static string? LoadedSchedulerPath { get; private set; }
+    private static readonly object libraryGate = new();
+    private static readonly Dictionary<string, nint> loadedModules = new(StringComparer.Ordinal);
     static NativeMethods() => NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, Resolve);
     private static nint Resolve(string name, Assembly assembly, DllImportSearchPath? search)
     {
-        if (name != "velosim_ir") return 0;
-        var directory = Environment.GetEnvironmentVariable("VELOSIM_NATIVE_DIR");
-        if (string.IsNullOrEmpty(directory)) return 0;
-        var filename = OperatingSystem.IsWindows() ? "velosim_ir.dll" : OperatingSystem.IsMacOS() ? "libvelosim_ir.dylib" : "libvelosim_ir.so";
-        return NativeLibrary.Load(Path.Combine(Path.GetFullPath(directory), filename));
+        if (name is not ("velosim_ir" or "velosim_scheduler")) return 0;
+        lock (libraryGate)
+        {
+            if (loadedModules.TryGetValue(name, out var cached)) return cached;
+            var directory = Environment.GetEnvironmentVariable("VELOSIM_NATIVE_DIR");
+            var filename = OperatingSystem.IsWindows() ? name + ".dll" : OperatingSystem.IsMacOS() ? "lib" + name + ".dylib" : "lib" + name + ".so";
+            if (string.IsNullOrEmpty(directory))
+            {
+                directory = AppContext.BaseDirectory;
+                if (!File.Exists(Path.Combine(directory, filename)))
+                {
+                    var systemModule = NativeLibrary.Load(filename);
+                    loadedModules.Add(name, systemModule);
+                    return systemModule; // The system loader did not provide an absolute metadata path.
+                }
+            }
+            var path = Path.Combine(Path.GetFullPath(directory), filename);
+            var library = NativeLibrary.Load(path);
+            if (name == "velosim_ir") LoadedLibraryPath = path; else LoadedSchedulerPath = path;
+            loadedModules.Add(name, library);
+            return library;
+        }
     }
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_new")] internal static partial EngineHandle New();
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_free")] internal static partial void Free(nint handle);
@@ -31,6 +52,14 @@ internal static partial class NativeMethods
 
 public sealed class Simulation : IDisposable
 {
+    public static string NativeLibraryPath
+    {
+        get
+        {
+            if (NativeMethods.LoadedLibraryPath is null) { using var probe = NativeMethods.New(); if (probe.IsInvalid) throw new InvalidOperationException("Native allocation failed."); }
+            return NativeMethods.LoadedLibraryPath ?? throw new InvalidOperationException("Native library path unavailable; set VELOSIM_NATIVE_DIR before the first simulation for reproducible artifact metadata.");
+        }
+    }
     private readonly EngineHandle handle;
     private readonly Dictionary<string, (uint Id, int Width)> signals = new(StringComparer.Ordinal);
     private readonly object gate = new();

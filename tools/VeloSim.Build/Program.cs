@@ -131,14 +131,20 @@ internal static class Build
         if (environment != null) foreach (var entry in environment) start.Environment[entry.Key] = entry.Value;
         Console.WriteLine($"> {executable} {string.Join(' ', start.ArgumentList)}");
         using var process = Process.Start(start) ?? throw new IOException($"could not start {executable}");
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-        Task<string> stderr = process.StandardError.ReadToEndAsync();
         using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(15));
-        try { await process.WaitForExitAsync(deadline.Token); }
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync(deadline.Token);
+        Task<string> stderr = process.StandardError.ReadToEndAsync(deadline.Token);
+        try
+        {
+            await process.WaitForExitAsync(deadline.Token);
+            await Task.WhenAll(stdout, stderr).WaitAsync(deadline.Token);
+        }
         catch (OperationCanceledException)
         {
-            process.Kill(entireProcessTree: true);
+            try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
             await process.WaitForExitAsync();
+            process.StandardOutput.Dispose(); process.StandardError.Dispose();
+            try { await Task.WhenAll(stdout, stderr); } catch (OperationCanceledException) { } catch (ObjectDisposedException) { }
             throw new TimeoutException($"{executable} exceeded 15 minutes");
         }
         string text = await stdout;

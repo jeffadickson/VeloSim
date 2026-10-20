@@ -1,0 +1,12 @@
+{
+  "format": "velosim.regression.v1",
+  "name": "counter-reset-and-count",
+  "top": "slang_counter",
+  "sources": ["slang_counter.sv"],
+  "clock": "clk",
+  "observed": "count",
+  "activeLowReset": "rst_n",
+  "width": 8,
+  "expected": "0 00000000\n1 00000001\n2 00000010\n3 00000011\n4 00000100\n5 00000101\n6 00000110\n7 00000111\n8 00001000\n9 00001001\n10 00001010\n11 00001011\n",
+  "workers": [1, 4, 8]
+}
