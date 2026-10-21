@@ -16,6 +16,14 @@ public sealed class RtlDesign
     private readonly Dictionary<string, int> signalIds;
     private readonly Dictionary<string, int> memoryIds;
     private int nodes;
+    private static int Arity(string kind) => kind switch
+    {
+        "not" or "bitnot" or "neg" or "pos" or "redand" or "rednand" or "redor" or "rednor" or "redxor" or "redxnor" => 1,
+        "add" or "sub" or "and" or "or" or "eq" or "neq" or "caseeq" or "caseneq" or "lt" or "le" or "gt" or "ge" or "concat" or "bitand" or "bitor" or "bitxor" or "bitxnor" or "shl" or "shr" or "ashr" or "mul" or "div" or "mod" => 2,
+        "cond" => 3,
+        _ => 0
+    };
+    private static bool Scalar(string kind) => kind is "and" or "or" or "not" or "eq" or "neq" or "caseeq" or "caseneq" or "lt" or "le" or "gt" or "ge" or "redand" or "rednand" or "redor" or "rednor" or "redxor" or "redxnor";
     private static string Kind(JsonElement e) => e.GetProperty("kind").GetString()!;
     private static string Name(JsonElement e) => e.GetProperty("name").GetString()!;
     public int SignalId(string name) => signalIds.TryGetValue(name, out int id) ? id : throw new IrValidationException("Unknown RTL signal: " + name);
@@ -67,8 +75,8 @@ public sealed class RtlDesign
         if (kind == "const") { JsonShape.Fields(e, ["kind", "bits"]); return FourStateCodec.ParseBinary(e.GetProperty("bits").GetString()!).Width; }
         if (kind == "index") { JsonShape.Fields(e, ["kind", "name", "index"]); ValidateExpression(e.GetProperty("index"), depth + 1); return Memories[MemoryId(Name(e))].Width; }
         JsonShape.Fields(e, ["kind", "args"]); var args = e.GetProperty("args").EnumerateArray().ToArray();
-        if (kind is not ("add" or "sub" or "and" or "not" or "eq" or "concat" or "bitand" or "bitor" or "bitxor" or "bitnot") || args.Length != (kind is "not" or "bitnot" ? 1 : 2)) throw new IrValidationException("Unsupported RTL expression.");
-        var widths = args.Select(a => ValidateExpression(a, depth + 1)).ToArray(); var result = kind is "and" or "not" or "eq" ? 1 : kind == "concat" ? widths.Sum() : widths.Max(); if (result > 64) throw new IrValidationException("Expression exceeds 64 bits."); return result;
+        if (Arity(kind) == 0 || args.Length != Arity(kind)) throw new IrValidationException("Unsupported RTL expression.");
+        var widths = args.Select(a => ValidateExpression(a, depth + 1)).ToArray(); var result = Scalar(kind) ? 1 : kind is "shl" or "shr" or "ashr" ? widths[0] : kind == "cond" ? Math.Max(widths[1], widths[2]) : kind == "concat" ? widths.Sum() : widths.Max(); if (result > 64) throw new IrValidationException("Expression exceeds 64 bits."); return result;
     }
     private IEnumerable<string> References(JsonElement e)
     {
@@ -96,7 +104,7 @@ public sealed class RtlDesign
     private int ExpressionWidth(JsonElement e) => Kind(e) switch
     {
         "ref" => Signals[SignalId(Name(e))].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
-        "and" or "eq" or "not" => 1, "concat" => e.GetProperty("args").EnumerateArray().Sum(ExpressionWidth), _ => e.GetProperty("args").EnumerateArray().Max(ExpressionWidth)
+        var kind when Scalar(kind) => 1, "shl" or "shr" or "ashr" => ExpressionWidth(e.GetProperty("args")[0]), "cond" => e.GetProperty("args").EnumerateArray().Skip(1).Max(ExpressionWidth), "concat" => e.GetProperty("args").EnumerateArray().Sum(ExpressionWidth), _ => e.GetProperty("args").EnumerateArray().Max(ExpressionWidth)
     };
     private string Expression(JsonElement e, int context = 0)
     {
@@ -109,9 +117,20 @@ public sealed class RtlDesign
         {
             "add" or "sub" => $"arithmetic({Expression(args[0], width)},{Expression(args[1], width)},{width},{(kind == "sub" ? "true" : "false")})",
             "bitnot" => $"bit_not({Expression(args[0], width)},{width})",
+            "neg" => $"arithmetic(W{{0,0,0,{width}}},{Expression(args[0], width)},{width},true)",
+            "pos" => $"resize({Expression(args[0], width)},{width})",
+            "mul" or "div" or "mod" => $"product({Expression(args[0], width)},{Expression(args[1], width)},{width},{(kind == "mul" ? 0 : kind == "div" ? 1 : 2)})",
+            "cond" => $"conditional({Expression(args[0])},{Expression(args[1], width)},{Expression(args[2], width)},{width})",
+            "shl" or "shr" or "ashr" => $"shift({Expression(args[0], width)},{Expression(args[1])},{width},{(kind == "shl" ? "false" : "true")})",
+            "redand" or "rednand" or "redor" or "rednor" or "redxor" or "redxnor" => $"reduce({Expression(args[0])},{(kind == "redand" ? 0 : kind == "rednand" ? 1 : kind == "redor" ? 2 : kind == "rednor" ? 3 : kind == "redxor" ? 4 : 5)})",
+            "bitxnor" => $"bit_not(bit_binary({Expression(args[0], width)},{Expression(args[1], width)},{width},2),{width})",
             "bitand" or "bitor" or "bitxor" => $"bit_binary({Expression(args[0], width)},{Expression(args[1], width)},{width},{(kind == "bitand" ? 0 : kind == "bitor" ? 1 : 2)})",
             "not" => $"logical_not({Expression(args[0])})", "and" => $"logical_and({Expression(args[0])},{Expression(args[1])})",
-            "eq" => $"equal({Expression(args[0], args.Max(ExpressionWidth))},{Expression(args[1], args.Max(ExpressionWidth))})", "concat" => $"concat({Expression(args[0])},{Expression(args[1])})", _ => throw new IrValidationException("Unsupported expression.")
+            "or" => $"logical_or({Expression(args[0])},{Expression(args[1])})",
+            "eq" or "neq" => (kind == "neq" ? "logical_not(" : "") + $"equal({Expression(args[0], args.Max(ExpressionWidth))},{Expression(args[1], args.Max(ExpressionWidth))})" + (kind == "neq" ? ")" : ""),
+            "caseeq" or "caseneq" => $"W{{uint64_t({(kind == "caseneq" ? "!" : "")}exact({Expression(args[0], args.Max(ExpressionWidth))},{Expression(args[1], args.Max(ExpressionWidth))})),0,0,1}}",
+            "lt" or "le" or "gt" or "ge" => $"compare({Expression(args[0], args.Max(ExpressionWidth))},{Expression(args[1], args.Max(ExpressionWidth))},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
+            "concat" => $"concat({Expression(args[0])},{Expression(args[1])})", _ => throw new IrValidationException("Unsupported expression.")
         };
     }
     private void Statement(StringBuilder code, JsonElement e, ref int unique)

@@ -23,15 +23,32 @@ int width(H h){UHDM::ExprEval e;bool bad=false;auto n=e.size(h,bad,mod,H(nullptr
 void logic_word(H h){auto spec=one(one(h,vpiTypespec),vpiActual);need(type(spec)==vpiLogicTypespec&&!vpi_get(vpiSigned,spec),"only unsigned four-state logic words supported");}
 std::string bits(H h){need(type(h)==vpiConstant,"constant required");UHDM::ExprEval eval;auto object=static_cast<const UHDM::constant*>(reinterpret_cast<const uhdm_handle*>(h)->object);std::string s=eval.toBinary(object);need(!s.empty()&&s.size()<=64&&s.find_first_not_of("01xzXZ")==std::string::npos,"unsupported constant");for(char& c:s)if(c=='X'||c=='Z')c+=32;return s;}
 uint64_t integer(H h){if(type(h)==vpiOperation){auto a=many(h,vpiOperand);need(a.size()==2,"range expression unsupported");auto l=integer(a[0]),r=integer(a[1]);int op=vpi_get(vpiOpType,h);need(op==vpiAddOp||op==vpiSubOp,"range operation unsupported");return op==vpiAddOp?l+r:l-r;}need(type(h)==vpiConstant,"constant range required");auto s=bits(h);need(s.find_first_not_of("01")==std::string::npos,"unknown array bound");return std::stoull(s,nullptr,2);}
+bool signed_expression(H h,int depth=0){
+ need(h&&depth<64,"signedness depth exceeded");
+ if(type(h)==vpiConstant){auto spec=one(one(h,vpiTypespec),vpiActual);const char* p=vpi_get_str(vpiDecompile,h);std::string literal=p?p:"";return vpi_get(vpiSigned,h)||(spec&&vpi_get(vpiSigned,spec))||vpi_get(vpiConstType,h)==vpiIntConst||literal.find("'s")!=std::string::npos||literal.find("'S")!=std::string::npos;}
+ if(type(one(h,vpiActual))==vpiParameter)return true; // int parameter expressions are conservatively signed.
+ if(type(h)!=vpiOperation)return false; // declarations are validated unsigned separately.
+ int op=vpi_get(vpiOpType,h);auto a=many(h,vpiOperand);
+ if(op==vpiConcatOp||op==vpiNotOp||op==vpiLogAndOp||op==vpiLogOrOp||(op>=vpiUnaryAndOp&&op<=vpiUnaryXNorOp)||(op>=vpiEqOp&&op<=vpiLeOp))return false;
+ if(op==vpiConditionOp)return a.size()==3&&signed_expression(a[1],depth+1)&&signed_expression(a[2],depth+1);
+ if(op==vpiLShiftOp||op==vpiRShiftOp||op==vpiArithLShiftOp||op==vpiArithRShiftOp)return !a.empty()&&signed_expression(a[0],depth+1);
+ for(auto operand:a)if(!signed_expression(operand,depth+1))return false;
+ return !a.empty();
+}
 std::string expr(H h,int depth=0){
  need(h&&depth<64&&++nodes<=20000,"expression missing or resource limit exceeded");
- if(type(one(h,vpiActual))==vpiParameter){auto p=static_cast<const UHDM::parameter*>(reinterpret_cast<const uhdm_handle*>(one(h,vpiActual))->object);need(type(one(one(one(h,vpiActual),vpiTypespec),vpiActual))==vpiIntTypespec,"only int parameters supported in expressions");auto c=store->MakeConstant();c->VpiValue(p->VpiValue());c->VpiSize(32);c->VpiConstType(p->VpiConstType());UHDM::ExprEval eval;auto b=eval.toBinary(c);need(!b.empty()&&b.size()<=64&&b.find_first_not_of("01")==std::string::npos,"only known integer parameters supported");need(!(p->VpiSigned()&&b.front()=='1'),"negative signed parameter unsupported");return "{\"kind\":\"const\",\"bits\":"+q(b)+"}";}
- if(type(h)==vpiConstant){auto b=bits(h);const char* d=vpi_get_str(vpiDecompile,h);std::string literal=d?d:"";need(literal!="'1"&&literal!="'x"&&literal!="'z"&&literal!="'X"&&literal!="'Z","unbased fill literal unsupported except zero");need(!(vpi_get(vpiSigned,h)&&b.front()=='1'),"negative signed literal unsupported");return "{\"kind\":\"const\",\"bits\":"+q(b)+"}";}
+ if(type(one(h,vpiActual))==vpiParameter){auto p=static_cast<const UHDM::parameter*>(reinterpret_cast<const uhdm_handle*>(one(h,vpiActual))->object);need(type(one(one(one(h,vpiActual),vpiTypespec),vpiActual))==vpiIntTypespec,"only int parameters supported in expressions");auto c=store->MakeConstant();c->VpiValue(p->VpiValue());c->VpiSize(32);c->VpiConstType(p->VpiConstType());UHDM::ExprEval eval;auto b=eval.toBinary(c);need(!b.empty()&&b.size()<=64&&b.find_first_not_of("01")==std::string::npos,"only known integer parameters supported");need(p->VpiValue().find(":-")==std::string::npos && !(p->VpiSigned()&&b.front()=='1'),"negative signed parameter unsupported");return "{\"kind\":\"const\",\"bits\":"+q(b)+"}";}
+ if(type(h)==vpiConstant){auto b=bits(h);const char* d=vpi_get_str(vpiDecompile,h);std::string literal=d?d:"";need(literal!="'1"&&literal!="'x"&&literal!="'z"&&literal!="'X"&&literal!="'Z","unbased fill literal unsupported except zero");need(!(signed_expression(h)&&b.front()=='1'),"negative signed literal unsupported");return "{\"kind\":\"const\",\"bits\":"+q(b)+"}";}
  if(type(h)==vpiBitSelect){need(type(one(h,vpiActual))==vpiArrayVar,"only unpacked memory selection supported");return "{\"kind\":\"index\",\"name\":"+q(name(h))+",\"index\":"+expr(one(h,vpiIndex),depth+1)+"}";}
  if(type(h)==vpiOperation){
-  static const std::map<int,std::string> ops={{vpiAddOp,"add"},{vpiSubOp,"sub"},{vpiLogAndOp,"and"},{vpiNotOp,"not"},{vpiEqOp,"eq"},{vpiConcatOp,"concat"},{vpiBitAndOp,"bitand"},{vpiBitOrOp,"bitor"},{vpiBitXorOp,"bitxor"},{vpiBitNegOp,"bitnot"}};
+  need(!signed_expression(h),"signed operation expressions unsupported");
+  static const std::map<int,std::string> ops={{vpiAddOp,"add"},{vpiSubOp,"sub"},{vpiLogAndOp,"and"},{vpiNotOp,"not"},{vpiEqOp,"eq"},{vpiConcatOp,"concat"},{vpiBitAndOp,"bitand"},{vpiBitOrOp,"bitor"},{vpiBitXorOp,"bitxor"},{vpiBitNegOp,"bitnot"},
+   {vpiLogOrOp,"or"},{vpiNeqOp,"neq"},{vpiCaseEqOp,"caseeq"},{vpiCaseNeqOp,"caseneq"},{vpiLtOp,"lt"},{vpiLeOp,"le"},{vpiGtOp,"gt"},{vpiGeOp,"ge"},{vpiBitXNorOp,"bitxnor"},{vpiMinusOp,"neg"},
+   {vpiLShiftOp,"shl"},{vpiRShiftOp,"shr"},{vpiArithRShiftOp,"ashr"},{vpiUnaryAndOp,"redand"},{vpiUnaryNandOp,"rednand"},{vpiUnaryOrOp,"redor"},{vpiUnaryNorOp,"rednor"},{vpiUnaryXorOp,"redxor"},{vpiUnaryXNorOp,"redxnor"},{vpiPlusOp,"pos"},
+   {vpiMultOp,"mul"},{vpiDivOp,"div"},{vpiModOp,"mod"},{vpiConditionOp,"cond"}};
   auto it=ops.find(vpi_get(vpiOpType,h));need(it!=ops.end(),"unsupported expression operation "+std::to_string(vpi_get(vpiOpType,h)));auto operands=many(h,vpiOperand);
-  need(operands.size()==(it->second=="not"||it->second=="bitnot"?1:2),"only unary/binary expressions supported");
+  bool unary=it->second=="not"||it->second=="bitnot"||it->second=="neg"||it->second=="pos"||it->second.rfind("red",0)==0;
+  need(operands.size()==(unary?1:it->second=="cond"?3:2),"unsupported expression arity");
   std::string s="{\"kind\":"+q(it->second)+",\"args\":[";bool first=true;for(auto a:operands){if(!first)s+=",";first=false;s+=expr(a,depth+1);}return s+"]}";
  }
  need(!name(h).empty()&&(type(h)==vpiReg||type(h)==vpiNet||type(h)==vpiRefObj||type(h)==vpiVariables),"unsupported reference type "+std::to_string(type(h)));
