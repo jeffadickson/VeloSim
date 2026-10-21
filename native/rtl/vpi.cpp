@@ -42,6 +42,21 @@ std::string radixText(W w,int group){
  }
  return out;
 }
+W radixWord(const char* input,int width,int group){
+ if(!input)throw std::runtime_error("null radix string");
+ const int limit=(64+group-1)/group;
+ uint64_t v=0,x=0,z=0;bool any=false;
+ for(int i=0;i<=limit;i++){
+  unsigned char c=input[i];if(!c){if(!any)throw std::runtime_error("empty radix string");return vsrtl::word(v,x,z,width);}
+  if(i==limit)throw std::runtime_error("radix string exceeds64-bit digit budget");
+  if(c>='A'&&c<='Z')c+=32;
+  if(!i){if(c=='x')x=UINT64_MAX;else if(c=='z')z=UINT64_MAX;}
+  v<<=group;x<<=group;z<<=group;auto bits=vsrtl::mask(group);
+  if(c=='x')x|=bits;else if(c=='z')z|=bits;else{int digit=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:-1;if(digit<0||digit>=(1<<group))throw std::runtime_error("invalid radix digit");v|=unsigned(digit);}
+  any=true;
+ }
+ throw std::runtime_error("invalid radix string");
+}
 void encode(W w,p_vpi_value value,std::string& buffer,s_vpi_vecval* vector){
  valueFormat(value->format);
  switch(value->format){
@@ -140,6 +155,7 @@ void vpi_get_value(vpiHandle object,p_vpi_value value){action([&](){if(!value)th
 vpiHandle vpi_put_value(vpiHandle object,p_vpi_value value,p_vpi_time time,PLI_INT32 flags){return api([&]()->vpiHandle{
  if(!value||flags!=vpiNoDelay||(time&&(time->type!=vpiSimTime&&time->type!=vpiSuppressTime||time->high||time->low)))throw std::runtime_error("only immediate input deposits supported");auto& h=signal(object);int width=h.model->signals()[h.id].width;W w{};
  if(value->format==vpiBinStrVal){if(!value->value.str)throw std::runtime_error("null binary string");std::string bits;for(int i=0;i<=64;i++){char c=value->value.str[i];if(!c)break;if(i==64)throw std::runtime_error("binary value exceeds64bits");bits+=c=='X'?'x':c=='Z'?'z':c;}if(bits.size()!=size_t(width))throw std::runtime_error("binary deposit must match declared width");w=vsrtl::parse(bits);}
+ else if(value->format==vpiHexStrVal)w=radixWord(value->value.str,width,4);
  else if(value->format==vpiIntVal){if(width>32&&value->value.integer<0)throw std::runtime_error("negative integer deposit wider than32bits; use vector format");w=vsrtl::word(uint32_t(value->value.integer),0,0,32);}
  else if(value->format==vpiScalarVal){if(width!=1||value->value.scalar<0||value->value.scalar>3)throw std::runtime_error("invalid scalar deposit");int n=value->value.scalar;w=vsrtl::word(n==vpi1,n==vpiX,n==vpiZ,1);}
  else if(value->format==vpiVectorVal){if(!value->value.vector)throw std::runtime_error("null vector");uint64_t a=0,b=0;for(int i=0;i<(width+31)/32;i++){a|=uint64_t(value->value.vector[i].aval)<<(i*32);b|=uint64_t(value->value.vector[i].bval)<<(i*32);}w=vsrtl::word(a&~b,a&b,~a&b,width);}

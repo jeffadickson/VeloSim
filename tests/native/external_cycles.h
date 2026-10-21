@@ -65,7 +65,21 @@ inline void decReadCycles(){
  readCase(49,"decimal32 boundary",33,"100000000000000000000000000000000",vpiDecStrVal,"4294967296");
  readCase(50,"decimal scalar one",1,"1",vpiDecStrVal,"1");
 }
-inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();}
+inline void putCase(int id,const char* label,int width,int format,const char* input,const char* expected){cycle(id,label,[&]{WidthModel m(width);m.useVpi();m.put(1,word(42,0,0,width));auto before=m.get(1);s_vpi_value value{};value.format=format;value.value.str=const_cast<char*>(input);vpi_put_value(named("width.data"),&value,nullptr,vpiNoDelay);if(expected)check(!vpi_chk_error(nullptr)&&text(m.get(1))==expected);else check(vpi_chk_error(nullptr)&&exact(before,m.get(1)));});}
+inline void hexPutCycles(){
+ putCase(51,"hex short zero extends",8,vpiHexStrVal,"a","00001010");
+ putCase(52,"hex uppercase",8,vpiHexStrVal,"AF","10101111");
+ putCase(53,"hex leading X extends",8,vpiHexStrVal,"x","xxxxxxxx");
+ putCase(54,"hex leading Z extends",8,vpiHexStrVal,"z1","zzzz0001");
+ putCase(55,"hex trailing X zero prefix",12,vpiHexStrVal,"1x","00000001xxxx");
+ putCase(56,"hex truncates to port",5,vpiHexStrVal,"ff","11111");
+ putCase(57,"hex invalid atomic",8,vpiHexStrVal,"1g",nullptr);
+ putCase(58,"hex empty atomic",8,vpiHexStrVal,"",nullptr);
+ putCase(59,"hex null atomic",8,vpiHexStrVal,nullptr,nullptr);
+ putCase(60,"hex budget atomic",64,vpiHexStrVal,"10000000000000000",nullptr);
+}
+inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();hexPutCycles();}
+
 
 
 
