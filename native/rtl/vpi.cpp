@@ -91,7 +91,7 @@ namespace vsrtl {
 struct Model::State {
  std::string name; std::vector<std::string> names; std::vector<Signal> signals;
  std::shared_ptr<int> life=std::make_shared<int>(0); std::thread::id owner=std::this_thread::get_id();
- uint64_t now=0; bool finished=false,finishRequested=false,started=false,evaluating=false,dispatching=false,readOnly=false,dirty=true;
+ uint64_t now=0; bool finished=false,finishRequested=false,started=false,evaluating=false,dispatching=false,readOnly=false,dirty=true,requested=false;
  std::unordered_map<size_t,W> pending; std::vector<void*> plugins;
 };
 Model::Model(std::string name,std::vector<Signal> signals,int clock):state(std::make_unique<State>()){
@@ -119,15 +119,16 @@ W Model::get(size_t id) const{checkThread();return s.at(id);}
 void Model::put(size_t id,W value){checkThread();if(state->finished||state->finishRequested||state->readOnly)throw std::runtime_error("model is finished or in read-only callback");if(state->signals.at(id).direction!=vpiInput)throw std::runtime_error("only input ports may be deposited");value=word(value.v,value.x,value.z,state->signals[id].width);if(state->dispatching)state->pending[id]=value;else s.at(id)=value;state->dirty=true;}
 void Model::useVpi(){checkThread();current=this;currentLife=state->life;}
 uint64_t Model::time() const{checkThread();return state->now;}
-void Model::timeInc(uint64_t delta){checkThread();if(state->evaluating||state->finished||delta>UINT64_MAX-state->now)throw std::runtime_error("invalid time advance");state->now+=delta;}
+void Model::timeInc(uint64_t delta){checkThread();if(state->evaluating||gotFinish()||delta>UINT64_MAX-state->now)throw std::runtime_error("invalid time advance");state->now+=delta;}
 bool Model::gotFinish() const{checkThread();return state->finished||state->finishRequested;}
-bool Model::evalNeeded() const{checkThread();return state->dirty;}
+bool Model::evalNeeded() const{checkThread();return !gotFinish()&&state->dirty;}
 bool Model::started() const{checkThread();return state->started;}
-void Model::requestEval(){checkThread();state->dirty=true;}
+void Model::requestEval(){checkThread();if(gotFinish())throw std::runtime_error("finished model evaluation request");state->requested=true;state->dirty=true;}
 void Model::finish(){checkThread();state->finishRequested=true;}
 void Model::eval(){
  checkThread();if(state->evaluating||gotFinish())throw std::runtime_error("reentrant or finished model evaluation");Activation active(*this);state->evaluating=true;
  try{
+ state->requested=false;
  auto list=callbacks(*this);
  if(!state->started){state->started=true;state->dispatching=true;for(auto h:list)if(h->cb.reason==cbStartOfSimulation){invoke(*h);h->active=false;}state->dispatching=false;}
  if(state->finishRequested){state->evaluating=false;return;}
@@ -137,12 +138,12 @@ void Model::eval(){
  std::vector<Handle*> changed;for(auto h:list)if(h->active&&h->cb.reason==cbValueChange){auto w=get(signal(h->cb.obj).id);if(!exact(w,h->previous)){h->previous=w;changed.push_back(h);}}
  state->dispatching=true;for(auto h:changed)invoke(*h);
  state->readOnly=true;for(auto h:callbacks(*this))if(h->active&&h->cb.reason==cbReadOnlySynch){invoke(*h);h->active=false;}state->readOnly=false;state->dispatching=false;state->evaluating=false;
- state->dirty=!state->pending.empty();for(auto h:callbacks(*this))if(h->cb.reason==cbReadOnlySynch)state->dirty=true;
+ state->dirty=!state->pending.empty()||state->requested;for(auto h:callbacks(*this))if(h->cb.reason==cbReadOnlySynch)state->dirty=true;
  }catch(...){state->readOnly=false;state->dispatching=false;state->evaluating=false;state->dirty=true;throw;}
 }
 void Model::final(){checkThread();if(state->evaluating)throw std::runtime_error("reentrant final()");if(state->finished)return;Activation active(*this);state->finished=true;state->evaluating=true;state->readOnly=true;try{for(auto h:callbacks(*this))if(h->cb.reason==cbEndOfSimulation){invoke(*h);h->active=false;}state->evaluating=false;state->readOnly=false;}catch(...){state->evaluating=false;state->readOnly=false;throw;}}
 void Model::loadVpi(const std::string& path){
- checkThread();if(state->evaluating||state->started||state->finished||state->plugins.size()>=64)throw std::runtime_error("load VPI plugins before first eval; maximum64");Activation active(*this);
+ checkThread();if(state->evaluating||state->started||gotFinish()||state->plugins.size()>=64)throw std::runtime_error("load VPI plugins before first eval; maximum64");Activation active(*this);
 #if defined(_WIN32)
  auto module=LoadLibraryA(path.c_str());if(!module)throw std::runtime_error("cannot load VPI plugin");auto startup=reinterpret_cast<void(**)()>(GetProcAddress(module,"vlog_startup_routines"));
 #else
@@ -187,6 +188,7 @@ PLI_INT32 vpi_control(PLI_INT32 operation,...){return api([&](){if(operation!=vp
 PLI_INT32 vpi_printf(PLI_BYTE8* format,...){if(!format)return 0;va_list args;va_start(args,format);int n=std::vprintf(format,args);va_end(args);return n;}
 PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info info){return api([&](){if(!info)throw std::runtime_error("null vlog info");*info={0,nullptr,const_cast<char*>("VeloSim"),const_cast<char*>("external.v1")};return PLI_INT32(1);},PLI_INT32(0));}
 }
+
 
 
 

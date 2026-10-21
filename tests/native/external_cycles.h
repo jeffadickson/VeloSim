@@ -102,7 +102,26 @@ inline void decPutCycles(){
  putCase(79,"decimal empty atomic",8,vpiDecStrVal,"",nullptr);
  cycle(80,"decimal budget null and whitespace atomic",[]{WidthModel m(8);m.useVpi();m.put(1,word(42,0,0,8));auto h=named("width.data");for(auto input:{static_cast<const char*>(nullptr),"100000000000000000000"," 1","+1","1_0"}){s_vpi_value v{};v.format=vpiDecStrVal;v.value.str=const_cast<char*>(input);vpi_put_value(h,&v,nullptr,vpiNoDelay);check(vpi_chk_error(nullptr)&&m.get(1).v==42);}});
 }
-inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();hexPutCycles();octPutCycles();decPutCycles();}
+template<class F> inline void mustThrow(F f){bool rejected=false;try{f();}catch(const std::runtime_error&){rejected=true;}check(rejected);}
+inline TestModel* lifecycleModel=nullptr;
+inline int lifecycleEnds=0;
+inline PLI_INT32 lifecycleEnd(p_cb_data){++lifecycleEnds;return 0;}
+inline PLI_INT32 requestAnotherEval(p_cb_data){lifecycleModel->requestEval();return 0;}
+inline PLI_INT32 rejectCallbackTime(p_cb_data){auto before=lifecycleModel->time();mustThrow([]{lifecycleModel->timeInc(1);});check(lifecycleModel->time()==before);return 0;}
+inline void lifecycleCycles(){
+ cycle(81,"finish has no pending eval",[]{TestModel m;m.finish();check(m.gotFinish()&&!m.evalNeeded());});
+ cycle(82,"finish rejects time advance",[]{TestModel m;m.finish();mustThrow([&]{m.timeInc(1);});check(m.time()==0);});
+ cycle(83,"finish rejects plugin load",[]{TestModel m;m.finish();mustThrow([&]{m.loadVpi("/missing.so");});});
+ cycle(84,"finish rejects eval request",[]{TestModel m;m.finish();mustThrow([&]{m.requestEval();});});
+ cycle(85,"final has no pending eval",[]{TestModel m;m.data=1;m.final();check(!m.evalNeeded());});
+ cycle(86,"final rejects time advance",[]{TestModel m;m.final();mustThrow([&]{m.timeInc(0);});});
+ cycle(87,"final callback exactly once",[]{TestModel m;m.useVpi();s_cb_data cb{};cb.reason=cbEndOfSimulation;cb.cb_rtn=lifecycleEnd;check(vpi_register_cb(&cb));m.finish();m.final();m.final();check(lifecycleEnds==1);});
+ cycle(88,"unknown clock recovery",[]{TestModel m;m.clk.bits("x");mustThrow([&]{m.eval();});check(m.evalNeeded());m.clk=0;m.eval();check(!m.evalNeeded());});
+ cycle(89,"callback eval request survives",[]{TestModel m;lifecycleModel=&m;m.useVpi();s_cb_data cb{};cb.reason=cbValueChange;cb.obj=named("test.q");cb.cb_rtn=requestAnotherEval;check(vpi_register_cb(&cb));m.data=1;m.clk=1;m.eval();check(m.evalNeeded());m.eval();check(!m.evalNeeded());});
+ cycle(90,"callback cannot advance time",[]{TestModel m;lifecycleModel=&m;m.useVpi();s_cb_data cb{};cb.reason=cbReadOnlySynch;cb.cb_rtn=rejectCallbackTime;check(vpi_register_cb(&cb));m.eval();});
+}
+inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();hexPutCycles();octPutCycles();decPutCycles();lifecycleCycles();}
+
 
 
 
