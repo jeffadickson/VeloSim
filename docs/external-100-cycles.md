@@ -14,3 +14,5 @@ Baseline: bc6c4f7. Ninja builds use four jobs. Existing same-source Icarus diffe
 
 | 40 | 31–40 | Octal reads including 64-bit and partial digit boundaries | 6/6 CTest pass; reviewer accepted group-of-three boundaries and X/Z semantics |
 
+| 50 | 41–50 | Unsigned decimal reads, 32/64-bit boundaries and unknown values | 6/6 CTest pass; reviewer accepted unsigned decimal and unknown semantics |
+

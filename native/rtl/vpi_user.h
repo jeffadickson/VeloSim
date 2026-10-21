@@ -52,6 +52,7 @@ typedef struct t_vpi_vlog_info { PLI_INT32 argc; PLI_BYTE8 **argv, *product, *ve
 #define vpiNoDirection 5
 #define vpiBinStrVal 1
 #define vpiOctStrVal 2
+#define vpiDecStrVal 3
 #define vpiHexStrVal 4
 #define vpiScalarVal 5
 #define vpiIntVal 6
@@ -92,4 +93,5 @@ VS_VPI_API PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info);
 }
 #endif
 #endif
+
 

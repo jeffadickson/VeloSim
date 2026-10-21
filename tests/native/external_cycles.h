@@ -53,7 +53,20 @@ inline void octReadCycles(){
  readCase(39,"oct partial top X",5,"xxxxx",vpiOctStrVal,"xx");
  readCase(40,"oct partial top known",4,"1001",vpiOctStrVal,"11");
 }
-inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();}
+inline void decReadCycles(){
+ readCase(41,"decimal zero",4,"0000",vpiDecStrVal,"0");
+ readCase(42,"decimal unsigned sign bit",8,"10000000",vpiDecStrVal,"128");
+ readCase(43,"decimal64 max",64,"1111111111111111111111111111111111111111111111111111111111111111",vpiDecStrVal,"18446744073709551615");
+ readCase(44,"decimal all X",4,"xxxx",vpiDecStrVal,"x");
+ readCase(45,"decimal all Z",4,"zzzz",vpiDecStrVal,"z");
+ readCase(46,"decimal mixed X known",4,"x001",vpiDecStrVal,"X");
+ readCase(47,"decimal mixed Z known",4,"z001",vpiDecStrVal,"Z");
+ readCase(48,"decimal mixed X Z",4,"xxzz",vpiDecStrVal,"X");
+ readCase(49,"decimal32 boundary",33,"100000000000000000000000000000000",vpiDecStrVal,"4294967296");
+ readCase(50,"decimal scalar one",1,"1",vpiDecStrVal,"1");
+}
+inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();}
+
 
 
 
