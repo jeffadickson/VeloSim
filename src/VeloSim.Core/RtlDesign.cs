@@ -74,6 +74,8 @@ public sealed class RtlDesign
         if (kind == "ref") { JsonShape.Fields(e, ["kind", "name"]); return Signals[SignalId(Name(e))].Width; }
         if (kind == "const") { JsonShape.Fields(e, ["kind", "bits"]); return FourStateCodec.ParseBinary(e.GetProperty("bits").GetString()!).Width; }
         if (kind == "index") { JsonShape.Fields(e, ["kind", "name", "index"]); ValidateExpression(e.GetProperty("index"), depth + 1); return Memories[MemoryId(Name(e))].Width; }
+        if (kind == "bitselect") { JsonShape.Fields(e, ["kind", "value", "index"]); ValidateExpression(e.GetProperty("value"), depth + 1); ValidateExpression(e.GetProperty("index"), depth + 1); return 1; }
+        if (kind == "partselect") { JsonShape.Fields(e, ["kind", "value", "left", "right"]); ValidateExpression(e.GetProperty("value"), depth + 1); int left = e.GetProperty("left").GetInt32(), right = e.GetProperty("right").GetInt32(); if (right < 0 || left < right || (long)left - right >= 64) throw new IrValidationException("Only nonnegative descending constant part selects of 1..64 bits supported."); return left - right + 1; }
         JsonShape.Fields(e, ["kind", "args"]); var args = e.GetProperty("args").EnumerateArray().ToArray();
         if (Arity(kind) == 0 || args.Length != Arity(kind)) throw new IrValidationException("Unsupported RTL expression.");
         var widths = args.Select(a => ValidateExpression(a, depth + 1)).ToArray(); var result = Scalar(kind) ? 1 : kind is "shl" or "shr" or "ashr" ? widths[0] : kind == "cond" ? Math.Max(widths[1], widths[2]) : kind == "concat" ? widths.Sum() : widths.Max(); if (result > 64) throw new IrValidationException("Expression exceeds 64 bits."); return result;
@@ -82,6 +84,7 @@ public sealed class RtlDesign
     {
         if (Kind(e) == "ref") yield return Name(e);
         else if (Kind(e) == "index") { foreach (var n in References(e.GetProperty("index"))) yield return n; }
+        else if (Kind(e) is "bitselect" or "partselect") { foreach (var n in References(e.GetProperty("value"))) yield return n; if (e.TryGetProperty("index", out var index)) foreach (var n in References(index)) yield return n; }
         else if (e.TryGetProperty("args", out var args)) foreach (var a in args.EnumerateArray()) foreach (var n in References(a)) yield return n;
     }
     private void ValidateStatement(JsonElement e, HashSet<string> writers, int depth)
@@ -104,6 +107,7 @@ public sealed class RtlDesign
     private int ExpressionWidth(JsonElement e) => Kind(e) switch
     {
         "ref" => Signals[SignalId(Name(e))].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
+        "bitselect" => 1, "partselect" => e.GetProperty("left").GetInt32() - e.GetProperty("right").GetInt32() + 1,
         var kind when Scalar(kind) => 1, "shl" or "shr" or "ashr" => ExpressionWidth(e.GetProperty("args")[0]), "cond" => e.GetProperty("args").EnumerateArray().Skip(1).Max(ExpressionWidth), "concat" => e.GetProperty("args").EnumerateArray().Sum(ExpressionWidth), _ => e.GetProperty("args").EnumerateArray().Max(ExpressionWidth)
     };
     private string Expression(JsonElement e, int context = 0)
@@ -112,6 +116,8 @@ public sealed class RtlDesign
         if (kind == "ref") return $"s[{SignalId(Name(e))}]";
         if (kind == "const") return "parse(\"" + e.GetProperty("bits").GetString() + "\")";
         if (kind == "index") { int id = MemoryId(Name(e)); return $"read(mem[{id}],{Expression(e.GetProperty("index"))},{Memories[id].Width})"; }
+        if (kind == "bitselect") return $"select_bit({Expression(e.GetProperty("value"))},{Expression(e.GetProperty("index"))})";
+        if (kind == "partselect") return $"select_part({Expression(e.GetProperty("value"))},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
         var args = e.GetProperty("args").EnumerateArray().ToArray(); int width = Math.Max(context, ExpressionWidth(e));
         return kind switch
         {

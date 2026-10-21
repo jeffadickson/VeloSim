@@ -48,13 +48,13 @@ jobs:
           artifacts/publish/VeloSim.Tools/VeloSim.Tools differential --top slang_counter --cycles 1000 --threads 1 --build-jobs 4 --output-dir artifacts/diff-1 examples/slang_counter.sv
           artifacts/publish/VeloSim.Tools/VeloSim.Tools differential --top slang_counter --cycles 1000 --threads 8 --build-jobs 4 --output-dir artifacts/diff-8 examples/slang_counter.sv
           artifacts/publish/VeloSim.Tools/VeloSim.Tools replay artifacts/diff-8/report.json --output-dir artifacts/diff-replay
-      - name: Execute actual FIFO, bitwise and expanded operator RTL matrices
+      - name: Execute actual FIFO, operator and packed selection RTL matrices
         env:
           VELOSIM_REAL_FIFO: '1'
           VELOSIM_SURELOG: ${{ github.workspace }}/artifacts/toolchain/bin/surelog
           VELOSIM_UHDM_RTL: ${{ github.workspace }}/artifacts/with-uhdm/bin/velosim-uhdm-rtl
         run: |
-          dotnet test tests/VeloSim.Tests -c Release -m:4 --filter 'FullyQualifiedName~FifoTests|FullyQualifiedName~RtlBitwiseTests|FullyQualifiedName~RtlOperatorTests'
+          dotnet test tests/VeloSim.Tests -c Release -m:4 --filter 'FullyQualifiedName~FifoTests|FullyQualifiedName~RtlBitwiseTests|FullyQualifiedName~RtlOperatorTests|FullyQualifiedName~RtlSelectionTests'
           artifacts/publish/VeloSim.Tools/VeloSim.Tools fifo-differential examples/surelog_fifo.sv --top surelog_fifo --output-dir artifacts/fifo-native-cli --workers 1,4,8 --cycles 1000 --build-jobs 4
       - uses: actions/upload-artifact@v4
         if: always()
@@ -65,4 +65,5 @@ jobs:
             artifacts/fifo-*/
             artifacts/rtl-bitwise-*/
             artifacts/rtl-operators-*/
+            artifacts/rtl-selections-*/
           if-no-files-found: warn

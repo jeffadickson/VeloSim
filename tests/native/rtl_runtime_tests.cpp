@@ -4,6 +4,25 @@
 using namespace vsrtl;
 void check(bool b){if(!b){std::cerr<<"RTL runtime assertion failed\n";std::abort();}}
 int main(){
+ // Independent string-position oracle: no runtime masks/shifts in expected values.
+ for(int width=1;width<=64;++width){
+  std::string input;for(int i=0;i<width;++i)input+="01xz"[(i+width)%4];auto data=parse(input);
+  for(uint64_t index=0;index<=65;++index){
+   auto expected=index<uint64_t(width)?std::string(1,input[width-1-int(index)]):"x";
+   check(text(select_bit(data,word(index,0,0,64)))==expected);
+  }
+  for(auto index:{parse("x"),parse("z"),parse("1x"),parse("z0"),word(UINT64_MAX,0,0,64)})check(text(select_bit(data,index))=="x");
+  for(int right:{0,1,width-1,width,65,2147483584})for(int size:{1,2,8,32,64}){
+   int left=right+size-1;std::string expected;
+   for(int bit=left;bit>=right;--bit)expected+=bit<width?input[width-1-bit]:'x';
+   check(text(select_part(data,left,right))==expected);
+  }
+ }
+ for(char value:std::string("01xz")){
+  auto data=parse(std::string(64,value));check(text(select_part(data,63,0))==std::string(64,value));
+  check(text(select_part(data,64,1))=="x"+std::string(63,value));
+  check(text(select_bit(data,word(63,0,0,64)))==std::string(1,value));
+ }
  for(auto a:{parse("0"),parse("1"),parse("x"),parse("z")})for(auto b:{parse("0"),parse("1"),parse("x"),parse("z")}){
   auto and_value=logical_and(a,b);check(text(and_value)==(text(a)=="0"||text(b)=="0"?"0":text(a)=="1"&&text(b)=="1"?"1":"x"));
   check(text(logical_not(a))==(text(a)=="0"?"1":text(a)=="1"?"0":"x"));
