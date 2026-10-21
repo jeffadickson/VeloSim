@@ -69,6 +69,7 @@ VS_VPI_API vpiHandle vpi_handle(PLI_INT32, vpiHandle);
 VS_VPI_API vpiHandle vpi_iterate(PLI_INT32, vpiHandle);
 VS_VPI_API vpiHandle vpi_scan(vpiHandle);
 VS_VPI_API PLI_INT32 vpi_free_object(vpiHandle);
+VS_VPI_API PLI_INT32 vpi_compare_objects(vpiHandle, vpiHandle);
 VS_VPI_API PLI_INT32 vpi_get(PLI_INT32, vpiHandle);
 VS_VPI_API PLI_BYTE8 *vpi_get_str(PLI_INT32, vpiHandle);
 VS_VPI_API void vpi_get_value(vpiHandle, p_vpi_value);
