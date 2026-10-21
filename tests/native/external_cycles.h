@@ -27,5 +27,20 @@ inline void metadataCycles(){
  cycle(19,"port scope",[&]{auto it=vpi_iterate(vpiPort,module);check(vpi_compare_objects(module,vpi_handle(vpiScope,vpi_scan(it))));});
  cycle(20,"top has no enclosing scope",[&]{check(!vpi_handle(vpiScope,module)&&!vpi_chk_error(nullptr));});
 }
-inline void runCycles(){identityCycles();metadataCycles();}
+struct WidthModel:Model {WidthModel(int width):Model("width",{{"clk",1,vpiInput},{"data",width,vpiInput}},0){}void evaluate()override{}};
+inline void readCase(int id,const char* label,int width,const char* bits,int format,const char* expected){cycle(id,label,[&]{WidthModel m(width);m.useVpi();m.put(1,parse(bits));s_vpi_value v{};v.format=format;vpi_get_value(named("width.data"),&v);check(!vpi_chk_error(nullptr)&&std::string(v.value.str)==expected);});}
+inline void hexReadCycles(){
+ readCase(21,"hex zero",4,"0000",vpiHexStrVal,"0");
+ readCase(22,"hex known",8,"10101111",vpiHexStrVal,"af");
+ readCase(23,"hex64 max",64,"1111111111111111111111111111111111111111111111111111111111111111",vpiHexStrVal,"ffffffffffffffff");
+ readCase(24,"hex all X",4,"xxxx",vpiHexStrVal,"x");
+ readCase(25,"hex all Z",4,"zzzz",vpiHexStrVal,"z");
+ readCase(26,"hex mixed X known",4,"x001",vpiHexStrVal,"X");
+ readCase(27,"hex mixed Z known",4,"z001",vpiHexStrVal,"Z");
+ readCase(28,"hex mixed X Z",4,"xxzz",vpiHexStrVal,"X");
+ readCase(29,"hex partial top Z",5,"zzzzz",vpiHexStrVal,"zz");
+ readCase(30,"hex scalar Z",1,"z",vpiHexStrVal,"z");
+}
+inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();}
+
 

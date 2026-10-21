@@ -10,3 +10,5 @@ Baseline: bc6c4f7. Ninja builds use four jobs. Existing same-source Icarus diffe
 
 | 20 | 11–20 | Scalar/vector/unsigned metadata, top module and enclosing scope | 6/6 CTest pass; reviewer accepted with normalized width metadata caveat documented |
 
+| 30 | 21–30 | Hexadecimal reads, four-state digit spelling and partial top groups | 6/6 CTest pass; independent review accepted Icarus-qualified four-state formatting |
+

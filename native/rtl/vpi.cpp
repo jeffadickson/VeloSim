@@ -33,11 +33,20 @@ vpiHandle make(Model& model,int kind,size_t id=0){if(handles.size()>=65536)throw
 Handle& signal(vpiHandle h){auto& x=handle(h);if(x.kind!=vpiReg&&x.kind!=vpiPort)throw std::runtime_error("signal handle required");return x;}
 template<class F> auto api(F f,decltype(f()) failure)->decltype(f()){error.clear();try{return f();}catch(const std::exception& e){error=e.what();}catch(...){error="unknown VPI failure";}return failure;}
 template<class F> void action(F f){api([&](){f();return 1;},0);}
-void valueFormat(int format){if(format!=vpiBinStrVal&&format!=vpiVectorVal&&format!=vpiIntVal&&format!=vpiScalarVal&&format!=vpiSuppressVal)throw std::runtime_error("unsupported VPI value format");}
+void valueFormat(int format){if(format!=vpiBinStrVal&&format!=vpiHexStrVal&&format!=vpiVectorVal&&format!=vpiIntVal&&format!=vpiScalarVal&&format!=vpiSuppressVal)throw std::runtime_error("unsupported VPI value format");}
+std::string radixText(W w,int group){
+ std::string out;
+ for(int low=((w.w-1)/group)*group;low>=0;low-=group){
+  auto bits=vsrtl::mask(std::min(group,w.w-low));auto x=(w.x>>low)&bits,z=(w.z>>low)&bits,v=(w.v>>low)&bits;
+  out+=x?(x==bits?'x':'X'):z?(z==bits?'z':'Z'):"0123456789abcdef"[v];
+ }
+ return out;
+}
 void encode(W w,p_vpi_value value,std::string& buffer,s_vpi_vecval* vector){
  valueFormat(value->format);
  switch(value->format){
  case vpiBinStrVal:buffer=vsrtl::text(w);value->value.str=buffer.data();break;
+ case vpiHexStrVal:buffer=radixText(w,4);value->value.str=buffer.data();break;
  case vpiVectorVal:{uint64_t a=w.v|w.x,b=w.x|w.z;for(int i=0;i<2;i++)vector[i]={uint32_t(a>>(32*i)),uint32_t(b>>(32*i))};value->value.vector=vector;break;}
  case vpiIntVal:if(w.x||w.z)throw std::runtime_error("X/Z integer read; request binary or vector format");value->value.integer=static_cast<int32_t>(uint32_t(w.v));break;
  case vpiScalarVal:if(w.w!=1)throw std::runtime_error("scalar format requires width1");value->value.scalar=w.x?vpiX:w.z?vpiZ:w.v?vpi1:vpi0;break;
