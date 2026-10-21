@@ -2,6 +2,8 @@
 
 Open-source experimental Verilog/SystemVerilog simulation project.
 
+Start with the illustrated [HTML introduction](docs/introduction.html) to see how Surelog, UHDM, native compilation and independent simulation checks fit together. It includes an interactive clock-edge walkthrough and explains the current execution boundaries. Download/open the HTML in a browser to view it; GitHub's file view displays its source.
+
 ## Status
 
 Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET10 C# helpers validate IR, orchestrate frontends and run regressions. The verified real Surelog/UHDM path supports a restricted synchronous-reset counter, not arbitrary SystemVerilog.
