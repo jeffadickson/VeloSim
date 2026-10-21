@@ -15,6 +15,15 @@ inline int truth(W a){return a.v?1:(a.x|a.z)?2:0;}
 inline bool yes(W a){return truth(a)==1;}
 inline W logical_not(W a){int t=truth(a);return t==2?unknown(1):W{uint64_t(!t),0,0,1};}
 inline W logical_and(W a,W b){int l=truth(a),r=truth(b);return l==0||r==0?W{0,0,0,1}:l==1&&r==1?W{1,0,0,1}:unknown(1);}
+inline W bit_not(W a,int w){a=resize(a,w);auto u=a.x|a.z;return word(~(a.v|u),u,0,w);}
+inline W bit_binary(W a,W b,int w,int op){
+ a=resize(a,w);b=resize(b,w);auto au=a.x|a.z,bu=b.x|b.z;
+ auto az=~(a.v|au),bz=~(b.v|bu);uint64_t v,u;
+ if(op==0){v=a.v&b.v;u=~(az|bz|v);}
+ else if(op==1){v=a.v|b.v;u=~(v|(az&bz));}
+ else{u=au|bu;v=(a.v^b.v)&~u;}
+ return word(v,u,0,w);
+}
 inline bool exact(W a,W b){int w=a.w>b.w?a.w:b.w;a=resize(a,w);b=resize(b,w);return a.v==b.v&&a.x==b.x&&a.z==b.z;}
 inline W equal(W a,W b){int w=a.w>b.w?a.w:b.w;a=resize(a,w);b=resize(b,w);auto u=a.x|a.z|b.x|b.z;if((a.v^b.v)&~u)return {0,0,0,1};return u?unknown(1):W{1,0,0,1};}
 inline W arithmetic(W a,W b,int w,bool subtract){if(a.x||a.z||b.x||b.z)return unknown(w);return word(subtract?a.v-b.v:a.v+b.v,0,0,w);}

@@ -29,9 +29,9 @@ std::string expr(H h,int depth=0){
  if(type(h)==vpiConstant){auto b=bits(h);const char* d=vpi_get_str(vpiDecompile,h);std::string literal=d?d:"";need(literal!="'1"&&literal!="'x"&&literal!="'z"&&literal!="'X"&&literal!="'Z","unbased fill literal unsupported except zero");need(!(vpi_get(vpiSigned,h)&&b.front()=='1'),"negative signed literal unsupported");return "{\"kind\":\"const\",\"bits\":"+q(b)+"}";}
  if(type(h)==vpiBitSelect){need(type(one(h,vpiActual))==vpiArrayVar,"only unpacked memory selection supported");return "{\"kind\":\"index\",\"name\":"+q(name(h))+",\"index\":"+expr(one(h,vpiIndex),depth+1)+"}";}
  if(type(h)==vpiOperation){
-  static const std::map<int,std::string> ops={{vpiAddOp,"add"},{vpiSubOp,"sub"},{vpiLogAndOp,"and"},{vpiNotOp,"not"},{vpiEqOp,"eq"},{vpiConcatOp,"concat"}};
+  static const std::map<int,std::string> ops={{vpiAddOp,"add"},{vpiSubOp,"sub"},{vpiLogAndOp,"and"},{vpiNotOp,"not"},{vpiEqOp,"eq"},{vpiConcatOp,"concat"},{vpiBitAndOp,"bitand"},{vpiBitOrOp,"bitor"},{vpiBitXorOp,"bitxor"},{vpiBitNegOp,"bitnot"}};
   auto it=ops.find(vpi_get(vpiOpType,h));need(it!=ops.end(),"unsupported expression operation "+std::to_string(vpi_get(vpiOpType,h)));auto operands=many(h,vpiOperand);
-  need(operands.size()==(it->second=="not"?1:2),"only unary/binary expressions supported");
+  need(operands.size()==(it->second=="not"||it->second=="bitnot"?1:2),"only unary/binary expressions supported");
   std::string s="{\"kind\":"+q(it->second)+",\"args\":[";bool first=true;for(auto a:operands){if(!first)s+=",";first=false;s+=expr(a,depth+1);}return s+"]}";
  }
  need(!name(h).empty()&&(type(h)==vpiReg||type(h)==vpiNet||type(h)==vpiRefObj||type(h)==vpiVariables),"unsupported reference type "+std::to_string(type(h)));

@@ -67,7 +67,7 @@ public sealed class RtlDesign
         if (kind == "const") { JsonShape.Fields(e, ["kind", "bits"]); return FourStateCodec.ParseBinary(e.GetProperty("bits").GetString()!).Width; }
         if (kind == "index") { JsonShape.Fields(e, ["kind", "name", "index"]); ValidateExpression(e.GetProperty("index"), depth + 1); return Memories[MemoryId(Name(e))].Width; }
         JsonShape.Fields(e, ["kind", "args"]); var args = e.GetProperty("args").EnumerateArray().ToArray();
-        if (kind is not ("add" or "sub" or "and" or "not" or "eq" or "concat") || args.Length != (kind == "not" ? 1 : 2)) throw new IrValidationException("Unsupported RTL expression.");
+        if (kind is not ("add" or "sub" or "and" or "not" or "eq" or "concat" or "bitand" or "bitor" or "bitxor" or "bitnot") || args.Length != (kind is "not" or "bitnot" ? 1 : 2)) throw new IrValidationException("Unsupported RTL expression.");
         var widths = args.Select(a => ValidateExpression(a, depth + 1)).ToArray(); var result = kind is "and" or "not" or "eq" ? 1 : kind == "concat" ? widths.Sum() : widths.Max(); if (result > 64) throw new IrValidationException("Expression exceeds 64 bits."); return result;
     }
     private IEnumerable<string> References(JsonElement e)
@@ -108,6 +108,8 @@ public sealed class RtlDesign
         return kind switch
         {
             "add" or "sub" => $"arithmetic({Expression(args[0], width)},{Expression(args[1], width)},{width},{(kind == "sub" ? "true" : "false")})",
+            "bitnot" => $"bit_not({Expression(args[0], width)},{width})",
+            "bitand" or "bitor" or "bitxor" => $"bit_binary({Expression(args[0], width)},{Expression(args[1], width)},{width},{(kind == "bitand" ? 0 : kind == "bitor" ? 1 : 2)})",
             "not" => $"logical_not({Expression(args[0])})", "and" => $"logical_and({Expression(args[0])},{Expression(args[1])})",
             "eq" => $"equal({Expression(args[0], args.Max(ExpressionWidth))},{Expression(args[1], args.Max(ExpressionWidth))})", "concat" => $"concat({Expression(args[0])},{Expression(args[1])})", _ => throw new IrValidationException("Unsupported expression.")
         };
