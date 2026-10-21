@@ -12,6 +12,7 @@ public class BuildDiagnosticsTests
         <package name="VeloSim.Build"><classes><class filename="tools/VeloSim.Build/A.cs"><lines><line number="1" hits="1"/><line number="2" hits="0"/></lines></class></classes></package>
         <package name="Default"><classes><class filename="native/ir/engine.cpp"><lines><line number="1" hits="2"/></lines></class>
         <class filename="native/scheduler.cpp"><lines><line number="1" hits="2"/></lines></class>
+        <class filename="native/rtl/runtime.h"><lines><line number="1" hits="1"/></lines></class>
         <class filename="native/uhdm/json_escape.h"><lines><line number="1" hits="2"/></lines></class></classes></package>
         </packages></coverage>
         """;

@@ -61,6 +61,7 @@ public class CoverageEvidenceTests
       <package name="Default"><classes>
       <class filename="native/ir/engine.cpp"><lines><line number="1" hits="1" branch="true" condition-coverage="100% (2/2)"/></lines></class>
       <class filename="native/scheduler.cpp"><lines><line number="1" hits="1" branch="true" condition-coverage="100% (2/2)"/></lines></class>
+      <class filename="native/rtl/runtime.h"><lines><line number="1" hits="1"/></lines></class>
       <class filename="native/uhdm/json_escape.h"><lines><line number="1" hits="1" branch="true" condition-coverage="100% (2/2)"/></lines></class>
       </classes></package></packages></coverage>
       """;

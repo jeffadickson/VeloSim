@@ -71,7 +71,7 @@ public static class BuildDiagnostics
         if (!packages.Any(p => (string?)p.Attribute("name") == "VeloSim.Build" && p.Descendants("line").Any())) throw new IOException("Coverage missing compiled build helper assembly.");
         var nativeFiles = packages.Where(p => (string?)p.Attribute("name") == "Default").Elements("classes").Elements("class")
             .Where(c => c.Elements("lines").Elements("line").Any()).Select(c => ((string?)c.Attribute("filename") ?? "").Replace('\\', '/')).ToArray();
-        foreach (var required in new[] { "native/ir/engine.cpp", "native/scheduler.cpp", "native/uhdm/json_escape.h" })
+        foreach (var required in new[] { "native/ir/engine.cpp", "native/scheduler.cpp", "native/uhdm/json_escape.h", "native/rtl/runtime.h" })
             if (!nativeFiles.Any(file => file == required || file.EndsWith("/" + required, StringComparison.Ordinal))) throw new IOException("Coverage missing native file: " + required);
         CoverageMeasurement Read(string name, Func<XElement, bool> select)
         {

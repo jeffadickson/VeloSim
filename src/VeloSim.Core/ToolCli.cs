@@ -27,6 +27,23 @@ public static class ToolCli
     private static void WriteError(TextWriter writer, Exception exception) { if (writer is ErrorCapture capture) capture.Cause = exception; writer.WriteLine(exception.Message); }
     private static async Task<int> RunCoreAsync(string[] args, TextWriter output, TextWriter error, IProcessRunner? runner, CancellationToken cancellationToken)
     {
+        if (args.Length > 0 && args[0] == "fifo-differential")
+        {
+            if (args.Length < 2) throw new ArgumentException("FIFO source required.");
+            string top = "surelog_fifo"; string? directory = null, exporter = null, surelog = null; int jobs = 4, cycles = 1000; uint seed = 42; int[] workers = [1, 4, 8]; var seen = new HashSet<string>();
+            for (int i = 2; i < args.Length; i += 2)
+            {
+                if (i + 1 == args.Length || !seen.Add(args[i])) throw new ArgumentException("Incomplete or duplicate FIFO option.");
+                switch (args[i])
+                {
+                    case "--top": top = args[i + 1]; break; case "--output-dir": directory = args[i + 1]; break; case "--exporter": exporter = args[i + 1]; break; case "--surelog": surelog = args[i + 1]; break;
+                    case "--build-jobs": jobs = int.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break; case "--cycles": cycles = int.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break; case "--seed": seed = uint.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break;
+                    case "--workers": workers = args[i + 1].Split(',').Select(s => int.Parse(s, NumberStyles.None, CultureInfo.InvariantCulture)).ToArray(); break; default: throw new ArgumentException("Unknown FIFO option: " + args[i]);
+                }
+            }
+            if (directory is null) throw new ArgumentException("FIFO output directory required.");
+            var result = await new FifoDifferential(runner).RunAsync(args[1], top, directory, workers, jobs, seed, cycles, exporter, surelog, cancellationToken).ConfigureAwait(false); output.WriteLine($"{result.Status} width={result.Width} depth={result.Depth} cycles={result.Cycles} {result.ReportPath}"); return result.Status == "pass" ? 0 : 1;
+        }
         if (args.Length > 0 && args[0] == "word-seeded-conformance")
         {
             string? destination = null, compiler = null, runtime = null; uint seed = 1; int steps = 128, repetitions = 2; int[] workers = [1, 4]; var seen = new HashSet<string>();

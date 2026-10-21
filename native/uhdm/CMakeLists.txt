@@ -19,9 +19,12 @@ target_link_libraries(velosim-uhdm-inspect PRIVATE ${VELOSIM_UHDM_TARGET})
 
 add_executable(velosim-uhdm-normalize normalize.cpp)
 target_link_libraries(velosim-uhdm-normalize PRIVATE ${VELOSIM_UHDM_TARGET})
+add_executable(velosim-uhdm-rtl rtl.cpp)
+target_link_libraries(velosim-uhdm-rtl PRIVATE ${VELOSIM_UHDM_TARGET})
 if(TARGET velosim_options)
   target_link_libraries(velosim-uhdm-inspect PRIVATE velosim_options)
   target_link_libraries(velosim-uhdm-normalize PRIVATE velosim_options)
+  target_link_libraries(velosim-uhdm-rtl PRIVATE velosim_options)
 endif()
 
-install(TARGETS velosim-uhdm-inspect velosim-uhdm-normalize RUNTIME DESTINATION bin)
+install(TARGETS velosim-uhdm-inspect velosim-uhdm-normalize velosim-uhdm-rtl RUNTIME DESTINATION bin)

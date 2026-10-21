@@ -132,13 +132,13 @@ internal static class Build
             writer.WriteStartObject(); writer.WriteString("format", "velosim.coverage.evidence.v1"); writer.WriteString("run_id", RunId); writer.WriteNumber("jobs", Jobs);
             writer.WriteStartArray("reports"); foreach (var name in new[] { "Cobertura.xml", "gate.json", "sources.json", "doctor.json" }) { writer.WriteStartObject(); writer.WriteString("path", name); writer.WriteString("sha256", FileDigest(Path.Combine(directory, name))); writer.WriteEndObject(); } writer.WriteEndArray();
             writer.WriteString("llvm_version", await BuildDiagnostics.ProbeVersionAsync(Llvm("llvm-cov"), "--version", TimeSpan.FromSeconds(15)));
-            writer.WriteStartArray("native_objects"); foreach (var relative in new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests" }) { var file = Path.Combine(NativeCoverage, relative); writer.WriteStartObject(); writer.WriteString("path", file); writer.WriteString("sha256", FileDigest(file)); writer.WriteEndObject(); } writer.WriteEndArray();
+            writer.WriteStartArray("native_objects"); foreach (var relative in new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests", "bin/velosim_rtl_tests" }) { var file = Path.Combine(NativeCoverage, relative); writer.WriteStartObject(); writer.WriteString("path", file); writer.WriteString("sha256", FileDigest(file)); writer.WriteEndObject(); } writer.WriteEndArray();
             writer.WriteStartArray("managed_objects"); foreach (var file in ManagedCoverageObjects()) { writer.WriteStartObject(); writer.WriteString("path", file); writer.WriteString("sha256", FileDigest(file)); writer.WriteEndObject(); } writer.WriteEndArray(); writer.WriteEndObject();
         }
         await File.WriteAllTextAsync(Path.Combine(directory, "evidence.json"), System.Text.Encoding.UTF8.GetString(stream.ToArray()) + "\n");
     }
     private static void VerifyCoverageEvidence(string report) => CoverageEvidence.Validate(report,
-        new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests" }.Select(relative => Path.Combine(NativeCoverage, relative)), ManagedCoverageObjects());
+        new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests", "bin/velosim_rtl_tests" }.Select(relative => Path.Combine(NativeCoverage, relative)), ManagedCoverageObjects());
     private static IEnumerable<string> ManagedCoverageObjects() => new[] { "VeloSim.dll", "VeloSim.Build.dll", "VeloSim.Tests.dll" }.Select(name => Path.Combine(Root, "tests/VeloSim.Tests/bin/Release/net10.0", name));
     private static string BenchmarkSourceStamp()
     {
@@ -229,7 +229,7 @@ internal static class Build
         string merged = Path.Combine(profiles, "merged.profdata");
         await Run(Llvm("llvm-profdata"), new[] { "merge", "-sparse", "-o", merged }.Concat(raw));
         string executable = Path.Combine(NativeCoverage, "bin", "velosim_native_tests");
-        string[] objects = ["-object", Path.Combine(NativeCoverage, "lib", "libvelosim_ir.so"), "-object", Path.Combine(NativeCoverage, "lib", "libvelosim_scheduler.so"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_json_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_c_abi_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_word_tests")];
+        string[] objects = ["-object", Path.Combine(NativeCoverage, "lib", "libvelosim_ir.so"), "-object", Path.Combine(NativeCoverage, "lib", "libvelosim_scheduler.so"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_json_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_c_abi_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_word_tests"), "-object", Path.Combine(NativeCoverage, "bin", "velosim_rtl_tests")];
         var localCoverage = new Dictionary<string, string> { ["DEBUGINFOD_URLS"] = "" };
         await Run(Llvm("llvm-cov"), new[] { "export", executable, "--debuginfod=false", "--check-binary-ids", "-format=lcov", $"-instr-profile={merged}", "-ignore-filename-regex=/tests/|/external/" }.Concat(objects), environment: localCoverage, output: Path.Combine(NativeCoverage, "native.lcov"));
         await Run(Llvm("llvm-cov"), new[] { "show", executable, "--debuginfod=false", "--check-binary-ids", "-format=html", $"-instr-profile={merged}", $"-output-dir={NativeCoverage}/html", "-ignore-filename-regex=/tests/|/external/" }.Concat(objects), environment: localCoverage);

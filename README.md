@@ -55,3 +55,22 @@ Native CLI word-conformance compares generated strict-SystemVerilog fixtures aga
 Coverage source hashes preserve application dependency locks and lock metadata, with compiler-only NativeAOT restore entries normalized out. This keeps ordinary test and native publish restores compatible without hiding application dependency changes. Reports retain measured managed/native binary hashes and tool versions separately.
 
 word-seeded-conformance records a deterministic seed and known/four-state phases across five width dimensions, all ten strict operations and NBA history, then compares repeated full native traces. For example: word-seeded-conformance --output-dir artifacts/seeded --seed 3735928559 --steps 256 --workers 1,4,8 --repetitions 3. Individual word differential runs preserve completed evidence on cancellation; pre-cancel and oracle preflight can stop before a run directory is created.
+
+### Actual synchronous FIFO milestone
+
+VeloSim now executes `examples/surelog_fifo.sv` through a separate bounded native RTL compilation backend: actual source → Surelog/UHDM → structural `velosim.rtl.v1` IR → generated C++ → CMake/Ninja executable. This is not a hardcoded FIFO model. The existing flat-process IR/kernel remains available; its counter frontend is unchanged.
+
+Build the structural exporter against the installed pinned UHDM package:
+
+```sh
+cmake -S . -B artifacts/with-uhdm -G Ninja -DCMAKE_BUILD_TYPE=Release -DVELOSIM_BUILD_UHDM=ON -DCMAKE_PREFIX_PATH=/opt/velosim
+cmake --build artifacts/with-uhdm --parallel 4
+make publish JOBS=4
+artifacts/publish/VeloSim.Tools/VeloSim.Tools fifo-differential examples/surelog_fifo.sv --top surelog_fifo --exporter artifacts/with-uhdm/bin/velosim-uhdm-rtl --output-dir artifacts/fifo-run --cycles 1000 --workers 1,4,8 --build-jobs 4
+```
+
+The workflow compares every output each cycle with Icarus, including retained/unknown `dout` while empty. An independent queue checks full/empty flags and valid data ordering using pre-edge acceptance: a simultaneous request at full rejects push and accepts pop; at empty it accepts push and rejects pop. The report records directed/seeded stimulus, scenario counts, differences, tool/compiler/Ninja fingerprints, copied build inputs and complete traces. A wrong-read-pointer mutation is detected by the queue even though both simulators agree.
+
+Verified dimensions are width/depth 1/2, 8/4, 16/8 and 64/8, with reset, overflow, underflow, pointer wrap, simultaneous requests and X/Z payloads. Controls are binary in these tests. Exactly one posedge `always_ff`, unsigned words up to64bits, zero-based unpacked word memories, ordered NBAs, if/exact-case, supported expressions and acyclic continuous assignments are accepted. Two-state declarations, undriven non-input signals, pull/resolved nets, initializers, signed state, fill literals other than zero, timing/strengths, primitives, generate scopes, hierarchy, functions/tasks and clock-dependent continuous logic are rejected. No general SystemVerilog or multi-process scheduling claim is made. Worker configurations are recorded, but the single sequential process executes serially; no parallel speedup is claimed.
+
+Enable actual frontend integration tests and instrumented core/kernel/runtime coverage with `VELOSIM_REAL_FIFO=1 make coverage JOBS=4`. Optional `VELOSIM_UHDM_RTL` selects the exporter. The UHDM exporter itself is exercised by real positive/negative integration tests but is outside the default LLVM kernel/runtime coverage denominator. Native FIFO compilation needs a source checkout, C++/Ninja, the pinned frontend and Icarus; the produced design executable runs without .NET.

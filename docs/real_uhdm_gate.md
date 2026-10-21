@@ -14,3 +14,5 @@ artifacts/publish/VeloSim.Tools/VeloSim.Tools replay artifacts/real-counter/repo
 The native engine executes IR derived from this actual RTL through Surelog/UHDM. Icarus and Verilator independently compile the same RTL. Verilator uses CMake/Ninja and checks binary traces; four-state scheduler conformance is checked separately against an independent C# oracle. Replay verifies recorded artifact/tool fingerprints and semantic report consistency.
 
 Verified WSL Ubuntu24.04, GCC13.3, Surelog `6db44ea2048c8ab9c702e389c2897f7e2318ccc5`, matching UHDM `7c42de4057d0a7e2ef14048b8ee570c7ac3db94b`. The normalizer resolves work-qualified tops and parameter widths through UHDM type evaluation. Historical Python experiments remain reference sources; active helpers and CLI are compiled C#.
+
+The additional structural RTL exporter and actual synchronous FIFO compilation workflow are documented in README.md under Actual synchronous FIFO milestone. This path supports the stated one-process memory/control subset and is separate from the existing counter-only flat IR lowerer.
