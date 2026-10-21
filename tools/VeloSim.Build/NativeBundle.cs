@@ -6,7 +6,7 @@ using System.Text.Json;
 
 public static class NativeBundle
 {
-    private static readonly string[] Required = ["VeloSim.Tools", "VeloSim.Build", "VeloSim.Bench", "libvelosim_ir.so", "libvelosim_scheduler.so", "include/velosim.h", "examples/counter.ir.json", "README.txt", "build.txt"];
+    private static readonly string[] Required = ["VeloSim.Tools", "VeloSim.Build", "VeloSim.Bench", "libvelosim_ir.so", "libvelosim_scheduler.so", "include/velosim.h", "libvelosim_vpi.so", "include/velosim/runtime.h", "include/velosim/external_model.h", "include/velosim/vpi_user.h", "examples/counter.ir.json", "README.txt", "build.txt"];
     public static void Create(string directory, IReadOnlyDictionary<string, string> inputs, string revision, string buildMetadata)
     {
         directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));

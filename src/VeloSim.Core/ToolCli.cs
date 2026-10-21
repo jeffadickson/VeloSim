@@ -27,6 +27,11 @@ public static class ToolCli
     private static void WriteError(TextWriter writer, Exception exception) { if (writer is ErrorCapture capture) capture.Cause = exception; writer.WriteLine(exception.Message); }
     private static async Task<int> RunCoreAsync(string[] args, TextWriter output, TextWriter error, IProcessRunner? runner, CancellationToken cancellationToken)
     {
+        if (args.Length > 0 && args[0] == "rtl-export")
+        {
+            if (args.Length != 6 || args[2] != "--top" || args[4] != "--output-dir") throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory>");
+            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], args[3], args[5], cancellationToken).ConfigureAwait(false)); return 0;
+        }
         if (args.Length > 0 && args[0] == "fifo-differential")
         {
             if (args.Length < 2) throw new ArgumentException("FIFO source required.");

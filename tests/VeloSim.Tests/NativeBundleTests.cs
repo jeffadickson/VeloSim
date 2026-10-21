@@ -10,7 +10,7 @@ public class NativeBundleTests
     private static string Create(string root)
     {
         Directory.CreateDirectory(root); var source = Path.Combine(root, "source"); File.WriteAllText(source, "fixture");
-        var files = new[] { "VeloSim.Tools", "VeloSim.Build", "VeloSim.Bench", "libvelosim_ir.so", "libvelosim_scheduler.so", "include/velosim.h", "examples/counter.ir.json", "README.txt" }.ToDictionary(p => p, _ => source);
+        var files = new[] { "VeloSim.Tools", "VeloSim.Build", "VeloSim.Bench", "libvelosim_ir.so", "libvelosim_scheduler.so", "include/velosim.h", "libvelosim_vpi.so", "include/velosim/runtime.h", "include/velosim/external_model.h", "include/velosim/vpi_user.h", "examples/counter.ir.json", "README.txt" }.ToDictionary(p => p, _ => source);
         var bundle = Path.Combine(root, "bundle"); NativeBundle.Create(bundle, files, "test-revision", "jobs=4\n"); return bundle;
     }
     [Test] public void BundleManifestVerifiesCopiedFilesAndTrailingDirectorySeparator()

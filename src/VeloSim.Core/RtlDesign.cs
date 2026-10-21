@@ -155,6 +155,38 @@ public sealed class RtlDesign
                 var defaultItem = items.FirstOrDefault(i => i.GetProperty("match").ValueKind == JsonValueKind.Null); if (defaultItem.ValueKind != JsonValueKind.Undefined) { code.AppendLine(first ? "{" : "else{"); Statement(code, defaultItem.GetProperty("body"), ref unique); code.AppendLine("}"); } code.AppendLine("}"); break;
         }
     }
+    public IReadOnlyDictionary<string, string> ExternalPortNames()
+    {
+        var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write").Split(' ').ToHashSet(StringComparer.Ordinal);
+        var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal); var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var signal in Signals.Where(s => s.Direction != "internal"))
+        {
+            string field = signal.Name;
+            if (reserved.Contains(field) || field.StartsWith('_') || field.Contains("__", StringComparison.Ordinal)) { field = "port_" + field.TrimStart('_'); while (field.Contains("__", StringComparison.Ordinal)) field = field.Replace("__", "_", StringComparison.Ordinal); while (used.Contains(field) || reserved.Contains(field)) field = "port_" + field; }
+            used.Add(field); result.Add(signal.Name, field);
+        }
+        return result;
+    }
+    public string EmitModelHeader(string top)
+    {
+        if (!Identifier(top) || ("V" + top).Contains("__", StringComparison.Ordinal)) throw new ArgumentException("Invalid external model top name.", nameof(top));
+        var names = ExternalPortNames(); string className = "V" + top;
+        // Avoid a legal HDL port hiding the generated C++ constructor's class name.
+        if (names.Values.Contains(className)) throw new ArgumentException("Port conflicts with generated class name.", nameof(top));
+        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
+        code.AppendLine($"class {className} final : public vsrtl::Model {{\nbool previous_clock=false;\nvoid settle(){{");
+        foreach (var assignment in Continuous) { int id = SignalId(Name(assignment.GetProperty("target"))); code.AppendLine($"s[{id}]=resize({Expression(assignment.GetProperty("value"), Signals[id].Width)},{Signals[id].Width});"); }
+        code.AppendLine($"}}\nvoid evaluate() override {{\nauto clock=s[{SignalId(Clock)}];if(clock.x||clock.z)throw std::runtime_error(\"external clock must be known0/1\");settle();\nif(!previous_clock&&clock.v){{auto next=s;auto nextMem=mem;");
+        int unique = 0; Statement(code, Body, ref unique);
+        code.AppendLine("s=std::move(next);mem=std::move(nextMem);settle();}\nprevious_clock=clock.v!=0;\n}\npublic:");
+        foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.AppendLine($"vsrtl::Port {names[signal.Name]};");
+        code.Append($"{className}():vsrtl::Model(\"{top}\",{{");
+        code.AppendJoin(',', Signals.Select(s => $"{{\"{s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")}}}"));
+        code.Append($"}},{SignalId(Clock)})");
+        foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)})");
+        code.AppendLine("{mem={"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},unknown({m.Width}))"));
+        return code.AppendLine("};}\n};").ToString();
+    }
     public string EmitCpp()
     {
         var code = new StringBuilder("#include \"runtime.h\"\n#include <iostream>\n#include <fstream>\n#include <sstream>\nusing namespace vsrtl;\nint main(int argc,char**argv){try{if(argc!=3)throw std::runtime_error(\"stimulus and workers required\");int workers=std::stoi(argv[2]);if(workers<1||workers>256)throw std::runtime_error(\"workers out of range\");\nstd::vector<W>s{\n");
