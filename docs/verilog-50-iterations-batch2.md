@@ -22,40 +22,40 @@ Builds and independent simulation/tooling expert reviews are required at checkpo
 | 14 | Check fixed slices at width 1/64, full-word and partial out-of-range boundaries. | Passed: checkpoint20 selection4/4, actual172cycles at1/4/8 and six rejection variants; native string-oracle widths1..64. |
 | 15 | Reject ascending/nonzero packed declaration ranges rather than misinterpreting indices. | Passed: checkpoint20 selection4/4, actual172cycles at1/4/8 and six rejection variants; native string-oracle widths1..64. |
 | 16 | Qualify fixed-slice four-state ordering and untouched self-determined operand widths. | Passed: checkpoint20 selection4/4, actual172cycles at1/4/8 and six rejection variants; native string-oracle widths1..64. |
-| 17 | Qualify select boundaries inside arithmetic, comparison and shift expression contexts. | Pending. |
+| 17 | Qualify select boundaries inside arithmetic, comparison and shift expression contexts. | Passed at30: selected sum/comparison/shift and nested selected-expression replication agree with Icarus in the172-cycle fixture at1/4/8. |
 | 18 | Verify selected values and dynamic index references participate in continuous DAG checks. | Passed: checkpoint20 selection4/4, actual172cycles at1/4/8 and six rejection variants; native string-oracle widths1..64. |
 | 19 | Qualify wide unsigned index values and reject unsupported signed index expressions. | Passed: checkpoint20 selection4/4, actual172cycles at1/4/8 and six rejection variants; native string-oracle widths1..64. |
 | 20 | Build checkpoint 20; obtain both expert reviews and resolve findings. | Build20 passed zero warnings/errors; both independent reviewers accepted repairs; focused4/4 pass. |
-| 21 | Prove packed bit/slice/indexed assignment targets remain explicitly rejected. | Passed: checkpoint20 selection4/4, actual172cycles at1/4/8 and six rejection variants; native string-oracle widths1..64. |
-| 22 | Prove ascending/descending indexed part-select reads remain explicitly rejected. | Pending. |
-| 23 | Disambiguate packed bit-select reads from existing unpacked-memory element reads. | Passed: checkpoint20 selection4/4, actual172cycles at1/4/8 and six rejection variants; native string-oracle widths1..64. |
+| 21 | Prove packed bit/slice/indexed assignment targets remain explicitly rejected. | Passed at30/40: selected bit, fixed-slice and indexed write targets all fail closed. |
+| 22 | Prove ascending/descending indexed part-select reads remain explicitly rejected. | Passed at30: both indexed read directions are among14 actual source rejection variants. |
+| 23 | Disambiguate packed bit-select reads from existing unpacked-memory element reads. | Passed at30/40: the new payload-reconstruction FIFO exercises packed reads alongside existing unpacked memory indices;1043cycles match Icarus and queue. |
 | 24 | Qualify malformed select IR, field/arity checks and native read-helper width-64 boundaries. | Passed: checkpoint20 selection4/4, actual172cycles at1/4/8 and six rejection variants; native string-oracle widths1..64. |
-| 25 | Run focused managed/native regressions and preserve the first local checkpoint commit. | Focused4/4 and Release/sanitizer5/5 pass; first local checkpoint contains current qualified feature implementation. |
-| 26 | Implement bounded n-ary concatenation using explicit self-determined operand widths. | Pending. |
-| 27 | Export actual UHDM concatenations with three or more operands. | Pending. |
-| 28 | Qualify nested concatenation with arithmetic/shifts/selects without outer-context leakage. | Pending. |
-| 29 | Define and validate constant replication count, payload width and total-width limits. | Pending. |
-| 30 | Build checkpoint 30; obtain both expert reviews and resolve findings. | Pending build logs and both review outcomes. |
-| 31 | Export actual UHDM replication constructs with known constant repeat counts. | Pending. |
-| 32 | Qualify nested replication and four-state payload ordering against independent expected values. | Pending. |
-| 33 | Reject unsupported counts, overwide concatenations, malformed nodes and excessive expansion. | Pending. |
-| 34 | Verify expression reference traversal and combinational DAG/writer checks for new forms. | Pending. |
-| 35 | Build a real-source select/concatenation differential fixture and common stimulus harness. | Pending. |
-| 36 | Assert exact source interface and requested output writers before constructing reference wiring. | Pending. |
-| 37 | Add directed boundary vectors for low/high indices, width-one and full-word windows. | Pending. |
-| 38 | Add X/Z payload and index vectors, plus stable known/four-state seeded phases. | Pending. |
-| 39 | Run an explicit mixed-width matrix through Surelog, native C++ and Icarus. | Pending actual execution and retained traces. |
-| 40 | Build checkpoint 40; obtain both expert reviews and resolve findings. | Pending build logs and both review outcomes. |
-| 41 | Record unchanged same-source paths/hashes, UHDM, IR, copied runtime and generated build inputs. | Pending artifact evidence. |
-| 42 | Record effective compiler/Ninja/tool identities and enforce trace/report resource limits. | Pending artifact and rejection evidence. |
-| 43 | Qualify malformed/missing outputs, wrong widths and trace-order rejection to prevent false passes. | Pending negative test evidence. |
-| 44 | Qualify unsupported declaration directions/ranges and unsupported lvalues with explicit rejections. | Pending negative source evidence. |
-| 45 | Run existing operator/FIFO/counter regressions to detect changes outside the selected forms. | Pending regression evidence. |
-| 46 | Update supported/backlog disposition using only implemented and qualified forms. | Pending review of final documentation. |
-| 47 | Run the current compiled/native CLI on a real source example exercising the new forms. | Pending command, source and output evidence. |
-| 48 | Run full managed/native tests and configured line/branch coverage gates against frozen sources. | Pending coverage and provenance validation. |
-| 49 | Complete final independent simulation/tooling reviews and repair any outstanding findings. | Pending both final outcomes. |
-| 50 | Build checkpoint 50, create the final local commit, then freshly qualify committed-source coverage and NativeAOT bundle. | Pending build, reviews, commit identity, coverage-current and bundle evidence. |
+| 25 | Run focused managed/native regressions and preserve the first local checkpoint commit. | Focused4/4 and Release/sanitizer5/5 pass; first local checkpoint is542f859. Later30 repairs require their own current-source evidence. |
+| 26 | Implement bounded n-ary concatenation using explicit self-determined operand widths. | Passed at30/40:64-operand concat and normalized expansion guard qualified. |
+| 27 | Export actual UHDM concatenations with three or more operands. | Passed at30: reordered four-part concatenation, nested bit concatenation and64-operand concatenation agree with Icarus. |
+| 28 | Qualify nested concatenation with arithmetic/shifts/selects without outer-context leakage. | Passed at30/40: nested selected-expression contexts plus existing eleven-width-pair operator matrix. |
+| 29 | Define and validate constant replication count, payload width and total-width limits. | Passed at30: materialized count guard, signed-negative/wrapped/zero/overwide rejection variants, count1/count64 and nested repetition. |
+| 30 | Build checkpoint 30; obtain both expert reviews and resolve findings. | Passed: exporter30 and build30 with zero warnings, selection4/4 including14 rejection variants, actual FIFO1043cycles with zero differences, and five CTests. Both reviewers accepted after repairs. |
+| 31 | Export actual UHDM replication constructs with known constant repeat counts. | Passed at30: same-source count1/count4/count64 and nested2-by4 replication through actual UHDM. |
+| 32 | Qualify nested replication and four-state payload ordering against independent expected values. | Actual native/Icarus172-cycle comparisons pass at30 with nested64-bit replication and known/X/Z payloads; native string-position selection oracle covers widths1..64. No independent replication oracle is claimed. |
+| 33 | Reject unsupported counts, overwide concatenations, malformed nodes and excessive expansion. | Passed at40:15 actual source rejection variants, including expanded-tree normalized-budget rejection, and strict malformed IR tests. |
+| 34 | Verify expression reference traversal and combinational DAG/writer checks for new forms. | Passed focused selection tests at30: selected value/index dependencies participate in clock/cycle checks and selected targets fail closed. |
+| 35 | Build a real-source select/concatenation differential fixture and common stimulus harness. | Passed at30:172 vectors, same generated design source path through Surelog and Icarus, full native traces at1/4/8. |
+| 36 | Assert exact source interface and requested output writers before constructing reference wiring. | Passed at30: independent expected signal widths/directions and exact output NBA writer set. |
+| 37 | Add directed boundary vectors for low/high indices, width-one and full-word windows. | Passed at30: directed indices0/1/7/8/31/32/63/64/65/127, full64-bit slices and partial/whole OOB reads; independent native oracle spans widths1..64. |
+| 38 | Add X/Z payload and index vectors, plus stable known/four-state seeded phases. | Passed at30: uniform0/1/X/Z payloads, four explicit unknown index vectors,64 seeded known and64 seeded four-state vectors. |
+| 39 | Run a mixed-width fixture through Surelog, native C++ and Icarus. | Passed at30: one actual fixture contains1/7/8/16/32/64-bit signals. This is not a new parameterized width matrix; the independent native helper oracle covers all widths1..64. |
+| 40 | Build checkpoint 40; obtain both expert reviews and resolve findings. | Build40 passed zero warnings/errors;27/27 broader actual regression tests pass; both reviewers accepted. |
+| 41 | Record unchanged same-source paths/hashes, UHDM, IR, copied runtime and generated build inputs. | Passed at30: test rechecks source closure, build inputs, UHDM and tool hashes, then retains output artifacts in the selections report. |
+| 42 | Record effective compiler/Ninja/tool identities and enforce trace/report resource limits. | Passed at40: effective compiler/Ninja identities, complete strict traces, current input/tool hashes and explicit expanded-node rejection. |
+| 43 | Qualify malformed/missing outputs, wrong widths and trace-order rejection to prevent false passes. | Passed at40: independent interface/writer assertions plus existing negative trace width/digit/order/missing/extra checks. |
+| 44 | Qualify unsupported declaration directions/ranges and unsupported lvalues with explicit rejections. | Passed at30: fourteen source variants cover ascending/nonzero ranges, negative selects/counts, selected bit/fixed/indexed writes, both indexed reads and unsupported replication/concat widths. |
+| 45 | Run existing operator/FIFO/counter regressions to detect changes outside the selected forms. | Operator, bitwise and FIFO regressions27/27 pass at40. Full suite including counters is measured after final commit; see delivered Validation.txt. |
+| 46 | Update supported/backlog disposition using only implemented and qualified forms. | Four bounded capability groups qualified;46 baseline gaps remain. Inventory and scope documentation independently reviewed. |
+| 47 | Run the current compiled/native CLI on a real source example exercising the new forms. | Compiled C# CLI passes1043 FIFO cycles against Icarus and queue; fresh NativeAOT CLI result is recorded after final commit in delivered Validation.txt. |
+| 48 | Run full managed/native tests and configured line/branch coverage gates against frozen sources. | Final committed-source full tests and coverage measurements run after the source commit; see delivered Validation.txt, gate.json and coverage-current log for actual outcomes. |
+| 49 | Complete final independent simulation/tooling reviews and repair any outstanding findings. | Both independent AI semantic/tooling reviewers accepted final frozen sources; no outstanding blocker. |
+| 50 | Build checkpoint 50, create the final local commit, then freshly qualify committed-source coverage and NativeAOT bundle. | Final source checkpoint is followed by fresh build/coverage, NativeAOT bundle and coverage-current verification. Actual commit identity and command outcomes are recorded in delivered Validation.txt and Logs. |
 
 ## Evidence rules
 
@@ -63,8 +63,12 @@ Record command outcomes, artifact locations and commit identities as they become
 
 Same-source means the same design `.sv` file path and unchanged contents reach Surelog and Icarus; Icarus additionally receives a generated stimulus testbench. Complete output traces must agree, and their interface must be independently specified rather than inferred solely from exported IR. A missing output or incorrect exported width must fail qualification. Requests for worker settings 1/4/8 retain the existing serial single-process execution scope.
 
-The agreed language scope is inventory items 1, 2, 9 and 10: packed bit-select reads, constant packed part-select reads, n-ary concatenation and constant replication. Indexed reads and every selected assignment target remain rejected. Fifty rows distribute implementation, qualification and release work across those four capability groups; they are not fifty new language features. Final disposition must name what actually passed, what was conservatively rejected and what remains missing. All build/review/commit/publication gates above remain pending until their evidence is recorded.
+The agreed language scope is inventory items 1, 2, 9 and 10: packed bit-select reads, constant packed part-select reads, n-ary concatenation and constant replication. Indexed reads and every selected assignment target remain rejected. Fifty rows distribute implementation, qualification and release work across those four capability groups; they are not fifty new language features. The other46 inventory gaps remain missing. Gates not explicitly supported by recorded evidence above, including broader40 qualification and final50 release gates, remain pending.
 
 ## Checkpoint 10 review finding
 
-The tooling reviewer identified that the exporter's permitted 64-operand concatenation or 64-count replication was folded into a deep left-associated binary JSON tree. That representation can exceed the JSON reader's depth limit despite a valid 64-bit result. The requested repair is balanced binary construction preserving operand order, plus expanded-output accounting for repeated subtrees. Repair and qualification are pending checkpoint 20; this review note does not mark any build or test as passed.
+The tooling reviewer identified that the exporter's permitted64-operand concatenation or64-count replication was folded into a deep left-associated binary JSON tree. That representation could exceed the JSON reader's depth limit despite a valid64-bit result. Balanced binary construction preserving operand order and expanded-output depth/object/4MiB guards repaired this issue. Checkpoint20 code review accepted the repair; actual count64 and64-operand traces subsequently passed. The additional large expanded-subtree rejection test remains pending checkpoint40 execution.
+
+## Checkpoint 30 repair history
+
+The actual FIFO qualification exposed a nested selected-bit replication width discrepancy in UHDM expression sizing. The exporter now derives self-determined widths structurally for packed selections, concatenation, replication and supported arithmetic/logical/comparison/shift/conditional operators. Review also found that small signed-negative constants could be misread as positive bounds/counts. Materialized constant guards, signed-negative rejection and bounded integer recursion repair this. Four focused selection tests passed after the repairs, including the expanded172-cycle positive fixture and fourteen source rejection variants. The actual FIFO comparison also passed1043cycles against Icarus and its independent queue, and five native CTests passed. Earlier failed attempts are repairs, not passes.
