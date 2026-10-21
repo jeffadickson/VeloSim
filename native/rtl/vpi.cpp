@@ -1,5 +1,6 @@
 #include "external_model.h"
 #include <algorithm>
+#include <charconv>
 #include <cstdarg>
 #include <cstdio>
 #include <limits>
@@ -56,6 +57,16 @@ W radixWord(const char* input,int width,int group){
   any=true;
  }
  throw std::runtime_error("invalid radix string");
+}
+W decimalWord(const char* input,int width){
+ if(!input)throw std::runtime_error("null decimal string");
+ size_t n=0;while(n<=20&&input[n])++n;
+ if(!n||n>20)throw std::runtime_error("decimal string requires1..20characters");
+ if(n==1&&(input[0]=='x'||input[0]=='X'))return vsrtl::unknown(width);
+ if(n==1&&(input[0]=='z'||input[0]=='Z'))return vsrtl::word(0,0,UINT64_MAX,width);
+ uint64_t value=0;auto parsed=std::from_chars(input,input+n,value,10);
+ if(parsed.ec!=std::errc{}||parsed.ptr!=input+n)throw std::runtime_error("unsigned decimal digit or64-bit overflow error");
+ return vsrtl::word(value,0,0,width);
 }
 void encode(W w,p_vpi_value value,std::string& buffer,s_vpi_vecval* vector){
  valueFormat(value->format);
@@ -155,6 +166,7 @@ void vpi_get_value(vpiHandle object,p_vpi_value value){action([&](){if(!value)th
 vpiHandle vpi_put_value(vpiHandle object,p_vpi_value value,p_vpi_time time,PLI_INT32 flags){return api([&]()->vpiHandle{
  if(!value||flags!=vpiNoDelay||(time&&(time->type!=vpiSimTime&&time->type!=vpiSuppressTime||time->high||time->low)))throw std::runtime_error("only immediate input deposits supported");auto& h=signal(object);int width=h.model->signals()[h.id].width;W w{};
  if(value->format==vpiBinStrVal){if(!value->value.str)throw std::runtime_error("null binary string");std::string bits;for(int i=0;i<=64;i++){char c=value->value.str[i];if(!c)break;if(i==64)throw std::runtime_error("binary value exceeds64bits");bits+=c=='X'?'x':c=='Z'?'z':c;}if(bits.size()!=size_t(width))throw std::runtime_error("binary deposit must match declared width");w=vsrtl::parse(bits);}
+ else if(value->format==vpiDecStrVal)w=decimalWord(value->value.str,width);
  else if(value->format==vpiOctStrVal)w=radixWord(value->value.str,width,3);
  else if(value->format==vpiHexStrVal)w=radixWord(value->value.str,width,4);
  else if(value->format==vpiIntVal){if(width>32&&value->value.integer<0)throw std::runtime_error("negative integer deposit wider than32bits; use vector format");w=vsrtl::word(uint32_t(value->value.integer),0,0,32);}
