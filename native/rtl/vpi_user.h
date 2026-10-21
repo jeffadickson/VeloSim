@@ -93,5 +93,3 @@ VS_VPI_API PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info);
 }
 #endif
 #endif
-
-

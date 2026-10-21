@@ -120,12 +120,22 @@ inline void lifecycleCycles(){
  cycle(89,"callback eval request survives",[]{TestModel m;lifecycleModel=&m;m.useVpi();s_cb_data cb{};cb.reason=cbValueChange;cb.obj=named("test.q");cb.cb_rtn=requestAnotherEval;check(vpi_register_cb(&cb));m.data=1;m.clk=1;m.eval();check(m.evalNeeded());m.eval();check(!m.evalNeeded());});
  cycle(90,"callback cannot advance time",[]{TestModel m;lifecycleModel=&m;m.useVpi();s_cb_data cb{};cb.reason=cbReadOnlySynch;cb.cb_rtn=rejectCallbackTime;check(vpi_register_cb(&cb));m.eval();});
 }
-inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();hexPutCycles();octPutCycles();decPutCycles();lifecycleCycles();}
-
-
-
-
-
-
-
-
+inline std::string observedCallback;
+inline s_vpi_vecval observedVector[2]{};
+inline s_vpi_time observedTime{};
+inline int observedScalar=-1;
+inline PLI_INT32 captureFormat(p_cb_data cb){check(cb->value);switch(cb->value->format){case vpiBinStrVal:case vpiOctStrVal:case vpiDecStrVal:case vpiHexStrVal:observedCallback=cb->value->value.str;break;case vpiScalarVal:observedScalar=cb->value->value.scalar;break;case vpiVectorVal:observedVector[0]=cb->value->value.vector[0];observedVector[1]=cb->value->value.vector[1];break;default:break;}if(cb->time)observedTime=*cb->time;return 0;}
+inline void callbackCase(int id,const char* label,int width,const char* bits,int format,const char* expected){cycle(id,label,[&]{WidthModel m(width);m.useVpi();s_vpi_value v{};v.format=format;s_cb_data cb{};cb.reason=cbValueChange;cb.obj=named("width.data");cb.cb_rtn=captureFormat;cb.value=&v;check(vpi_register_cb(&cb));observedCallback.clear();m.put(1,parse(bits));m.eval();check(observedCallback==expected);});}
+inline void callbackCycles(){
+ callbackCase(91,"hex callback payload",8,"10101111",vpiHexStrVal,"af");
+ callbackCase(92,"oct callback payload",6,"101111",vpiOctStrVal,"57");
+ callbackCase(93,"decimal64 callback",64,"1111111111111111111111111111111111111111111111111111111111111111",vpiDecStrVal,"18446744073709551615");
+ callbackCase(94,"hex mixed callback",4,"zz01",vpiHexStrVal,"Z");
+ callbackCase(95,"oct partial callback",5,"zzzzz",vpiOctStrVal,"zz");
+ callbackCase(96,"decimal unknown callback",4,"x001",vpiDecStrVal,"X");
+ cycle(97,"reject unusable scalar callback at registration",[]{WidthModel m(64);m.useVpi();s_vpi_value v{};v.format=vpiScalarVal;s_cb_data cb{};cb.reason=cbValueChange;cb.obj=named("width.data");cb.cb_rtn=captureFormat;cb.value=&v;check(!vpi_register_cb(&cb)&&vpi_chk_error(nullptr));m.put(1,word(1,0,0,64));m.eval();});
+ cycle(98,"scalar Z callback",[]{WidthModel m(1);m.useVpi();s_vpi_value v{};v.format=vpiScalarVal;s_cb_data cb{};cb.reason=cbValueChange;cb.obj=named("width.data");cb.cb_rtn=captureFormat;cb.value=&v;check(vpi_register_cb(&cb));m.put(1,parse("z"));m.eval();check(observedScalar==vpiZ);});
+ cycle(99,"33bit vector callback",[]{WidthModel m(33);m.useVpi();s_vpi_value v{};v.format=vpiVectorVal;s_cb_data cb{};cb.reason=cbValueChange;cb.obj=named("width.data");cb.cb_rtn=captureFormat;cb.value=&v;check(vpi_register_cb(&cb));m.put(1,word(1,1ull<<32,1ull<<31,33));m.eval();check(observedVector[0].aval==1&&observedVector[0].bval==0x80000000&&observedVector[1].aval==1&&observedVector[1].bval==1);});
+ cycle(100,"64bit callback time",[]{WidthModel m(1);m.useVpi();s_vpi_value v{};v.format=vpiSuppressVal;s_vpi_time t{vpiSimTime,0,0,0};s_cb_data cb{};cb.reason=cbValueChange;cb.obj=named("width.data");cb.cb_rtn=captureFormat;cb.value=&v;cb.time=&t;check(vpi_register_cb(&cb));m.timeInc((1ull<<32)+17);m.put(1,word(1,0,0,1));m.eval();check(observedTime.high==1&&observedTime.low==17);});
+}
+inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();hexPutCycles();octPutCycles();decPutCycles();lifecycleCycles();callbackCycles();}

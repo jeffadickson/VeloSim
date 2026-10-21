@@ -29,6 +29,36 @@ public class ExternalInterfaceTests
         File.WriteAllText(source, """{"format":"velosim.rtl.v1","signals":[{"name":"clk","width":1,"direction":"input"}],"memories":[],"continuous":[],"clock":"clk","body":{"kind":"block","items":[]}}""");
         Assert.ThrowsAsync<ArgumentException>(async () => await RtlExternalSdk.ExportAsync(source, "top", directory));
     }
+    [Test]
+    public async Task SdkManifestRemainsVerifiableAfterRelocation()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "velosim sdk " + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        string source = Path.Combine(root, "source.json"), sdk = Path.Combine(root, "original");
+        File.WriteAllText(source, """{"format":"velosim.rtl.v1","signals":[{"name":"clk","width":1,"direction":"input"}],"memories":[],"continuous":[],"clock":"clk","body":{"kind":"block","items":[]}}""");
+        await RtlExternalSdk.ExportAsync(source, "top", sdk);
+        string moved = Path.Combine(root, "moved sdk"); Directory.Move(sdk, moved);
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(moved, "external-model.json")));
+        var inputs = manifest.RootElement.GetProperty("inputs").EnumerateArray().ToArray(); Assert.That(inputs.Length, Is.EqualTo(8));
+        foreach (var input in inputs)
+        {
+            string path = input.GetProperty("path").GetString()!; Assert.That(Path.GetFileName(path), Is.EqualTo(path));
+            string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(Path.Combine(moved, path)))).ToLowerInvariant();
+            Assert.That(hash, Is.EqualTo(input.GetProperty("sha256").GetString()!.ToLowerInvariant()));
+        }
+        Assert.That(File.ReadAllText(Path.Combine(moved, "README.md")), Does.Contain("--parallel 4"));
+        Assert.That(File.ReadAllText(Path.Combine(moved, "CMakeLists.txt")), Does.Contain("CMAKE_BUILD_RPATH_USE_ORIGIN TRUE"));
+    }
+    [Test]
+    public void SdkRejectsLinkedOutputAndParents()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "velosim-link-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+        string source = Path.Combine(root, "source.json"), target = Path.Combine(root, "target"), link = Path.Combine(root, "link"); Directory.CreateDirectory(target);
+        File.WriteAllText(source, """{"format":"velosim.rtl.v1","signals":[{"name":"clk","width":1,"direction":"input"}],"memories":[],"continuous":[],"clock":"clk","body":{"kind":"block","items":[]}}""");
+        try { Directory.CreateSymbolicLink(link, target); } catch (UnauthorizedAccessException) { Assert.Ignore("Symbolic link creation unavailable."); }
+        Assert.ThrowsAsync<IOException>(async () => await RtlExternalSdk.ExportAsync(source, "top", link));
+        Assert.ThrowsAsync<IOException>(async () => await RtlExternalSdk.ExportAsync(source, "top", Path.Combine(link, "child")));
+        Assert.That(Directory.EnumerateFileSystemEntries(target), Is.Empty);
+    }
     [Test, Category("RealFifo")]
     public async Task SameSourceExternalModelAndIndependentHeaderPluginMatchIcarus()
     {

@@ -178,7 +178,7 @@ vpiHandle vpi_put_value(vpiHandle object,p_vpi_value value,p_vpi_time time,PLI_I
 void vpi_get_time(vpiHandle object,p_vpi_time time){action([&](){auto& m=object?*handle(object).model:selected();timeNow(m,time);});}
 vpiHandle vpi_register_cb(p_cb_data data){return api([&]()->vpiHandle{
  if(!data||!data->cb_rtn)throw std::runtime_error("callback routine required");auto& m=selected();if(m.gotFinish())throw std::runtime_error("finished model");if(data->reason!=cbValueChange&&data->reason!=cbReadOnlySynch&&data->reason!=cbStartOfSimulation&&data->reason!=cbEndOfSimulation)throw std::runtime_error("unsupported callback reason");if(data->time&&(data->time->type!=vpiSimTime&&data->time->type!=vpiSuppressTime||data->time->high||data->time->low))throw std::runtime_error("only zero-delay callbacks supported");if(data->value)valueFormat(data->value->format);
- vpiHandle object=nullptr;W previous{};if(data->reason==cbValueChange){auto& obj=signal(data->obj);if(obj.model!=&m)throw std::runtime_error("callback model mismatch");previous=m.get(obj.id);object=make(m,vpiReg,obj.id);}else if(data->obj)throw std::runtime_error("lifecycle callback object must be null");
+ vpiHandle object=nullptr;W previous{};if(data->reason==cbValueChange){auto& obj=signal(data->obj);if(obj.model!=&m)throw std::runtime_error("callback model mismatch");previous=m.get(obj.id);if(data->value&&data->value->format==vpiScalarVal&&previous.w!=1)throw std::runtime_error("scalar callback format requires width1");object=make(m,vpiReg,obj.id);}else if(data->obj)throw std::runtime_error("lifecycle callback object must be null");
  if(data->reason==cbStartOfSimulation&&m.started())throw std::runtime_error("start callbacks must be registered before first eval");
  size_t order=handles.size();auto key=make(m,vpiCallback,order);auto& h=handle(key);h.cb=*data;h.cb.obj=object;h.previous=previous;if(data->time){h.callbackTime=*data->time;h.cb.time=&h.callbackTime;}if(data->value){h.callbackValue=*data->value;h.cb.value=&h.callbackValue;}if(data->reason==cbReadOnlySynch)m.requestEval();return key;
  },vpiHandle{});}
@@ -188,8 +188,3 @@ PLI_INT32 vpi_control(PLI_INT32 operation,...){return api([&](){if(operation!=vp
 PLI_INT32 vpi_printf(PLI_BYTE8* format,...){if(!format)return 0;va_list args;va_start(args,format);int n=std::vprintf(format,args);va_end(args);return n;}
 PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info info){return api([&](){if(!info)throw std::runtime_error("null vlog info");*info={0,nullptr,const_cast<char*>("VeloSim"),const_cast<char*>("external.v1")};return PLI_INT32(1);},PLI_INT32(0));}
 }
-
-
-
-
-
