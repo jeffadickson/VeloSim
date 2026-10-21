@@ -155,6 +155,7 @@ void vpi_get_value(vpiHandle object,p_vpi_value value){action([&](){if(!value)th
 vpiHandle vpi_put_value(vpiHandle object,p_vpi_value value,p_vpi_time time,PLI_INT32 flags){return api([&]()->vpiHandle{
  if(!value||flags!=vpiNoDelay||(time&&(time->type!=vpiSimTime&&time->type!=vpiSuppressTime||time->high||time->low)))throw std::runtime_error("only immediate input deposits supported");auto& h=signal(object);int width=h.model->signals()[h.id].width;W w{};
  if(value->format==vpiBinStrVal){if(!value->value.str)throw std::runtime_error("null binary string");std::string bits;for(int i=0;i<=64;i++){char c=value->value.str[i];if(!c)break;if(i==64)throw std::runtime_error("binary value exceeds64bits");bits+=c=='X'?'x':c=='Z'?'z':c;}if(bits.size()!=size_t(width))throw std::runtime_error("binary deposit must match declared width");w=vsrtl::parse(bits);}
+ else if(value->format==vpiOctStrVal)w=radixWord(value->value.str,width,3);
  else if(value->format==vpiHexStrVal)w=radixWord(value->value.str,width,4);
  else if(value->format==vpiIntVal){if(width>32&&value->value.integer<0)throw std::runtime_error("negative integer deposit wider than32bits; use vector format");w=vsrtl::word(uint32_t(value->value.integer),0,0,32);}
  else if(value->format==vpiScalarVal){if(width!=1||value->value.scalar<0||value->value.scalar>3)throw std::runtime_error("invalid scalar deposit");int n=value->value.scalar;w=vsrtl::word(n==vpi1,n==vpiX,n==vpiZ,1);}
@@ -174,6 +175,7 @@ PLI_INT32 vpi_control(PLI_INT32 operation,...){return api([&](){if(operation!=vp
 PLI_INT32 vpi_printf(PLI_BYTE8* format,...){if(!format)return 0;va_list args;va_start(args,format);int n=std::vprintf(format,args);va_end(args);return n;}
 PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info info){return api([&](){if(!info)throw std::runtime_error("null vlog info");*info={0,nullptr,const_cast<char*>("VeloSim"),const_cast<char*>("external.v1")};return PLI_INT32(1);},PLI_INT32(0));}
 }
+
 
 
 

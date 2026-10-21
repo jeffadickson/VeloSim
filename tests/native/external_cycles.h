@@ -78,7 +78,20 @@ inline void hexPutCycles(){
  putCase(59,"hex null atomic",8,vpiHexStrVal,nullptr,nullptr);
  putCase(60,"hex budget atomic",64,vpiHexStrVal,"10000000000000000",nullptr);
 }
-inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();hexPutCycles();}
+inline void octPutCycles(){
+ putCase(61,"oct short zero extends",8,vpiOctStrVal,"7","00000111");
+ putCase(62,"oct known groups",8,vpiOctStrVal,"257","10101111");
+ putCase(63,"oct leading X extends",8,vpiOctStrVal,"X1","xxxxx001");
+ putCase(64,"oct leading Z extends",8,vpiOctStrVal,"Z1","zzzzz001");
+ putCase(65,"oct trailing Z zero prefix",8,vpiOctStrVal,"1z","00001zzz");
+ putCase(66,"oct truncates to port",5,vpiOctStrVal,"77","11111");
+ putCase(67,"oct invalid digit atomic",8,vpiOctStrVal,"18",nullptr);
+ putCase(68,"oct negative atomic",8,vpiOctStrVal,"-1",nullptr);
+ putCase(69,"oct64 max",64,vpiOctStrVal,"1777777777777777777777","1111111111111111111111111111111111111111111111111111111111111111");
+ putCase(70,"oct budget atomic",64,vpiOctStrVal,"10000000000000000000000",nullptr);
+}
+inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();decReadCycles();hexPutCycles();octPutCycles();}
+
 
 
 
