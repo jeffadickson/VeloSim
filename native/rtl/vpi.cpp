@@ -33,7 +33,7 @@ vpiHandle make(Model& model,int kind,size_t id=0){if(handles.size()>=65536)throw
 Handle& signal(vpiHandle h){auto& x=handle(h);if(x.kind!=vpiReg&&x.kind!=vpiPort)throw std::runtime_error("signal handle required");return x;}
 template<class F> auto api(F f,decltype(f()) failure)->decltype(f()){error.clear();try{return f();}catch(const std::exception& e){error=e.what();}catch(...){error="unknown VPI failure";}return failure;}
 template<class F> void action(F f){api([&](){f();return 1;},0);}
-void valueFormat(int format){if(format!=vpiBinStrVal&&format!=vpiHexStrVal&&format!=vpiVectorVal&&format!=vpiIntVal&&format!=vpiScalarVal&&format!=vpiSuppressVal)throw std::runtime_error("unsupported VPI value format");}
+void valueFormat(int format){if(format!=vpiBinStrVal&&format!=vpiHexStrVal&&format!=vpiOctStrVal&&format!=vpiVectorVal&&format!=vpiIntVal&&format!=vpiScalarVal&&format!=vpiSuppressVal)throw std::runtime_error("unsupported VPI value format");}
 std::string radixText(W w,int group){
  std::string out;
  for(int low=((w.w-1)/group)*group;low>=0;low-=group){
@@ -46,6 +46,7 @@ void encode(W w,p_vpi_value value,std::string& buffer,s_vpi_vecval* vector){
  valueFormat(value->format);
  switch(value->format){
  case vpiBinStrVal:buffer=vsrtl::text(w);value->value.str=buffer.data();break;
+ case vpiOctStrVal:buffer=radixText(w,3);value->value.str=buffer.data();break;
  case vpiHexStrVal:buffer=radixText(w,4);value->value.str=buffer.data();break;
  case vpiVectorVal:{uint64_t a=w.v|w.x,b=w.x|w.z;for(int i=0;i<2;i++)vector[i]={uint32_t(a>>(32*i)),uint32_t(b>>(32*i))};value->value.vector=vector;break;}
  case vpiIntVal:if(w.x||w.z)throw std::runtime_error("X/Z integer read; request binary or vector format");value->value.integer=static_cast<int32_t>(uint32_t(w.v));break;
@@ -156,4 +157,5 @@ PLI_INT32 vpi_control(PLI_INT32 operation,...){return api([&](){if(operation!=vp
 PLI_INT32 vpi_printf(PLI_BYTE8* format,...){if(!format)return 0;va_list args;va_start(args,format);int n=std::vprintf(format,args);va_end(args);return n;}
 PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info info){return api([&](){if(!info)throw std::runtime_error("null vlog info");*info={0,nullptr,const_cast<char*>("VeloSim"),const_cast<char*>("external.v1")};return PLI_INT32(1);},PLI_INT32(0));}
 }
+
 

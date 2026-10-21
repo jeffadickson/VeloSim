@@ -41,6 +41,19 @@ inline void hexReadCycles(){
  readCase(29,"hex partial top Z",5,"zzzzz",vpiHexStrVal,"zz");
  readCase(30,"hex scalar Z",1,"z",vpiHexStrVal,"z");
 }
-inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();}
+inline void octReadCycles(){
+ readCase(31,"oct zero",3,"000",vpiOctStrVal,"0");
+ readCase(32,"oct known",6,"101111",vpiOctStrVal,"57");
+ readCase(33,"oct64 max",64,"1111111111111111111111111111111111111111111111111111111111111111",vpiOctStrVal,"1777777777777777777777");
+ readCase(34,"oct all X",3,"xxx",vpiOctStrVal,"x");
+ readCase(35,"oct all Z",3,"zzz",vpiOctStrVal,"z");
+ readCase(36,"oct mixed X known",3,"x01",vpiOctStrVal,"X");
+ readCase(37,"oct mixed Z known",3,"z01",vpiOctStrVal,"Z");
+ readCase(38,"oct mixed X Z",3,"xxz",vpiOctStrVal,"X");
+ readCase(39,"oct partial top X",5,"xxxxx",vpiOctStrVal,"xx");
+ readCase(40,"oct partial top known",4,"1001",vpiOctStrVal,"11");
+}
+inline void runCycles(){identityCycles();metadataCycles();hexReadCycles();octReadCycles();}
+
 
 

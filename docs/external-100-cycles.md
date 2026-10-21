@@ -12,3 +12,5 @@ Baseline: bc6c4f7. Ninja builds use four jobs. Existing same-source Icarus diffe
 
 | 30 | 21–30 | Hexadecimal reads, four-state digit spelling and partial top groups | 6/6 CTest pass; independent review accepted Icarus-qualified four-state formatting |
 
+| 40 | 31–40 | Octal reads including 64-bit and partial digit boundaries | 6/6 CTest pass; reviewer accepted group-of-three boundaries and X/Z semantics |
+
