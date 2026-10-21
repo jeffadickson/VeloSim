@@ -55,6 +55,12 @@ Baseline: commit `2636dcc`. This inventory concerns the structural RTL execution
 
 The iteration ledger records the scope actually completed and evidence. Remaining items stay explicit backlog; no general Verilog/SystemVerilog compliance claim is made.
 
+## Batch disposition
+
+Items 1–24 are implemented for unsigned four-state words of 1–64 bits in the existing single-posedge-process backend. Item 13 covers unsigned `>>>`; signed arithmetic shifts remain unsupported with signed types. Items 25–50 remain missing. The other 26 iterations qualify the implemented operators, strengthen evidence and rejection checks, run builds/reviews/coverage, and package native artifacts. This is 24 language additions and 50 development/qualification tasks, not 50 language additions.
+
+The exporter conservatively rejects signed-valued operation trees, including constant-folded negative integer values. Unmaterialized parameter values are rejected rather than converted to zero. Integer parameter arithmetic may therefore be rejected even where a more complete signedness/context model could safely accept it. Materialized positive integer parameters compared with unsigned state continue to work. Rejection tests cover signed expressions and negative integer parameters; the actual RTL matrix covers the accepted unsigned subset.
+
 ## Same input files
 
 Actual RTL differential tests pass the same design source path to Surelog and Icarus. Surelog produces UHDM; VeloSim lowers that model into structural IR and compiles native C++. Icarus compiles that design together with a separately generated stimulus/testbench. Both receive the same input vectors, and full output traces are compared. The FIFO additionally has an independent queue oracle. Generated operator fixtures are real source files given to both compilers; they are not hand-written IR substitutes. These are a supported SystemVerilog subset (`logic`/`always_ff`), not the full language.

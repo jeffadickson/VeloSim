@@ -13,7 +13,38 @@ int main(){
   check(text(bit_binary(a,b,1,1))==(l=="1"||r=="1"?"1":l=="0"&&r=="0"?"0":"x"));
   check(text(bit_binary(a,b,1,2))==((l=="x"||l=="z"||r=="x"||r=="z")?"x":l==r?"0":"1"));
   check(exact(a,b)==(text(a)==text(b)));check(text(concat(a,b))==text(a)+text(b));
+  check(text(logical_or(a,b))==(l=="1"||r=="1"?"1":l=="0"&&r=="0"?"0":"x"));
+  check(text(conditional(parse("x"),a,b,1))==(l==r?l:"x"));
+  check(text(conditional(parse("z"),a,b,1))==(l==r?l:"x"));
+  check(exact(conditional(parse("1"),a,b,1),a));check(exact(conditional(parse("0"),a,b,1),b));
  }
+ // Independent known-value relational/product oracle over every small operand pair.
+ for(uint64_t a=0;a<16;++a)for(uint64_t b=0;b<16;++b){
+  W x=word(a,0,0,4),y=word(b,0,0,4);
+  check(compare(x,y,0).v==uint64_t(a<b));check(compare(x,y,1).v==uint64_t(a<=b));
+  check(compare(x,y,2).v==uint64_t(a>b));check(compare(x,y,3).v==uint64_t(a>=b));
+  check(product(x,y,4,0).v==((a*b)%16));
+  if(b){check(product(x,y,4,1).v==a/b);check(product(x,y,4,2).v==a%b);}
+  else{check(text(product(x,y,4,1))=="xxxx");check(text(product(x,y,4,2))=="xxxx");}
+ }
+ for(int op=0;op<4;++op)check(text(compare(parse("0x"),parse("11"),op))=="x");
+ struct ReductionCase{const char* input;const char* and_result;const char* or_result;const char* xor_result;};
+ for(auto c:{ReductionCase{"00","0","0","0"},{"01","0","1","1"},{"11","1","1","0"},{"0x","0","x","x"},{"1x","x","1","x"},{"xx","x","x","x"},{"0z","0","x","x"},{"1z","x","1","x"},{"zz","x","x","x"}}){
+  auto a=parse(c.input);check(text(reduce(a,0))==c.and_result);check(text(reduce(a,2))==c.or_result);check(text(reduce(a,4))==c.xor_result);
+  for(int op:{0,2,4})check(exact(reduce(a,op+1),logical_not(reduce(a,op))));
+ }
+ check(text(shift(parse("1xz0"),parse("01"),4,false))=="xz00");check(text(shift(parse("1xz0"),parse("01"),4,true))=="01xz");
+ check(text(shift(parse("1xz0"),parse("x"),4,true))=="xxxx");
+ for(uint64_t n:std::vector<uint64_t>{0,1,63,64,65,UINT64_MAX}){
+  auto amount=word(n,0,0,64),a=word(UINT64_MAX,0,0,64);
+  check(shift(a,amount,64,true).v==(n>=64?0:UINT64_MAX>>n));
+  check(shift(a,amount,64,false).v==(n>=64?0:UINT64_MAX<<n));
+ }
+ check(text(product(parse("x"),parse("0"),4,0))=="xxxx");
+ check(product(word(UINT64_MAX,0,0,64),word(2,0,0,64),64,0).v==UINT64_MAX-1);
+ check(product(word(UINT64_MAX,0,0,64),word(1,0,0,64),64,1).v==UINT64_MAX);
+ check(text(conditional(parse("x"),parse("1z0x"),parse("1z1x"),4))=="1zxx");
+ check(text(conditional(parse("1x"),parse("z"),parse("0"),4))=="000z");
  check(text(resize(parse("xz"),4))=="00xz");check(text(equal(parse("x0"),parse("11")))=="0");check(text(equal(parse("x0"),parse("10")))=="x");
  check(text(bit_not(parse("z1"),4))=="11x0");check(text(bit_binary(parse("z"),parse("1010"),4,0))=="0000");
  check(text(bit_not(parse(std::string(64,'0')),64))==std::string(64,'1'));

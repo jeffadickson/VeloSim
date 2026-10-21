@@ -36,6 +36,8 @@ public class RtlOperatorTests
         throw new IOException("Checkout missing.");
     }
     [Test, Category("RealFifo"), TestCase(8, 16)]
+    [TestCase(1, 1), TestCase(1, 8), TestCase(8, 1), TestCase(7, 9), TestCase(16, 16)]
+    [TestCase(31, 32), TestCase(32, 31), TestCase(63, 64), TestCase(64, 63), TestCase(64, 64)]
     public async Task SameSourceOperatorMatrixMatchesIcarus(int aWidth, int bWidth)
     {
         if (Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO") != "1") Assert.Ignore("Requires pinned UHDM RTL exporter.");
@@ -49,12 +51,25 @@ public class RtlOperatorTests
         File.WriteAllText(source, "module operators(" + string.Join(',', ports) + ");\nalways_ff @(posedge clk) begin\n" + string.Join('\n', Operators.Select(o => $"q_{o.Kind} <= {o.Expression};")) + "\nq_nested <= ~(a + 1'b1) ^ b;\n" + (aWidth < 64 ? "q_shiftconcat <= {(a << b),1'b0};\n" : "") + "end\nendmodule\n");
         var sources = ArtifactMetadata.SourceClosure([source]);
         var runner = new RecordingProcessRunner(new ProcessRunner());
+        var tools = new Dictionary<string, FileFingerprint>(StringComparer.Ordinal);
+        string CaptureTool(string executable)
+        {
+            string resolved = ArtifactMetadata.ResolveExecutable(executable, path) ?? throw new IOException("Missing tool: " + executable);
+            var fingerprint = ArtifactMetadata.Fingerprint(resolved);
+            if (tools.TryGetValue(resolved, out var previous)) Assert.That(fingerprint, Is.EqualTo(previous), "Tool changed during comparison.");
+            else tools.Add(resolved, fingerprint);
+            return resolved;
+        }
         async Task<ProcessResult> Run(string executable, params string[] args)
         {
+            executable = CaptureTool(executable);
             var result = await runner.RunAsync(executable, args, path, TimeSpan.FromMinutes(2));
+            Assert.That(ArtifactMetadata.Fingerprint(executable), Is.EqualTo(tools[executable]), "Tool changed while executing.");
             Assert.That(result.ExitCode, Is.Zero, result.StandardOutput + result.StandardError); return result;
         }
-        var elaboration = await new SurelogFrontend(runner).ElaborateAsync([source], Path.Combine(path, "surelog"), "operators", workers: 4);
+        string surelog = CaptureTool(Environment.GetEnvironmentVariable("VELOSIM_SURELOG") ?? "surelog");
+        var elaboration = await new SurelogFrontend(runner).ElaborateAsync([source], Path.Combine(path, "surelog"), "operators", executable: surelog, workers: 4);
+        var uhdmFingerprint = ArtifactMetadata.Fingerprint(elaboration.UhdmPath);
         string exporter = Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL") ?? Path.Combine(root, "artifacts/with-uhdm/bin/velosim-uhdm-rtl");
         await Run(exporter, elaboration.UhdmPath, Path.Combine(path, "design.json"), "operators");
         var design = RtlDesign.Parse(File.ReadAllText(Path.Combine(path, "design.json")));
@@ -98,20 +113,40 @@ public class RtlOperatorTests
             tb.Append($"#1; clk=1; #1; $display(\"VS_RTL {i + 1}{string.Concat(outputs.Select(_ => " %b"))}\",{string.Join(',', outputs.Select(s => s.Name))});\n");
         }
         File.WriteAllText(Path.Combine(path, "tb.sv"), tb.Append("$finish; end endmodule\n").ToString());
+        var buildInputs = new[] { source, "design.json", "design.cpp", "runtime.h", "CMakeLists.txt", "stimulus.txt", "tb.sv" }.Select(p => ArtifactMetadata.Fingerprint(Path.GetFullPath(p, path))).ToArray();
         await Run("cmake", "-S", path, "-B", Path.Combine(path, "build"), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release");
+        string Cache(string name) => File.ReadLines(Path.Combine(path, "build/CMakeCache.txt")).Single(l => l.StartsWith(name + ":FILEPATH=", StringComparison.Ordinal)).Split('=', 2)[1];
+        string compiler = Cache("CMAKE_CXX_COMPILER"), ninja = Cache("CMAKE_MAKE_PROGRAM");
+        var compilerVersion = await Run(compiler, "--version"); var ninjaVersion = await Run(ninja, "--version");
         await Run("cmake", "--build", Path.Combine(path, "build"), "--parallel", "4");
         await Run("iverilog", "-g2012", "-s", "tb", "-o", Path.Combine(path, "reference.vvp"), source, Path.Combine(path, "tb.sv"));
         var reference = await Run("vvp", Path.Combine(path, "reference.vvp"));
         string[] rows = reference.StandardOutput.Split('\n').Where(l => l.StartsWith("VS_RTL ", StringComparison.Ordinal)).ToArray();
         Assert.That(rows, Has.Length.EqualTo(vectors.Count)); string expected = string.Join('\n', rows) + "\n";
+        _ = FifoDifferential.ParseTrace(reference.StandardOutput, design, vectors.Count);
         File.WriteAllText(Path.Combine(path, "expected.txt"), expected);
         foreach (string workers in new[] { "1", "4", "8" })
         {
             var result = await Run(Path.Combine(path, "build/operators"), stimulus, workers);
             File.WriteAllText(Path.Combine(path, "native-" + workers + ".txt"), result.StandardOutput);
+            _ = FifoDifferential.ParseTrace(result.StandardOutput, design, vectors.Count);
             Assert.That(result.StandardOutput, Is.EqualTo(expected), path);
         }
         Assert.That(ArtifactMetadata.SourceClosure([source]), Is.EqualTo(sources), "The same design file must remain unchanged for both compilers.");
-        File.WriteAllText(Path.Combine(path, "report.json"), JsonSerializer.Serialize(new { status = "pass", source_mode = "same-file", sources, aWidth, bWidth, resultWidth, cycles = vectors.Count, seed = 0x91ab32, workers = new[] { 1, 4, 8 }, execution_scope = "single synchronous process; serial", operators = Operators, commands = runner.Commands }, new JsonSerializerOptions { WriteIndented = true }));
+        foreach (var fingerprint in buildInputs.Concat(tools.Values).Append(uhdmFingerprint)) Assert.That(ArtifactMetadata.Fingerprint(fingerprint.Path), Is.EqualTo(fingerprint), "Measured input/tool changed.");
+        Assert.That(runner.Commands.Single(c => c.Executable == surelog).Arguments, Does.Contain(source));
+        Assert.That(runner.Commands.Single(c => Path.GetFileName(c.Executable) == "iverilog").Arguments, Does.Contain(source));
+        var artifacts = new[] { "reference.vvp", "expected.txt", "native-1.txt", "native-4.txt", "native-8.txt", "build/operators" }.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(path, p))).ToArray();
+        File.WriteAllText(Path.Combine(path, "report.json"), JsonSerializer.Serialize(new { schema = "velosim.rtl.operators.v1", status = "pass", source_mode = "same-file", sources, buildInputs, uhdmFingerprint, tools = tools.Values, artifacts, compiler_version = compilerVersion.StandardOutput, ninja_version = ninjaVersion.StandardOutput, aWidth, bWidth, resultWidth, cycles = vectors.Count, seed = 0x91ab32, workers = new[] { 1, 4, 8 }, build_jobs = 4, execution_scope = "single synchronous process; serial", operators = Operators, commands = runner.Commands }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+    [Test]
+    public void TraceQualificationRejectsMissingExtraWrongWidthDigitsAndCycleOrder()
+    {
+        var design = RtlDesign.Parse("""
+        {"format":"velosim.rtl.v1","signals":[{"name":"clk","width":1,"direction":"input"},{"name":"q","width":2,"direction":"output"}],"memories":[],"continuous":[],"clock":"clk","body":{"kind":"nba","target":{"kind":"ref","name":"q"},"value":{"kind":"const","bits":"00"}}}
+        """);
+        Assert.That(FifoDifferential.ParseTrace("VS_RTL 1 xz\n", design, 1), Has.Count.EqualTo(1));
+        foreach (string invalid in new[] { "", "VS_RTL 1 0\n", "VS_RTL 1 gg\n", "VS_RTL 2 00\n", "VS_RTL 1 00 extra\n", "VS_RTL 1 00\nVS_RTL 2 00\n", "VS_RTLX 1 00\n" })
+            Assert.Throws<FormatException>(() => FifoDifferential.ParseTrace(invalid, design, 1), invalid);
     }
 }
