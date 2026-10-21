@@ -8,3 +8,5 @@ Baseline: bc6c4f7. Ninja builds use four jobs. Existing same-source Icarus diffe
 |---|---|---|---|
 | 10 | 1–10 | VPI object identity, aliases, model/lifetime boundaries | 6/6 CTest pass; independent reviewer accepted identity/lifetime/model checks |
 
+| 20 | 11–20 | Scalar/vector/unsigned metadata, top module and enclosing scope | 6/6 CTest pass; reviewer accepted with normalized width metadata caveat documented |
+

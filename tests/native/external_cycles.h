@@ -14,4 +14,18 @@ inline void identityCycles(){
  cycle(9,"released rejected",[&]{auto h=named("test.q");vpi_free_object(h);check(!vpi_compare_objects(h,q)&&vpi_chk_error(nullptr));});
  cycle(10,"expired rejected",[&]{vpiHandle h;{TestModel gone;gone.useVpi();h=named("test.q");}check(!vpi_compare_objects(h,q)&&vpi_chk_error(nullptr));m.useVpi();});
 }
-inline void runCycles(){identityCycles();}
+inline void metadataCycles(){
+ TestModel m;m.useVpi();auto clk=named("test.clk"),data=named("test.data"),module=named("test");
+ cycle(11,"scalar clock",[&]{check(vpi_get(vpiScalar,clk)==1);});
+ cycle(12,"clock not vector",[&]{check(vpi_get(vpiVector,clk)==0&&!vpi_chk_error(nullptr));});
+ cycle(13,"packed vector",[&]{check(vpi_get(vpiVector,data)==1);});
+ cycle(14,"packed not scalar",[&]{check(vpi_get(vpiScalar,data)==0&&!vpi_chk_error(nullptr));});
+ cycle(15,"unsigned signal",[&]{check(vpi_get(vpiSigned,data)==0&&!vpi_chk_error(nullptr));});
+ cycle(16,"top module",[&]{check(vpi_get(vpiTopModule,module)==1);});
+ cycle(17,"word scope",[&]{check(vpi_compare_objects(module,vpi_handle(vpiScope,data)));});
+ cycle(18,"word module",[&]{check(vpi_compare_objects(module,vpi_handle(vpiModule,data)));});
+ cycle(19,"port scope",[&]{auto it=vpi_iterate(vpiPort,module);check(vpi_compare_objects(module,vpi_handle(vpiScope,vpi_scan(it))));});
+ cycle(20,"top has no enclosing scope",[&]{check(!vpi_handle(vpiScope,module)&&!vpi_chk_error(nullptr));});
+}
+inline void runCycles(){identityCycles();metadataCycles();}
+

@@ -35,11 +35,16 @@ typedef struct t_vpi_vlog_info { PLI_INT32 argc; PLI_BYTE8 **argv, *product, *ve
 #define vpiPort 44
 #define vpiReg 48
 #define vpiLowConn 80
+#define vpiScope 84
 #define vpiCallback 107
 #define vpiType 1
 #define vpiName 2
 #define vpiFullName 3
 #define vpiSize 4
+#define vpiTopModule 7
+#define vpiScalar 17
+#define vpiVector 18
+#define vpiSigned 65
 #define vpiDefName 9
 #define vpiDirection 20
 #define vpiInput 1
