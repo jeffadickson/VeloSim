@@ -4,9 +4,11 @@
 using namespace vsrtl;
 void check(bool b){if(!b){std::cerr<<"RTL runtime assertion failed\n";std::abort();}}
 #include "rtl_100_cycles.h"
+#include "concat_target_cycles.h"
 int main(){
  indexedReadCycles();
  writeRuntimeCycles();
+ concatTargetCycles();
  // Independent string-position oracle: no runtime masks/shifts in expected values.
  for(int width=1;width<=64;++width){
   std::string input;for(int i=0;i<width;++i)input+="01xz"[(i+width)%4];auto data=parse(input);
