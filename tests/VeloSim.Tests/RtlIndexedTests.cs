@@ -52,4 +52,25 @@ public class RtlIndexedTests
         }
         if (id is >= 43 and <= 49) Assert.Throws<IrValidationException>(() => RtlDesign.Parse(node.ToJsonString()));
         TestContext.Progress.WriteLine($"RTL_CYCLE {id} PASS selected-word IR");
+    }    [TestCase(61), TestCase(62), TestCase(63), TestCase(64), TestCase(65), TestCase(66), TestCase(67), TestCase(68), TestCase(69), TestCase(70)]
+    public void IndexedWriteIrCycle(int id)
+    {
+        var node = JsonNode.Parse(Fixture(Ref("a"), new { kind = "indexedselect", value = Ref("q"), @base = Ref("i"), width = 4, descending = false }))!; var lhs = node["body"]!["target"]!;
+        switch (id)
+        {
+            case 61: Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("deposit_indexed(next[3],s[2],4,false,s[1])")); break;
+            case 62: lhs["descending"] = true; Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitModelHeader("indexed_write"), Does.Contain("deposit_indexed(next[3],s[2],4,true,s[1])")); break;
+            case 63: lhs["width"] = 1; Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("deposit_indexed(next[3],s[2],1,false")); break;
+            case 64: lhs["width"] = 64; Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("deposit_indexed(next[3],s[2],64,false")); break;
+            case 65: lhs["width"] = 0; break;
+            case 66: lhs["width"] = 65; break;
+            case 67: lhs["width"] = -1; break;
+            case 68: lhs["descending"] = 1; break;
+            case 69: lhs.AsObject().Remove("base"); break;
+            case 70:
+                node["body"]!["value"] = JsonSerializer.SerializeToNode(new { kind = "shl", args = new object[] { new { kind = "bitselect", value = Ref("a"), index = new { kind = "const", bits = "0" } }, new { kind = "const", bits = "11" } } });
+                Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("shift(select_bit(s[1],parse(\"0\")),parse(\"11\"),4,false)")); break;
+        }
+        if (id is >= 65 and <= 69) Assert.Throws<IrValidationException>(() => RtlDesign.Parse(node.ToJsonString()));
+        TestContext.Progress.WriteLine($"RTL_CYCLE {id} PASS indexed-word NBA IR");
     }}

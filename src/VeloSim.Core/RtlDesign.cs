@@ -97,8 +97,8 @@ public sealed class RtlDesign
             case "nba":
                 JsonShape.Fields(e, ["kind", "target", "value"]); var target = e.GetProperty("target"); ValidateExpression(target, depth + 1); ValidateExpression(e.GetProperty("value"), depth + 1);
                 if (Kind(target) == "index") { writers.Add(Name(target)); break; }
-                var word = Kind(target) is "bitselect" or "partselect" ? target.GetProperty("value") : target;
-                if (Kind(target) is not ("ref" or "bitselect" or "partselect") || Kind(word) != "ref" || Name(word) == Clock || Signals[SignalId(Name(word))].Direction == "input") throw new IrValidationException("Selected sequential targets require a writable declared word.");
+                var word = Kind(target) is "bitselect" or "partselect" or "indexedselect" ? target.GetProperty("value") : target;
+                if (Kind(target) is not ("ref" or "bitselect" or "partselect" or "indexedselect") || Kind(word) != "ref" || Name(word) == Clock || Signals[SignalId(Name(word))].Direction == "input") throw new IrValidationException("Selected sequential targets require a writable declared word.");
                 writers.Add(Name(word)); break;
             case "if": JsonShape.Fields(e, ["kind", "condition", "then", "else"]); ValidateExpression(e.GetProperty("condition"), depth + 1); ValidateStatement(e.GetProperty("then"), writers, depth + 1); ValidateStatement(e.GetProperty("else"), writers, depth + 1); break;
             case "case":
@@ -152,7 +152,7 @@ public sealed class RtlDesign
             case "nba":
                 var target = e.GetProperty("target");
                 if (Kind(target) == "ref") { int id = SignalId(Name(target)); code.AppendLine($"next[{id}]=resize({Expression(e.GetProperty("value"), Signals[id].Width)},{Signals[id].Width});"); }
-                else if (Kind(target) is "bitselect" or "partselect") { int id = SignalId(Name(target.GetProperty("value"))), width = ExpressionWidth(target); string basis = Kind(target) == "bitselect" ? Expression(target.GetProperty("index")) : $"W{{{target.GetProperty("right").GetInt32()},0,0,64}}"; code.AppendLine($"next[{id}]=deposit_indexed(next[{id}],{basis},{width},false,{Expression(e.GetProperty("value"), width)});"); }
+                else if (Kind(target) is "bitselect" or "partselect" or "indexedselect") { int id = SignalId(Name(target.GetProperty("value"))), width = ExpressionWidth(target); string basis = Kind(target) == "bitselect" ? Expression(target.GetProperty("index")) : Kind(target) == "indexedselect" ? Expression(target.GetProperty("base")) : $"W{{{target.GetProperty("right").GetInt32()},0,0,64}}"; bool descending = Kind(target) == "indexedselect" && target.GetProperty("descending").GetBoolean(); code.AppendLine($"next[{id}]=deposit_indexed(next[{id}],{basis},{width},{(descending ? "true" : "false")},{Expression(e.GetProperty("value"), width)});"); }
                 else { int id = MemoryId(Name(target)); code.AppendLine($"write(nextMem[{id}],{Expression(target.GetProperty("index"))},{Expression(e.GetProperty("value"), Memories[id].Width)},{Memories[id].Width});"); } break;
             case "if": code.AppendLine($"if(yes({Expression(e.GetProperty("condition"))})){{"); Statement(code, e.GetProperty("then"), ref unique); code.AppendLine("}else{"); Statement(code, e.GetProperty("else"), ref unique); code.AppendLine("}"); break;
             case "case":
