@@ -15,7 +15,7 @@ The RHS is evaluated once in the total concatenation width, resized once, and sp
 |50|41–50|Actual fixed/bit selection targets|Ten actual vectors pass at workers 1/4/8; 62 focused tests plus strengthened shift-5 rerun pass; reviewer sizing finding fixed and accepted|
 |60|51–60|Dynamic target and sizing boundaries|30/30 managed IR cases pass; independent review accepted|
 |70|61–70|Actual indexed targets and old indices|33 focused tests and strengthened ten-vector actual rerun pass; reviewer visibility finding fixed and accepted|
-|80|71–80|Nested groups and expression contexts|Planned|
+|80|71–80|Nested groups and expression contexts|40/40 IR cases pass; association, width and naming boundaries independently reviewed and accepted|
 |90|81–90|Actual nested/ordered assignments|Planned|
 |100|91–100|Reusable C++ model matrix and documentation|Planned|
 

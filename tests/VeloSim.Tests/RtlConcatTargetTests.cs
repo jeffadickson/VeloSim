@@ -77,4 +77,26 @@ public class RtlConcatTargetTests
         else Assert.That(Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(node.ToJsonString()))!.Message,Does.Contain(error));
         TestContext.Progress.WriteLine($"CONCAT_CYCLE {cycle} PASS dynamic target boundary");
     }
+    [TestCase(71), TestCase(72), TestCase(73), TestCase(74), TestCase(75), TestCase(76), TestCase(77), TestCase(78), TestCase(79), TestCase(80)]
+    public void NestedTargetBoundary(int cycle)
+    {
+        object target=Concat(Concat(Ref("q"),Ref("r")),Ref("t")); int width=8;string? error=null;
+        switch(cycle)
+        {
+            case 72: target=Concat(Ref("q"),Concat(Ref("r"),Ref("t")));break;
+            case 73: target=Concat(Fixed("q",7,4),Concat(new{kind="bitselect",value=Ref("r"),index=Ref("i")},Indexed("t",4,true)));break;
+            case 74: width=21;target=Concat(Ref("q"),Concat(Ref("r"),Fixed("t",21,0)));break;
+            case 75: width=21;target=Concat(Ref("q"),Concat(Ref("r"),Fixed("t",22,0)));error="64 bits";break;
+            case 76: target=Concat(Ref("q"),Concat(Ref("r"),Concat(Ref("t"),Ref("q"))));error="distinct destination";break;
+            case 77: target=Concat(Ref("q"),Concat(Ref("r"),new{kind="const",bits="1"}));error="writable declared";break;
+            case 78: target=Concat(Ref("q"),new{kind="cond",args=new[]{Ref("i"),Ref("r"),Ref("t")}});error="writable declared";break;
+            case 79: error="";break;
+        }
+        var node=Fixture(target,width:width);
+        if(cycle==79)node["body"]!["items"]![1]!["target"]!["extra"]=true;
+        if(cycle==80){node["signals"]![1]!["name"]="nba0";foreach(var item in node["body"]!["items"]!.AsArray())item!["value"]!["name"]="nba0";}
+        if(error is null){var design=RtlDesign.Parse(node.ToJsonString());Assert.DoesNotThrow(()=>design.EmitCpp());Assert.DoesNotThrow(()=>design.EmitModelHeader("nested_concat"));}
+        else Assert.That(Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(node.ToJsonString()))!.Message,Does.Contain(error));
+        TestContext.Progress.WriteLine($"CONCAT_CYCLE {cycle} PASS nested target boundary");
+    }
 }
