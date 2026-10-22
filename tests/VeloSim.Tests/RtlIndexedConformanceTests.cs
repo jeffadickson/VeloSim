@@ -63,4 +63,9 @@ public class RtlIndexedConformanceTests
         const string source = "module dut(input logic clk,rst_n,mode,input logic[63:0]a,i,output logic[63:0]q,snapshot,output logic[6:0]idx);always_ff @(posedge clk) begin if(!rst_n) begin q<='0;snapshot<='0;idx<='0;end else begin idx<=idx+7'b1;if(mode) begin q<=a;q[i]<=~a[0];q[7:4]<=a[3:0];q[idx]<=a[2];end else begin q[i]<=~a[0];q[7:4]<=a[3:0];q<=a;end snapshot<=q;end end endmodule";
         var vectors = ReadVectors(); for (int row = 0; row < vectors.Count; ++row) { vectors[row]["rst_n"] = row == 0 ? "0" : "1"; vectors[row]["mode"] = row % 2 == 1 ? "1" : "0"; }
         await Qualify("bit-fixed-writes", source, [new("clk",1,"input"),new("rst_n",1,"input"),new("mode",1,"input"),new("a",64,"input"),new("i",64,"input"),new("q",64,"output"),new("snapshot",64,"output"),new("idx",7,"output")], vectors, 51);
+    }    [Test, Category("RealFifo")]
+    public async Task ActualIndexedWritesCycles71To80()
+    {
+        const string source = "module dut(input logic clk,input logic[63:0]a,i,output logic[63:0]qplus,qminus,qwide,history);always_ff @(posedge clk) begin qplus<=a;qplus[i +: 4]<=~a[3:0];qminus<=a;qminus[i -: 4]<=a[3:0];qwide<=a;qwide[i -: 64]<=~a;history<=qwide;end endmodule";
+        await Qualify("indexed-writes", source, [new("clk",1,"input"),new("a",64,"input"),new("i",64,"input"),new("qplus",64,"output"),new("qminus",64,"output"),new("qwide",64,"output"),new("history",64,"output")], ReadVectors(), 71);
     }}
