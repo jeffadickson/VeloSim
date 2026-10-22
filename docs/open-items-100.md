@@ -41,4 +41,23 @@ Implementation inspection found that the primary clock's previous-event value mu
 
 Failed attempts remain in the logs: checkpoint 60 initially used a stale exporter; two test-source templates lacked whitespace; checkpoint 80 exposed a native test variable-name collision. The affected code or fixtures were corrected and rerun. No failing scenario is waived. The native release and AddressSanitizer/UndefinedBehaviorSanitizer suites passed all six tests after the changes.
 
-All 100 numbered cases have passing checkpoint evidence. The checkpoint 100 build and 28 selected tests passed, including the strengthened array endpoints and integration/resource regressions. The existing fast regression passed 285 tests with the native-library directory configured; an initial direct invocation omitted that configuration and its failed log is retained. Full regression, NativeAOT publication and coverage results will be appended after their final gates complete. NativeAOT publication precedes coverage capture so the measured assembly files remain intact afterward.
+All 100 numbered cases have passing checkpoint evidence. The checkpoint 100 build and 28 selected tests passed, including the strengthened array endpoints and integration/resource regressions. These are 100 implementation/qualification cases, including positive and rejection cases, rather than 100 newly supported language features. The existing fast regression passed 285 tests with the native-library directory configured; an initial direct invocation omitted that configuration and its failed log is retained.
+
+The first full regression passed 415 of 416 regular tests. Its one failure was an obsolete expectation that the exporter reject blocking assignments. The exporter now normalizes them; the managed validator rejects that fixture's mixed blocking/nonblocking writes. The test was updated to check the responsible layer, and its obsolete two-state-input rejection was removed because positive bit-word cases cover that feature. The corrected targeted test passed. An AI peer also reviewed the coverage-tool refactor that collects managed and native profiles during one full managed-suite pass, preserving the existing report, threshold and evidence checks. The full-test deadline is 90 minutes; individual fixture deadlines remain bounded.
+
+Final verification at source commit `776545f`:
+
+| Gate | Result |
+| --- | --- |
+| Release solution and Ninja native build, 4 jobs | Passed, zero managed warnings/errors |
+| Regular managed regression with Coverlet and LLVM | 416 passed, 0 failed; 29m 10s |
+| Native release / instrumented suites | 6/6 each |
+| AddressSanitizer + UndefinedBehaviorSanitizer | 6/6 |
+| Managed line / branch coverage | 90.39% / 73.38% (minimum 85% / 70%) |
+| Native line / branch coverage | 98.87% / 87.52% (minimum 95% / 85%) |
+| NativeAOT bundle publication and bundled smoke checks | Passed |
+| NativeAOT feature traces: events, signed bit/blocking, memory bounds | 3/3 matched reference traces |
+
+Coverage is under `artifacts/coverage/20261022-131537-9160083/`; `gate.json` records the positive thresholds and `evidence.json` fingerprints reports, sources and measured binaries. LLVM emitted warnings that 43 functions had mismatched profile data, so native percentages retain that measurement caveat. The native LLVM report covers the objects listed in its evidence manifest, not the whole Surelog/UHDM exporter. Exporter behavior is instead exercised by the same-source HDL comparisons. Four separately explicit tests were not selected; the 416 count refers to regular tests.
+
+The final native bundle is `artifacts/bundles/20261022-131300-1809926/velosim-linux-x64.tar.gz`. NativeAOT publication preceded final coverage capture, preserving measured assemblies afterward. Rebuild generated SDK hosts and shared libraries together because two-state metadata changes the signal descriptor layout. A preliminary feature-smoke harness mixed old headers with a new library; rebuilding a coherent host/library pair resolved it and all three trace comparisons passed. Logs remain in `artifacts/open-items-100/`. Implementation and verification changes are committed locally; nothing was pushed.
