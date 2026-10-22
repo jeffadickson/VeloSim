@@ -17,4 +17,10 @@ public class RtlConcatConformanceTests
         const string source="module dut(input logic clk,rst_n,enable,input logic[63:0]a,i,output logic[7:0]q,r,snapshot);always_ff @(posedge clk) begin if(!rst_n)begin q<='0;r<='0;snapshot<='0;end else begin snapshot<=q;if(enable)begin {q,r}<=a;if(i[0]){q,r}<={r,q};end end end endmodule";
         await Qualify(21,"whole-words",source);
     }
+    [Test,Category("RealFifo")]
+    public async Task FixedAndBitCycles41To50()
+    {
+        const string source="module dut(input logic clk,rst_n,enable,input logic[63:0]a,i,output logic[7:0]q,r,snapshot);always_ff @(posedge clk) begin if(!rst_n)begin q<='0;r<='0;snapshot<='0;end else begin snapshot<=q;if(enable)begin q<=a;r<=~a;{q[7:4],r[3:0]}<=(a[0]<<5);{q[0],r[7]}<=a[1:0];if(i[0]){q[9:6],r[1:0]}<=a[5:0];end end end endmodule";
+        await Qualify(41,"fixed-bit",source);
+    }
 }
