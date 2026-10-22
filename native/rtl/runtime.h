@@ -11,6 +11,17 @@ inline Bits mask(int w){if(w<0||w>128)throw std::invalid_argument("word width");
 inline W word(Bits v,Bits x,Bits z,int w){auto m=mask(w);return {v&~(x|z)&m,x&~z&m,z&m,w};}
 inline W resize(W a,int w){return word(a.v,a.x,a.z,w);}
 inline W unknown(int w){return {0,mask(w),0,w};}
+inline W two_state(W value){return word(value.v,0,0,value.w);}
+inline W memory_index(W index,int lower){
+ if(lower<0)throw std::invalid_argument("negative memory lower bound");
+ if(index.x||index.z||index.v<Bits(lower))return unknown(1);
+ return word(index.v-Bits(lower),0,0,index.w);
+}
+inline bool edge_event(W before,W after,bool positive){
+ if(before.w!=1||after.w!=1)throw std::invalid_argument("event requires scalar values");
+ int a=before.x?2:before.z?3:before.v?1:0,b=after.x?2:after.z?3:after.v?1:0;
+ return positive?((a==0&&b!=0)||(a>=2&&b==1)):((a==1&&b!=1)||(a>=2&&b==0));
+}
 inline W select_bit(W a,W index){if(index.x||index.z||index.v>=uint64_t(a.w))return unknown(1);auto n=unsigned(index.v);return word(a.v>>n,a.x>>n,a.z>>n,1);}
 inline W select_part(W a,int left,int right){int w=left-right+1;W out=unknown(w);for(int i=0;i<w;i++){auto index=uint64_t(right)+unsigned(i);if(index>=uint64_t(a.w))continue;auto dst=Bits(1)<<i,src=Bits(1)<<unsigned(index);out.x&=~dst;if(a.v&src)out.v|=dst;if(a.x&src)out.x|=dst;if(a.z&src)out.z|=dst;}return out;}
 inline W select_indexed(W a,W base,int width,bool descending){

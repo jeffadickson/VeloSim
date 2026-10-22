@@ -1,6 +1,6 @@
 # VeloSim
 
-Current structural RTL milestone: [shared-clock processes, hierarchy, signed 1–128-bit words](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
+Current development: [100 open-item iterations and the execution contract](docs/open-items-100.md), building on [shared-clock processes, hierarchy and signed 1–128-bit words](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
 
 Open-source experimental Verilog/SystemVerilog simulation project.
 
@@ -8,7 +8,7 @@ Start with the illustrated [HTML introduction](docs/introduction.html) to see ho
 
 ## Status
 
-Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET10 C# helpers validate IR, orchestrate frontends and run regressions. The verified real Surelog/UHDM path supports a restricted synchronous-reset counter, not arbitrary SystemVerilog.
+Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET10 C# helpers validate IR, orchestrate frontends and run regressions. The real Surelog/UHDM structural path supports bounded edge-driven processes, instance hierarchy, signed 128-bit words, two-state bit signals and fixed word memories. See the current execution contract above for restrictions.
 
 ## Build and test
 

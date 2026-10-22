@@ -6,7 +6,9 @@ void check(bool b){if(!b){std::cerr<<"RTL runtime assertion failed\n";std::abort
 #include "rtl_100_cycles.h"
 #include "concat_target_cycles.h"
 #include "signed_wide_tests.h"
+#include "input_event_cycles.h"
 int main(){
+ inputEventCycles();
  signedWideTests();
  indexedReadCycles();
  writeRuntimeCycles();

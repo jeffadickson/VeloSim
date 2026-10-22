@@ -97,8 +97,8 @@ struct Model::State {
 Model::Model(std::string name,std::vector<Signal> signals,int clock):state(std::make_unique<State>()){
  if(name.empty()||signals.empty()||signals.size()>256||clock<0||size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)throw std::invalid_argument("invalid external model interface");
  state->name=std::move(name);state->names.reserve(signals.size());
- for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>128||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(unknown(sig.width));}
- for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction,signals[i].is_signed});s[clock]=word(0,0,0,1);
+ for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>128||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(sig.two_state?word(0,0,0,sig.width):unknown(sig.width));}
+ for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction,signals[i].is_signed,signals[i].two_state});s[clock]=word(0,0,0,1);
 }
 Model::~Model(){
  // Derived state is already gone; destruction invalidates callbacks, never calls HDL or plugins.
@@ -116,7 +116,7 @@ std::weak_ptr<int> Model::lifetime() const{return state->life;}
 const std::string& Model::name() const{return state->name;}
 const std::vector<Signal>& Model::signals() const{return state->signals;}
 W Model::get(size_t id) const{checkThread();return s.at(id);}
-void Model::put(size_t id,W value){checkThread();if(state->finished||state->finishRequested||state->readOnly)throw std::runtime_error("model is finished or in read-only callback");if(state->signals.at(id).direction!=vpiInput)throw std::runtime_error("only input ports may be deposited");value=word(value.v,value.x,value.z,state->signals[id].width);if(state->dispatching)state->pending[id]=value;else s.at(id)=value;state->dirty=true;}
+void Model::put(size_t id,W value){checkThread();if(state->finished||state->finishRequested||state->readOnly)throw std::runtime_error("model is finished or in read-only callback");if(state->signals.at(id).direction!=vpiInput)throw std::runtime_error("only input ports may be deposited");value=word(value.v,value.x,value.z,state->signals[id].width);if(state->signals[id].two_state)value=two_state(value);if(state->dispatching)state->pending[id]=value;else s.at(id)=value;state->dirty=true;}
 void Model::useVpi(){checkThread();current=this;currentLife=state->life;}
 uint64_t Model::time() const{checkThread();return state->now;}
 void Model::timeInc(uint64_t delta){checkThread();if(state->evaluating||gotFinish()||delta>UINT64_MAX-state->now)throw std::runtime_error("invalid time advance");state->now+=delta;}

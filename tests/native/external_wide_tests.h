@@ -1,9 +1,14 @@
 struct WideModel:Model {
  Port data{*this,1};
- WideModel(bool sign):Model("wide",{{"clk",1,vpiInput},{"data",128,vpiInput,sign}},0){}
+ WideModel(bool sign,bool two=false):Model("wide",{{"clk",1,vpiInput},{"data",128,vpiInput,sign,two}},0){}
  void evaluate() override{}
 };
 inline void externalWideTests(){
+ {
+  WideModel bit(false,true);check(bit.data.bits()==std::string(128,'0'));check(bit.signals()[1].two_state);
+  bit.data.bits(std::string(64,'x')+std::string(64,'z'));check(bit.data.bits()==std::string(128,'0'));
+  bit.useVpi();auto h=named("wide.data");s_vpi_value value{};value.format=vpiBinStrVal;std::string pattern=std::string(124,'1')+"10xz";value.value.str=pattern.data();vpi_put_value(h,&value,nullptr,vpiNoDelay);check(!vpi_chk_error(nullptr));check(bit.data.bits()==std::string(124,'1')+"1000");bit.eval();bit.final();
+ }
  for(bool sign:{false,true}){
   WideModel m(sign);m.useVpi();auto h=named("wide.data");check(vpi_get(vpiSigned,h)==sign);check(vpi_get(vpiSize,h)==128);
   s_vpi_value value{};value.format=vpiVectorVal;s_vpi_vecval bits[4]{{1,0},{0,0},{0x80000000,0},{0x80000000,0}};value.value.vector=bits;

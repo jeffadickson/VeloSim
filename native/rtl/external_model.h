@@ -8,7 +8,7 @@
 #define VS_VPI_API
 #endif
 namespace vsrtl {
-struct Signal { const char* name; int width, direction; bool is_signed=false; };
+struct Signal { const char* name; int width, direction; bool is_signed=false; bool two_state=false; };
 class VS_VPI_API Model {
  struct State;
  std::unique_ptr<State> state;

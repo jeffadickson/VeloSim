@@ -1,6 +1,6 @@
 # Native external interfaces
 
-VeloSim can export the structural RTL IR as a reusable `V<top>.h` C++ model and a shared VPI runtime. Both interfaces access the same four-state design state. The structural backend supports shared-clock processes, bounded elaborated hierarchy, and signed or unsigned four-state words up to 128 bits. See [the current execution contract](rtl-processes-hierarchy-signed.md). General event scheduling remains unsupported.
+VeloSim can export the structural RTL IR as a reusable `V<top>.h` C++ model and a shared VPI runtime. Both interfaces access the same design state. The structural backend supports bounded input-edge processes, elaborated hierarchy, signed or unsigned logic/bit words up to 128 bits, and fixed word memories. See [the current execution contract](open-items-100.md). General timed event scheduling remains unsupported. Rebuild SDK hosts and shared libraries together after this ABI metadata expansion.
 
 ## Generate and run the example
 
