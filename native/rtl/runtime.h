@@ -15,6 +15,7 @@ inline W select_part(W a,int left,int right){int w=left-right+1;W out=unknown(w)
 inline W select_indexed(W a,W base,int width,bool descending){
  if(width<1||width>64)throw std::invalid_argument("indexed select width must be1..64");
  W out=unknown(width);if(base.x||base.z)return out;
+ if(base.v>2147483647ULL)throw std::out_of_range("known indexed base exceeds qualified range0..INT32_MAX");
  for(int bit=0;bit<width;++bit){
   uint64_t offset=unsigned(descending?width-1-bit:bit),index;
   if(descending){if(base.v<offset)continue;index=base.v-offset;}

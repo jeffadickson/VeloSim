@@ -54,7 +54,7 @@ jobs:
           VELOSIM_SURELOG: ${{ github.workspace }}/artifacts/toolchain/bin/surelog
           VELOSIM_UHDM_RTL: ${{ github.workspace }}/artifacts/with-uhdm/bin/velosim-uhdm-rtl
         run: |
-          dotnet test tests/VeloSim.Tests -c Release -m:4 --filter 'FullyQualifiedName~FifoTests|FullyQualifiedName~RtlBitwiseTests|FullyQualifiedName~RtlOperatorTests|FullyQualifiedName~RtlSelectionTests|FullyQualifiedName~ExternalInterfaceTests'
+          dotnet test tests/VeloSim.Tests -c Release -m:4 --filter 'FullyQualifiedName~FifoTests|FullyQualifiedName~RtlBitwiseTests|FullyQualifiedName~RtlOperatorTests|FullyQualifiedName~RtlSelectionTests|FullyQualifiedName~ExternalInterfaceTests|FullyQualifiedName~RtlIndexed'
           artifacts/publish/VeloSim.Tools/VeloSim.Tools fifo-differential examples/surelog_fifo.sv --top surelog_fifo --output-dir artifacts/fifo-native-cli --workers 1,4,8 --cycles 1000 --build-jobs 4
       - uses: actions/upload-artifact@v4
         if: always()
@@ -67,4 +67,5 @@ jobs:
             artifacts/rtl-operators-*/
             artifacts/rtl-selections-*/
             artifacts/external-interface-*/
+            artifacts/rtl-indexed-*/
           if-no-files-found: warn
