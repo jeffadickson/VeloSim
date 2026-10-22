@@ -101,6 +101,10 @@ The [new structural selection guide](docs/rtl-selected-writes.md) documents inde
 
 Run `VELOSIM_REAL_FIFO=1 dotnet test tests/VeloSim.Tests -c Release -m:4 --filter FullyQualifiedName~RtlIndexed` with the pinned frontend/exporter installed to reproduce the actual-source checks.
 
+### Concatenation nonblocking targets
+
+Assignments such as `{high, low} <= data` and nested groups of supported packed targets are covered by the [concatenation target guide](docs/concat-targets.md). The RHS is evaluated once in the total target width and split MSB-first. Each leaf must name a distinct destination word, and total width is limited to 64 bits. See the [fresh 100-scenario ledger](docs/concat-target-100-cycles.md) for implementation, AI peer reviews and same-source qualification.
+
 ### External C++ hosts and VPI plugins
 
 `rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory>` exports a reusable `V<name>.h` model, four-state public ports, `eval()`/`final()` lifecycle, host time and a shared VPI subset runtime. External C plugins can look up signals, inspect/deposit four-state values and register callbacks against the same model state. See [external interfaces](docs/external-interfaces.md) for the complete build/run example, supported API and qualification scope. `examples/external_main.cpp` and `external_plugin.c` demonstrate both interfaces; this preserves the current bounded HDL subset.

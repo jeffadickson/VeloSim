@@ -38,4 +38,16 @@ public class RtlConcatConformanceTests
         var ports=Ports().Select(s=>s.Name=="a"?new RtlSignal("nba0",64,"input"):s).Append(new("t",8,"output")).ToArray();
         await Qualify(81,"nested-ordered",source,ports,vectors);
     }
+    [TestCase(91,1,1),TestCase(92,1,7),TestCase(93,7,1),TestCase(94,7,8),TestCase(95,8,16),TestCase(96,16,16),TestCase(97,31,33),TestCase(98,32,32),TestCase(99,63,1),TestCase(100,1,63),Category("RealFifo")]
+    public async Task ReusableConcatMatrix(int cycle,int left,int slice)
+    {
+        string inputName=cycle%2==0?"nba0":"a";
+        string source=$"module dut(input logic clk,rst_n,enable,input logic[63:0]{inputName},i,output logic[{left-1}:0]q,snapshot,output logic[63:0]r);always_ff @(posedge clk)begin if(!rst_n)begin q<='0;r<='0;snapshot<='0;end else begin snapshot<=q;if(enable)begin r<={inputName};{{q,r[i +: {slice}]}}<={inputName};if({inputName}[1]){{q,r[i -: {slice}]}}<=({inputName}[0]<<{left+slice-1});end end end endmodule";
+        uint seed=0x3ab72U+(uint)left;string RandomBits(bool xz){var bits=new char[64];for(int bit=0;bit<64;++bit){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;bits[bit]="01xz"[(int)(seed%(xz?4U:2U))];}return new(bits);}
+        var vectors=new List<Dictionary<string,string>>();
+        for(int row=0;row<64;++row)vectors.Add(new(){["rst_n"]=row%19==0?"0":"1",["enable"]=row%7==0?"0":"1",[inputName]=RandomBits(row>=32),["i"]=row%17==7?new('x',64):row%17==8?new('z',64):Bits(row%17==9?2147483647UL:(ulong)(row%66))});
+        var ports=Ports(left,64).Select(s=>s.Name=="a"?new RtlSignal(inputName,64,"input"):s).ToArray();
+        await RtlIndexedConformanceTests.Qualify($"concat-sdk-{left}-{slice}",source,ports,vectors,sdk:true);
+        TestContext.Progress.WriteLine($"CONCAT_CYCLE {cycle} PASS reusable {left}+{slice}, 64 vectors, standalone and SDK");
+    }
 }

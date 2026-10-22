@@ -53,6 +53,8 @@ public static class RtlExternalSdk
             input deposits, radix/vector/scalar values, and start/end/value/read-only
             callbacks. There is no HDL delay scheduler or Verilator/DPI ABI.
             Models and handles belong to their creating thread.
+            Concatenation NBA targets require distinct destination words and at
+            most 64 total assigned bits.
             Known bases for indexed reads and selected writes are limited to
             0..INT32_MAX; larger known bases throw before sequential updates commit.
 

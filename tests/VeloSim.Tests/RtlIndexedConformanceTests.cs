@@ -35,7 +35,15 @@ public class RtlIndexedConformanceTests
             foreach (var s in inputs) host.AppendLine($"if(!(row>>bits))return 3;top.{names[s.Name]}.bits(bits);");
             host.AppendLine("top.clk=0;top.eval();top.timeInc(1);top.clk=1;top.eval();top.eval();std::cout<<\"VS_RTL \"<<++cycle;"); foreach (var s in outputs) host.AppendLine($"std::cout<<' '<<top.{names[s.Name]}.bits();"); host.AppendLine("std::cout<<'\\n';}top.final();Vdut probe;");
             foreach (var s in inputs) host.AppendLine($"probe.{names[s.Name]}.bits(\"{new string(s.Name == "i" ? '0' : '1', s.Width)}\");");
-            host.AppendLine("probe.rst_n=0;probe.enable=1;probe.clk=0;probe.eval();probe.clk=1;probe.eval();auto before=probe.q.bits();auto previousSnapshot=probe.snapshot.bits();probe.rst_n=1;probe.i=2147483648ULL;probe.clk=0;probe.eval();probe.clk=1;bool rejected=false;try{probe.eval();}catch(const std::out_of_range&){rejected=true;}if(!rejected||probe.q.bits()!=before||probe.snapshot.bits()!=previousSnapshot)return 5;probe.i=0;probe.eval();if(probe.evalNeeded())return 6;probe.final();return 0;}"); File.WriteAllText(Path.Combine(path, "sdk/host.cpp"), host.ToString());
+            host.AppendLine("probe.rst_n=0;probe.enable=1;probe.clk=0;probe.eval();probe.clk=1;probe.eval();");
+            for(int output=0;output<outputs.Length;++output)host.AppendLine($"auto before{output}=probe.{names[outputs[output].Name]}.bits();");
+            host.AppendLine("probe.rst_n=1;probe.i=2147483648ULL;probe.clk=0;probe.eval();probe.clk=1;bool rejected=false;try{probe.eval();}catch(const std::out_of_range&){rejected=true;}if(!rejected)return 5;");
+            for(int output=0;output<outputs.Length;++output)host.AppendLine($"if(probe.{names[outputs[output].Name]}.bits()!=before{output})return 5;");
+            host.AppendLine("probe.i=0;probe.eval();if(probe.evalNeeded())return 6;Vdut control;");
+            foreach(var s in inputs)host.AppendLine($"control.{names[s.Name]}.bits(\"{new string(s.Name=="i"?'0':'1',s.Width)}\");");
+            host.AppendLine("control.rst_n=0;control.enable=1;control.clk=0;control.eval();control.clk=1;control.eval();control.rst_n=1;control.clk=0;control.eval();control.clk=1;control.eval();");
+            foreach(var s in outputs)host.AppendLine($"if(probe.{names[s.Name]}.bits()!=control.{names[s.Name]}.bits())return 7;");
+            host.AppendLine("probe.final();control.final();return 0;}"); File.WriteAllText(Path.Combine(path, "sdk/host.cpp"), host.ToString());
         }
         var compileInputs = Directory.GetFiles(path).Concat(sdk ? Directory.GetFiles(Path.Combine(path, "sdk")) : []).Append(elaboration.UhdmPath).Select(ArtifactMetadata.Fingerprint).ToArray();
         await Run("cmake", "-S", path, "-B", Path.Combine(path, "build"), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release");

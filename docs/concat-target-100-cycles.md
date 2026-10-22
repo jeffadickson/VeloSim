@@ -17,6 +17,8 @@ The RHS is evaluated once in the total concatenation width, resized once, and sp
 |70|61–70|Actual indexed targets and old indices|33 focused tests and strengthened ten-vector actual rerun pass; reviewer visibility finding fixed and accepted|
 |80|71–80|Nested groups and expression contexts|40/40 IR cases pass; association, width and naming boundaries independently reviewed and accepted|
 |90|81–90|Actual nested/ordered assignments|Ten actual vectors and explicit known-state rotation rerun pass at workers 1/4/8; independent review accepted|
-|100|91–100|Reusable C++ model matrix and documentation|Planned|
+|100|91–100|Reusable C++ model matrix and documentation|54/54 focused managed tests pass; ten SDK fixtures ×64 vectors match all traces and pass failure/control recovery; tenth independent AI review accepted|
 
 Final full-suite coverage, sanitizer, native publication and GitHub outcomes are recorded in the delivered validation report after the last source commit.
+
+The 100 numbered scenarios comprise 40 managed IR cases, ten native width-pair string-oracle scenarios, forty directed actual-source vectors in four fixtures, and ten reusable-model matrix fixtures with 64 vectors each. Full native suites passed in Release and ASan/UBSan configurations. All ten reviews were independent AI reviews. Final source coverage and NativeAOT publication remain post-commit validation.
