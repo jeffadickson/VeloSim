@@ -30,4 +30,26 @@ public class RtlIndexedTests
         if (id >= 13) Assert.Throws<IrValidationException>(() => RtlDesign.Parse(node.ToJsonString()));
         TestContext.Progress.WriteLine($"RTL_CYCLE {id} PASS indexed-read IR");
     }
-}
+    [TestCase(41), TestCase(42), TestCase(43), TestCase(44), TestCase(45), TestCase(46), TestCase(47), TestCase(48), TestCase(49), TestCase(50)]
+    public void SelectedWriteIrCycle(int id)
+    {
+        object target = id == 42 ? new { kind = "partselect", value = Ref("q"), left = 3, right = 0 } : new { kind = "bitselect", value = Ref("q"), index = Ref("i") };
+        var node = JsonNode.Parse(Fixture(Ref("a"), target))!; var lhs = node["body"]!["target"]!;
+        switch (id)
+        {
+            case 41: Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("deposit_indexed(next[3],s[2],1,false,s[1])")); break;
+            case 42: Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitModelHeader("selected"), Does.Contain("deposit_indexed(next[3],W{0,0,0,64},4,false,s[1])")); break;
+            case 43: lhs["value"]!["name"] = "a"; break;
+            case 44: lhs["value"]!["name"] = "clk"; break;
+            case 45: lhs["value"] = JsonSerializer.SerializeToNode(new { kind = "bitselect", value = Ref("q"), index = Ref("i") }); break;
+            case 46: lhs["value"] = JsonSerializer.SerializeToNode(new { kind = "const", bits = "0000" }); break;
+            case 47: lhs["extra"] = true; break;
+            case 48: lhs["index"] = JsonSerializer.SerializeToNode(Ref("missing")); break;
+            case 49: node["continuous"] = new JsonArray(new JsonObject { ["target"] = JsonSerializer.SerializeToNode(Ref("q")), ["value"] = JsonSerializer.SerializeToNode(Ref("a")) }); break;
+            case 50:
+                node["signals"]![1]!["name"] = "deposit_indexed"; node["body"]!["value"]!["name"] = "deposit_indexed";
+                var parsed = RtlDesign.Parse(node.ToJsonString()); Assert.That(parsed.ExternalPortNames()["deposit_indexed"], Is.Not.EqualTo("deposit_indexed")); Assert.That(parsed.EmitModelHeader("alias"), Does.Contain("deposit_indexed(next[3]")); break;
+        }
+        if (id is >= 43 and <= 49) Assert.Throws<IrValidationException>(() => RtlDesign.Parse(node.ToJsonString()));
+        TestContext.Progress.WriteLine($"RTL_CYCLE {id} PASS selected-word IR");
+    }}

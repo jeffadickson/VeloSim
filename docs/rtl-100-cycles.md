@@ -10,7 +10,7 @@ Scope: unsigned canonical `[W-1:0]` words up to 64 bits, one known-clock posedge
 | 20 | 11–20 | Indexed-read IR shape, sizing and dependency validation | 10/10 managed cases and 6/6 native suites pass; reviewer naming finding fixed and accepted |
 | 30 | 21–30 | Actual UHDM indexed reads against same-source Icarus | 2/2 actual frontend tests, 10 supported-domain vectors at workers 1/4/8, and 6/6 native suites pass; revised value-domain policy reviewed and accepted |
 | 40 | 31–40 | Selected-write runtime, mask replacement and partial bounds | Cycles 31–40 and 6/6 native suites pass; independent reviewer accepted masks, bounds and helper naming |
-| 50 | 41–50 | Bit/fixed-part NBA IR and code generation | Planned |
+| 50 | 41–50 | Bit/fixed-part NBA IR and code generation | 21/21 focused managed cases and 6/6 native suites pass; independent reviewer accepted old-state reads and ordered next-state merge |
 | 60 | 51–60 | Actual selected-word NBA qualification | Planned |
 | 70 | 61–70 | Indexed-word NBA runtime/IR qualification | Planned |
 | 80 | 71–80 | Actual indexed-word NBA qualification | Planned |
@@ -26,5 +26,6 @@ The first actual comparison retained a failure at `artifacts/rtl-indexed-reads-b
 The qualified value domain is therefore explicit: known indexed-selection bases are `0..INT32_MAX`; larger known bases throw before a selected update commits. Unknown bases retain all-X read / ignored-write semantics. Wide unsigned index ports remain accepted, but callers must respect this runtime value bound. Native scenario 7 checks rejection of the original extreme values; actual scenario 27 compares the largest supported known base. This is a documented conservative execution limit, not a reinterpretation of unsigned values as negative and not a claim of agreement outside the supported domain.
 
 `VELOSIM_INDEXED_IVERILOG` and `VELOSIM_INDEXED_VVP` optionally select a reference pair. The normal installed Icarus remains the default; no CI toolchain replacement is required. VeloSim builds use Ninja with four jobs. The isolated Icarus investigation used its upstream Autotools/Makefiles with `make -j4`, installed only under the user's local prefix.
+
 
 
