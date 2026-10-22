@@ -11,7 +11,7 @@ The RHS is evaluated once in the total concatenation width, resized once, and sp
 |10|1–10|Target validation and emission|10/10 managed cases pass; exporter Ninja build passes; independent AI review accepted after fixture correction|
 |20|11–20|Independent native split/deposit oracles|Ten width-pair scenarios and 6/6 native suites pass; independent review accepted|
 |30|21–30|Actual whole-word assignments|Ten same-source vectors match Icarus at workers 1/4/8; 11 focused tests pass; independent review accepted|
-|40|31–40|Invalid target and writer boundaries|Planned|
+|40|31–40|Invalid target and writer boundaries|21/21 focused tests pass; ten explicit rejection scenarios independently reviewed and accepted|
 |50|41–50|Actual fixed/bit selection targets|Planned|
 |60|51–60|Dynamic target and sizing boundaries|Planned|
 |70|61–70|Actual indexed targets and old indices|Planned|

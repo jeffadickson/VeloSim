@@ -33,4 +33,25 @@ public class RtlConcatTargetTests
         else Assert.That(Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(node.ToJsonString()))!.Message,Does.Contain(error));
         TestContext.Progress.WriteLine($"CONCAT_CYCLE {cycle} PASS validation");
     }
+    [TestCase(31), TestCase(32), TestCase(33), TestCase(34), TestCase(35), TestCase(36), TestCase(37), TestCase(38), TestCase(39), TestCase(40)]
+    public void InvalidConcatTargetBoundary(int cycle)
+    {
+        object target=Concat(Ref("q"),Ref("r")); string error="distinct destination";
+        switch(cycle)
+        {
+            case 31: target=Concat(Fixed("q",3,0),Fixed("q",7,4)); break;
+            case 32: target=Concat(Ref("q"),new{kind="bitselect",value=Ref("q"),index=Ref("i")}); break;
+            case 33: target=Concat(Indexed("q",4,false),Indexed("q",4,true)); break;
+            case 34: target=Concat(Ref("q"),Concat(Ref("r"),Ref("q"))); break;
+            case 35: target=new{kind="concat",args=Array.Empty<object>()}; error="expression"; break;
+            case 36: target=new{kind="concat",args=new[]{Ref("q")}}; error="expression"; break;
+            case 37: target=new{kind="concat",args=new[]{Ref("q"),Ref("r"),Ref("t")}}; error="expression"; break;
+            case 38: target=Concat(Ref("q"),Ref("missing")); error="signal"; break;
+            case 39: target=Concat(Ref("q"),new{kind="partselect",value=new{kind="index",name="m",index=new{kind="const",bits="0"}},left=3,right=0}); error="writable declared"; break;
+            case 40: target=new{kind="concat"}; error=""; break;
+        }
+        var node=Fixture(target);if(cycle==39)node["memories"]=JsonSerializer.SerializeToNode(new[]{new{name="m",width=8,depth=2}});
+        Assert.That(Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(node.ToJsonString()))!.Message,Does.Contain(error).IgnoreCase);
+        TestContext.Progress.WriteLine($"CONCAT_CYCLE {cycle} PASS invalid target boundary");
+    }
 }
