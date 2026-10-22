@@ -7,7 +7,7 @@ Scope: unsigned canonical `[W-1:0]` words up to 64 bits, one known-clock posedge
 | Checkpoint | Cycles | Work | Validation/review |
 |---|---|---|---|
 | 10 | 1–10 | Indexed-read runtime, checked arithmetic and independent string oracle | 6/6 native suites pass; independent reviewer accepted bounds, orientation and oracle |
-| 20 | 11–20 | Indexed-read IR shape, sizing and dependency validation | Planned |
+| 20 | 11–20 | Indexed-read IR shape, sizing and dependency validation | 10/10 managed cases and 6/6 native suites pass; reviewer naming finding fixed and accepted |
 | 30 | 21–30 | Actual UHDM indexed reads against same-source Icarus | Planned |
 | 40 | 31–40 | Selected-write runtime, mask replacement and partial bounds | Planned |
 | 50 | 41–50 | Bit/fixed-part NBA IR and code generation | Planned |
@@ -16,4 +16,5 @@ Scope: unsigned canonical `[W-1:0]` words up to 64 bits, one known-clock posedge
 | 80 | 71–80 | Actual indexed-word NBA qualification | Planned |
 | 90 | 81–90 | Writer conflicts, invalid targets and ordered overlap | Planned |
 | 100 | 91–100 | Mixed-width actual RTL matrix and final documentation | Planned |
+
 
