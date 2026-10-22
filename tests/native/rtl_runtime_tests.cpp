@@ -6,6 +6,7 @@ void check(bool b){if(!b){std::cerr<<"RTL runtime assertion failed\n";std::abort
 #include "rtl_100_cycles.h"
 int main(){
  indexedReadCycles();
+ writeRuntimeCycles();
  // Independent string-position oracle: no runtime masks/shifts in expected values.
  for(int width=1;width<=64;++width){
   std::string input;for(int i=0;i<width;++i)input+="01xz"[(i+width)%4];auto data=parse(input);
@@ -77,3 +78,4 @@ int main(){
  write(m,parse("01"),parse("xz"),8);check(text(read(m,parse("01"),8))=="000000xz");
  bool invalid=false;try{parse("bad");}catch(const std::exception&){invalid=true;}check(invalid);
 }
+

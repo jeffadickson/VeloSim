@@ -70,3 +70,22 @@ inline W concat(W a,W b){if(a.w+b.w>64)throw std::runtime_error("concat width");
 inline W read(const std::vector<W>& m,W index,int w){return index.x||index.z||index.v>=m.size()?unknown(w):m[index.v];}
 inline void write(std::vector<W>& m,W index,W value,int w){if(!(index.x|index.z)&&index.v<m.size())m[index.v]=resize(value,w);}
 }
+namespace vsrtl {
+inline W deposit_indexed(W before,W base,int width,bool descending,W value){
+ if(width<1||width>64)throw std::invalid_argument("selected write width must be1..64");
+ if(base.x||base.z)return before;
+ if(base.v>2147483647ULL)throw std::out_of_range("known selected write base exceeds qualified range0..INT32_MAX");
+ value=resize(value,width);
+ for(int bit=0;bit<width;++bit){
+  uint64_t offset=unsigned(descending?width-1-bit:bit),index;
+  if(descending){if(base.v<offset)continue;index=base.v-offset;}
+  else{if(base.v>UINT64_MAX-offset)continue;index=base.v+offset;}
+  if(index>=uint64_t(before.w))continue;
+  auto dst=uint64_t(1)<<index,src=uint64_t(1)<<bit;
+  before.v&=~dst;before.x&=~dst;before.z&=~dst;
+  if(value.v&src)before.v|=dst;if(value.x&src)before.x|=dst;if(value.z&src)before.z|=dst;
+ }
+ return before;
+}
+}
+
