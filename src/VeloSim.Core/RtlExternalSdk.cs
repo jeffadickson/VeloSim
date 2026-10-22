@@ -53,6 +53,8 @@ public static class RtlExternalSdk
             input deposits, radix/vector/scalar values, and start/end/value/read-only
             callbacks. There is no HDL delay scheduler or Verilator/DPI ABI.
             Models and handles belong to their creating thread.
+            Known bases for indexed reads and selected writes are limited to
+            0..INT32_MAX; larger known bases throw before sequential updates commit.
 
             Linux/WSL builds are qualified. Keep the host and shared runtime together
             when relocating the Linux build; the build RPATH uses $ORIGIN.

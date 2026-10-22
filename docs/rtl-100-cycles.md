@@ -15,7 +15,7 @@ Scope: unsigned canonical `[W-1:0]` words up to 64 bits, one known-clock posedge
 | 70 | 61–70 | Indexed-word NBA runtime/IR qualification | 31/31 focused managed cases and 6/6 native suites pass; independent reviewer accepted direction and selected-width context |
 | 80 | 71–80 | Actual indexed-word NBA qualification | 2/2 actual frontend tests, 10 vectors at workers 1/4/8, and 6/6 native suites pass; independent reviewer accepted partial and unknown-base writes |
 | 90 | 81–90 | Writer conflicts, invalid targets and ordered overlap | 40/40 focused managed cases and 6/6 native suites pass; independent reviewer accepted specific boundary diagnostics |
-| 100 | 91–100 | Mixed-width actual RTL matrix and final documentation | Planned |
+| 100 | 91–100 | Mixed-width actual RTL matrix and final documentation | 10/10 actual matrix cases pass: 128 vectors each at workers 1/4/8 and through reusable SDKs, including failure/recovery; tenth independent AI review accepted |
 
 
 
@@ -27,9 +27,4 @@ The qualified value domain is therefore explicit: known indexed-selection bases 
 
 `VELOSIM_INDEXED_IVERILOG` and `VELOSIM_INDEXED_VVP` optionally select a reference pair. The normal installed Icarus remains the default; no CI toolchain replacement is required. VeloSim builds use Ninja with four jobs. The isolated Icarus investigation used its upstream Autotools/Makefiles with `make -j4`, installed only under the user's local prefix.
 
-
-
-
-
-
-
+All ten checkpoints received independent AI peer review focused on Verilog semantics. These reviews are not a claim of human review. Final full-suite coverage, sanitizer and NativeAOT publication results are recorded in the delivered validation report after this source checkpoint is committed.

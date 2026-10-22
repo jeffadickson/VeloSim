@@ -33,7 +33,9 @@ public class RtlIndexedConformanceTests
             await RtlExternalSdk.ExportAsync(Path.Combine(path, "design.json"), "dut", Path.Combine(path, "sdk")); var names = design.ExternalPortNames();
             var host = new StringBuilder("#include \"Vdut.h\"\n#include <fstream>\n#include <iostream>\n#include <sstream>\nint main(int argc,char**argv){if(argc!=2)return 2;Vdut top;std::ifstream input(argv[1]);std::string line,bits;int cycle=0;while(std::getline(input,line)){std::istringstream row(line);\n");
             foreach (var s in inputs) host.AppendLine($"if(!(row>>bits))return 3;top.{names[s.Name]}.bits(bits);");
-            host.AppendLine("top.clk=0;top.eval();top.timeInc(1);top.clk=1;top.eval();top.eval();std::cout<<\"VS_RTL \"<<++cycle;"); foreach (var s in outputs) host.AppendLine($"std::cout<<' '<<top.{names[s.Name]}.bits();"); host.AppendLine("std::cout<<'\\n';}top.final();return 0;}"); File.WriteAllText(Path.Combine(path, "sdk/host.cpp"), host.ToString());
+            host.AppendLine("top.clk=0;top.eval();top.timeInc(1);top.clk=1;top.eval();top.eval();std::cout<<\"VS_RTL \"<<++cycle;"); foreach (var s in outputs) host.AppendLine($"std::cout<<' '<<top.{names[s.Name]}.bits();"); host.AppendLine("std::cout<<'\\n';}top.final();Vdut probe;");
+            foreach (var s in inputs) host.AppendLine($"probe.{names[s.Name]}.bits(\"{new string(s.Name == "i" ? '0' : '1', s.Width)}\");");
+            host.AppendLine("probe.rst_n=0;probe.enable=1;probe.clk=0;probe.eval();probe.clk=1;probe.eval();auto before=probe.q.bits();auto previousSnapshot=probe.snapshot.bits();probe.rst_n=1;probe.i=2147483648ULL;probe.clk=0;probe.eval();probe.clk=1;bool rejected=false;try{probe.eval();}catch(const std::out_of_range&){rejected=true;}if(!rejected||probe.q.bits()!=before||probe.snapshot.bits()!=previousSnapshot)return 5;probe.i=0;probe.eval();if(probe.evalNeeded())return 6;probe.final();return 0;}"); File.WriteAllText(Path.Combine(path, "sdk/host.cpp"), host.ToString());
         }
         var compileInputs = Directory.GetFiles(path).Concat(sdk ? Directory.GetFiles(Path.Combine(path, "sdk")) : []).Append(elaboration.UhdmPath).Select(ArtifactMetadata.Fingerprint).ToArray();
         await Run("cmake", "-S", path, "-B", Path.Combine(path, "build"), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release");
@@ -68,4 +70,19 @@ public class RtlIndexedConformanceTests
     {
         const string source = "module dut(input logic clk,input logic[63:0]a,i,output logic[63:0]qplus,qminus,qwide,history);always_ff @(posedge clk) begin qplus<=a;qplus[i +: 4]<=~a[3:0];qminus<=a;qminus[i -: 4]<=a[3:0];qwide<=a;qwide[i -: 64]<=~a;history<=qwide;end endmodule";
         await Qualify("indexed-writes", source, [new("clk",1,"input"),new("a",64,"input"),new("i",64,"input"),new("qplus",64,"output"),new("qminus",64,"output"),new("qwide",64,"output"),new("history",64,"output")], ReadVectors(), 71);
+    }
+
+    [TestCase(91,1,4), TestCase(92,7,2), TestCase(93,8,4), TestCase(94,16,8), TestCase(95,31,16), TestCase(96,32,31), TestCase(97,33,32), TestCase(98,63,33), TestCase(99,64,63), TestCase(100,64,64), Category("RealFifo")]
+    public async Task MixedWidthSelectedNbaMatrix(int cycle, int width, int slice)
+    {
+        string source = $"module dut(input logic clk,rst_n,enable,input logic[63:0]i,input logic[{width-1}:0]select_indexed,deposit_indexed,output logic[{width-1}:0]q,snapshot,output logic[{slice-1}:0]plus,minus);always_ff @(posedge clk) begin if(!rst_n) begin q<='0;snapshot<='0;plus<='0;minus<='0;end else begin snapshot<=q;if(enable) begin q<=select_indexed;q[i]<=deposit_indexed[0];q[3:0]<=deposit_indexed[3:0];q[i +: {slice}]<=deposit_indexed;q[i -: {slice}]<=(select_indexed << 3);end plus<=select_indexed[i +: {slice}];minus<=select_indexed[i -: {slice}];end end endmodule";
+        var vectors = new List<Dictionary<string,string>>(); uint seed = 0x812afU + (uint)width;
+        string RandomBits(int n, bool fourState) { var bits = new char[n]; for (int bit = 0; bit < n; ++bit) { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; bits[bit] = "01xz"[(int)(seed % (fourState ? 4U : 2U))]; } return new(bits); }
+        for (int row = 0; row < 128; ++row)
+        {
+            string basis = row % 17 == 7 ? new('x',64) : row % 17 == 8 ? new('z',64) : Bits(row % 17 == 9 ? 2147483647UL : (ulong)(row % (width + 3)),64);
+            vectors.Add(new() { ["rst_n"] = row % 31 == 0 ? "0" : "1", ["enable"] = row % 5 == 0 ? "0" : "1", ["i"] = basis, ["select_indexed"] = RandomBits(width,row>=64), ["deposit_indexed"] = RandomBits(width,row>=64) });
+        }
+        await Qualify($"matrix-{width}-{slice}", source, [new("clk",1,"input"),new("rst_n",1,"input"),new("enable",1,"input"),new("i",64,"input"),new("select_indexed",width,"input"),new("deposit_indexed",width,"input"),new("q",width,"output"),new("snapshot",width,"output"),new("plus",slice,"output"),new("minus",slice,"output")], vectors, sdk:true);
+        TestContext.Progress.WriteLine($"RTL_CYCLE {cycle} PASS mixed width {width}, slice {slice}, 128 cycles, standalone and SDK");
     }}

@@ -91,9 +91,15 @@ Both compilers receive the same generated design `.sv` path, recorded in each re
 
 The second [50-gap inventory](docs/verilog-missing-50-batch2.md) starts at `295ad4a`; its [iteration ledger](docs/verilog-50-iterations-batch2.md) records implementation and qualification separately. This batch targets packed bit reads, descending constant part reads, concatenations with multiple operands and constant replication. `examples/surelog_selections.sv` demonstrates those expressions in one synchronous process. The original inventory and operator results remain available above.
 
-Packed declarations use canonical descending bounds `[W-1:0]`. Selection indices are unsigned; unknown or out-of-range bit indices return X. Part reads preserve X/Z data and produce X for positions outside the source word. Negative constant indices, ascending or nonzero declaration bounds, indexed part selects and selected assignment targets remain outside this bounded subset. Generated designs retain the 64-bit word limit.
+Packed declarations use canonical descending bounds `[W-1:0]`. Selection indices are unsigned; unknown or out-of-range bit indices return X. Part reads preserve X/Z data and produce X for positions outside the source word. Negative constant indices and ascending or nonzero declaration bounds remain outside this bounded subset. Indexed part selects and selected nonblocking targets are covered by the subsequent expansion below. Generated designs retain the 64-bit word limit.
 
 Run `VELOSIM_REAL_FIFO=1 dotnet test tests/VeloSim.Tests -c Release -m:4 --filter FullyQualifiedName~RtlSelectionTests` for the same-file Surelog/Icarus comparison and rejection tests. The test independently specifies every source port and output writer, strictly checks complete traces, and records source, build-input, tool and artifact hashes under `artifacts/rtl-selections-*`. Native string-oracle tests additionally check every source width from 1 through 64. `examples/surelog_fifo_selections.sv` preserves the eight-bit FIFO contract while reconstructing payloads with selected reads and concatenation; use the FIFO CLI command above with that file and `--top surelog_fifo_selections`.
+
+### Indexed reads and selected nonblocking writes
+
+The [new structural selection guide](docs/rtl-selected-writes.md) documents indexed `+:`/`-:` reads and nonblocking writes to packed bits, fixed slices and indexed slices. Updates merge into staged next-state words in source order while RHS expressions and indices read pre-edge state. Known bases for indexed reads and selected writes are bounded to `0..INT32_MAX`; larger known values fail explicitly. Selected targets must be directly writable declared words. See the [100-cycle ledger](docs/rtl-100-cycles.md) for implementation, independent review and same-file Icarus qualification, including the retained extreme-index reference discrepancy. The single-process, unsigned, 64-bit execution boundary remains.
+
+Run `VELOSIM_REAL_FIFO=1 dotnet test tests/VeloSim.Tests -c Release -m:4 --filter FullyQualifiedName~RtlIndexed` with the pinned frontend/exporter installed to reproduce the actual-source checks.
 
 ### External C++ hosts and VPI plugins
 
