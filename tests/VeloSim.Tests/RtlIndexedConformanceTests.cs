@@ -8,7 +8,7 @@ public class RtlIndexedConformanceTests
     private static string Root() { for (var d = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "native/rtl/runtime.h"))) return d.FullName; throw new IOException("Checkout missing."); }
     private static string Bits(ulong n, int width) => string.Concat(Enumerable.Range(0, width).Reverse().Select(i => ((n >> i) & 1) == 0 ? '0' : '1'));
     private static List<Dictionary<string, string>> ReadVectors() => new[] { "0", "1", "60", "63", "64", "70", "2147483647", "x", "z", "7" }.Select((basis, row) => new Dictionary<string, string> { ["a"] = row == 9 ? string.Concat(Enumerable.Range(0, 64).Select(i => "01xz"[i % 4])) : Bits(0x8000000180000001UL, 64), ["i"] = basis == "max" ? new('1', 64) : basis is "x" or "z" ? new(basis[0], 64) : Bits(ulong.Parse(basis), 64) }).ToList();
-    private static async Task Qualify(string tag, string sourceText, RtlSignal[] expected, List<Dictionary<string, string>> vectors, int firstRowCycle = 0, bool sdk = false)
+    internal static async Task Qualify(string tag, string sourceText, RtlSignal[] expected, List<Dictionary<string, string>> vectors, int firstRowCycle = 0, bool sdk = false)
     {
         if (Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO") != "1") Assert.Ignore("Requires pinned Surelog/UHDM and Icarus.");
         string root = Root(), path = Path.Combine(root, "artifacts", "rtl-indexed-" + tag + "-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path);
