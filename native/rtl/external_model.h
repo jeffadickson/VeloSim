@@ -8,7 +8,7 @@
 #define VS_VPI_API
 #endif
 namespace vsrtl {
-struct Signal { const char* name; int width, direction; };
+struct Signal { const char* name; int width, direction; bool is_signed=false; };
 class VS_VPI_API Model {
  struct State;
  std::unique_ptr<State> state;
@@ -39,6 +39,6 @@ public:
  void bits(const std::string& value){if(value.size()!=size_t(model->signals().at(id).width))throw std::invalid_argument("port binary width mismatch");model->put(id,parse(value));}
  std::string bits() const{return text(model->get(id));}
  W value() const{return model->get(id);}
- explicit operator uint64_t() const{auto v=value();if(v.x||v.z)throw std::runtime_error("integer conversion of X/Z port");return v.v;}
+ explicit operator uint64_t() const{auto v=value();if(v.x||v.z)throw std::runtime_error("integer conversion of X/Z port");if(v.v>UINT64_MAX)throw std::overflow_error("port exceeds uint64_t");return uint64_t(v.v);}
 };
 }

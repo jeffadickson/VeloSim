@@ -76,7 +76,7 @@ inline void hexPutCycles(){
  putCase(57,"hex invalid atomic",8,vpiHexStrVal,"1g",nullptr);
  putCase(58,"hex empty atomic",8,vpiHexStrVal,"",nullptr);
  putCase(59,"hex null atomic",8,vpiHexStrVal,nullptr,nullptr);
- putCase(60,"hex budget atomic",64,vpiHexStrVal,"10000000000000000",nullptr);
+ putCase(60,"hex budget atomic",64,vpiHexStrVal,"100000000000000000000000000000000",nullptr);
 }
 inline void octPutCycles(){
  putCase(61,"oct short zero extends",8,vpiOctStrVal,"7","00000111");
@@ -88,7 +88,7 @@ inline void octPutCycles(){
  putCase(67,"oct invalid digit atomic",8,vpiOctStrVal,"18",nullptr);
  putCase(68,"oct negative atomic",8,vpiOctStrVal,"-1",nullptr);
  putCase(69,"oct64 max",64,vpiOctStrVal,"1777777777777777777777","1111111111111111111111111111111111111111111111111111111111111111");
- putCase(70,"oct budget atomic",64,vpiOctStrVal,"10000000000000000000000",nullptr);
+ putCase(70,"oct budget atomic",64,vpiOctStrVal,"10000000000000000000000000000000000000000000",nullptr);
 }
 inline void decPutCycles(){
  putCase(71,"decimal zero",8,vpiDecStrVal,"0","00000000");
@@ -96,11 +96,11 @@ inline void decPutCycles(){
  putCase(73,"decimal port truncation",8,vpiDecStrVal,"256","00000000");
  putCase(74,"decimal X extension",8,vpiDecStrVal,"X","xxxxxxxx");
  putCase(75,"decimal Z extension",8,vpiDecStrVal,"z","zzzzzzzz");
- putCase(76,"decimal overflow atomic",64,vpiDecStrVal,"18446744073709551616",nullptr);
+ putCase(76,"decimal overflow atomic",64,vpiDecStrVal,"340282366920938463463374607431768211456",nullptr);
  putCase(77,"decimal negative atomic",8,vpiDecStrVal,"-1",nullptr);
  putCase(78,"decimal suffix atomic",8,vpiDecStrVal,"12x",nullptr);
  putCase(79,"decimal empty atomic",8,vpiDecStrVal,"",nullptr);
- cycle(80,"decimal budget null and whitespace atomic",[]{WidthModel m(8);m.useVpi();m.put(1,word(42,0,0,8));auto h=named("width.data");for(auto input:{static_cast<const char*>(nullptr),"100000000000000000000"," 1","+1","1_0"}){s_vpi_value v{};v.format=vpiDecStrVal;v.value.str=const_cast<char*>(input);vpi_put_value(h,&v,nullptr,vpiNoDelay);check(vpi_chk_error(nullptr)&&m.get(1).v==42);}});
+ cycle(80,"decimal budget null and whitespace atomic",[]{WidthModel m(8);m.useVpi();m.put(1,word(42,0,0,8));auto h=named("width.data");for(auto input:{static_cast<const char*>(nullptr),"1000000000000000000000000000000000000000"," 1","+1","1_0"}){s_vpi_value v{};v.format=vpiDecStrVal;v.value.str=const_cast<char*>(input);vpi_put_value(h,&v,nullptr,vpiNoDelay);check(vpi_chk_error(nullptr)&&m.get(1).v==42);}});
 }
 template<class F> inline void mustThrow(F f){bool rejected=false;try{f();}catch(const std::runtime_error&){rejected=true;}check(rejected);}
 inline TestModel* lifecycleModel=nullptr;

@@ -88,16 +88,12 @@ public class FifoTests
         {
             ["blocking"] = source.Replace("rd_ptr <= '0;", "rd_ptr = '0;"),
             ["initializer"] = source.Replace("] count;", "] count = 3'd5;"),
-            ["signed-memory"] = source.Replace("logic [WIDTH-1:0] mem", "logic signed [WIDTH-1:0] mem"),
-            ["signed-expression"] = source.Replace("count <= '0;", "count <= (-8'sd1 < 16'sd0);"),
-            ["negative-parameter"] = source.Replace("localparam int PTR_W", "localparam int NEG=-1; localparam int PTR_W").Replace("count <= '0;", "count <= (NEG < 0);"),
             ["two-state-memory"] = source.Replace("logic [WIDTH-1:0] mem", "bit [WIDTH-1:0] mem"),
             ["two-state-input"] = source.Replace("input logic [WIDTH-1:0] din", "input bit [WIDTH-1:0] din"),
             ["pull-net"] = source.Replace("endmodule", "tri0 pulled;\nendmodule"),
             ["fill-one"] = source.Replace("count <= '0;", "count <= '1;"),
             ["delay"] = source.Replace("assign full", "assign #1 full"),
             ["primitive"] = source.Replace("endmodule", "wire ignored; and gate_instance(ignored,push,pop);\nendmodule"),
-            ["generate"] = source.Replace("endmodule", "generate if(DEPTH>1) begin:g wire ignored; assign ignored=push; end endgenerate\nendmodule")
         };
         foreach (var (name, text) in variants)
         {

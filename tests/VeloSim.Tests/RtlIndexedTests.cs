@@ -17,7 +17,7 @@ public class RtlIndexedTests
             case 11: Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("select_indexed(s[1],s[2],4,false)")); break;
             case 12: selected["descending"] = true; node["signals"]![1]!["name"] = "select_indexed"; selected["value"]!["name"] = "select_indexed"; var parsed = RtlDesign.Parse(node.ToJsonString()); Assert.That(parsed.EmitModelHeader("indexed"), Does.Contain("select_indexed(s[1],s[2],4,true)")); Assert.That(parsed.ExternalPortNames()["select_indexed"], Is.Not.EqualTo("select_indexed")); break;
             case 13: selected["width"] = 0; break;
-            case 14: selected["width"] = 65; break;
+            case 14: selected["width"] = 129; break;
             case 15: selected["width"] = -1; break;
             case 16: selected["extra"] = 1; break;
             case 17: selected.AsObject().Remove("base"); break;
@@ -63,7 +63,7 @@ public class RtlIndexedTests
             case 63: lhs["width"] = 1; Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("deposit_indexed(next[3],s[2],1,false")); break;
             case 64: lhs["width"] = 64; Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("deposit_indexed(next[3],s[2],64,false")); break;
             case 65: lhs["width"] = 0; break;
-            case 66: lhs["width"] = 65; break;
+            case 66: lhs["width"] = 129; break;
             case 67: lhs["width"] = -1; break;
             case 68: lhs["descending"] = 1; break;
             case 69: lhs.AsObject().Remove("base"); break;
@@ -89,7 +89,7 @@ public class RtlIndexedTests
             case 86: lhs["value"] = JsonSerializer.SerializeToNode(new { kind = "add", args = new[] { Ref("q"), Ref("a") } }); break;
             case 87: lhs.AsObject().Remove("descending"); message = ""; break;
             case 88: node["continuous"] = new JsonArray(new JsonObject { ["target"] = JsonSerializer.SerializeToNode(Ref("q")), ["value"] = JsonSerializer.SerializeToNode(Ref("a")) }); message = "conflicting"; break;
-            case 89: node["body"]!["target"] = JsonSerializer.SerializeToNode(new { kind = "partselect", value = Ref("q"), left = 64, right = 0 }); message = "1..64"; break;
+            case 89: node["body"]!["target"] = JsonSerializer.SerializeToNode(new { kind = "partselect", value = Ref("q"), left = 128, right = 0 }); message = "1..128"; break;
             case 90:
                 var expression = lhs.DeepClone(); expression["value"] = JsonSerializer.SerializeToNode(Ref("a")); expression["base"] = JsonSerializer.SerializeToNode(Ref("clk"));
                 node["body"] = new JsonObject { ["kind"] = "block", ["items"] = new JsonArray() }; node["continuous"] = new JsonArray(new JsonObject { ["target"] = JsonSerializer.SerializeToNode(Ref("q")), ["value"] = expression }); message = "Clock-dependent"; break;

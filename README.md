@@ -1,5 +1,7 @@
 # VeloSim
 
+Current structural RTL milestone: [shared-clock processes, hierarchy, signed 1–128-bit words](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
+
 Open-source experimental Verilog/SystemVerilog simulation project.
 
 Start with the illustrated [HTML introduction](docs/introduction.html) to see how Surelog, UHDM, native compilation and independent simulation checks fit together. It includes an interactive clock-edge walkthrough and explains the current execution boundaries. Download/open the HTML in a browser to view it; GitHub's file view displays its source.

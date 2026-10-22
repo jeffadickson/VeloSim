@@ -1,6 +1,6 @@
 # Native external interfaces
 
-VeloSim can export the structural RTL IR as a reusable `V<top>.h` C++ model and a shared VPI runtime. Both interfaces access the same four-state design state. This preserves the current one-posedge-process, unsigned, at-most-64-bit execution subset. It adds host integration; it does not add HDL constructs or a general event scheduler.
+VeloSim can export the structural RTL IR as a reusable `V<top>.h` C++ model and a shared VPI runtime. Both interfaces access the same four-state design state. The structural backend supports shared-clock processes, bounded elaborated hierarchy, and signed or unsigned four-state words up to 128 bits. See [the current execution contract](rtl-processes-hierarchy-signed.md). General event scheduling remains unsupported.
 
 ## Generate and run the example
 
@@ -30,7 +30,7 @@ top.clk = 0; top.eval();
 top.timeInc(1);
 top.clk = 1; top.eval();
 auto bits = top.sampled.bits();       // full-width 0/1/x/z string
-auto known = uint64_t(top.q);         // throws if the result contains X/Z
+auto known = uint64_t(top.q);         // throws on X/Z or values above UINT64_MAX
 top.final();
 ```
 
@@ -66,11 +66,11 @@ Unsupported services include timed/force/release puts, read-write synchronizatio
 
 The native `external_interfaces` CTest checks handle lifetime and malformed requests, X/Z vector boundaries, public port conversion, repeated high-clock evaluation, model isolation, thread ownership, startup/removal ordering, first-evaluation callback registration, callback context pinning, deferred drives, read-only phases and explicit finalization. The VPI shared library and test plugin are included in LLVM coverage measurement and source/binary evidence. The installed/native bundle contains `libvelosim_vpi` and the external API headers.
 
-Additional object services: `vpi_compare_objects` compares object identity across independently acquired handles. `vpi_handle(vpiScope, signal/port)` and `vpi_handle(vpiModule, signal/port)` return the top module; the top has no enclosing scope. `vpiTopModule` is true on the top. `vpiSigned` is false on supported unsigned signals. `vpiScalar`/`vpiVector` reflect normalized width 1/>1; the IR does not retain whether width one originally used a packed declaration.
+Additional object services: `vpi_compare_objects` compares object identity across independently acquired handles. `vpi_handle(vpiScope, signal/port)` and `vpi_handle(vpiModule, signal/port)` return the top module; the top has no enclosing scope. `vpiTopModule` is true on the top. `vpiSigned` reports the normalized declaration signedness. `vpiScalar`/`vpiVector` reflect normalized width 1/>1; the IR does not retain whether width one originally used a packed declaration.
 
-Radix reads and callback payloads support `vpiHexStrVal`, `vpiOctStrVal` and unsigned `vpiDecStrVal`. Hex/octal output preserves declared width in digits; a wholly X/Z digit uses lowercase and a mixed digit uses uppercase X/Z, matching the independently tested Icarus behavior. Decimal output uses x/z for wholly unknown values and X/Z for mixed values, with X taking precedence when both occur.
+Radix reads and callback payloads support `vpiHexStrVal`, `vpiOctStrVal` and `vpiDecStrVal` (signed when the declaration is signed). Hex/octal output preserves declared width in digits; a wholly X/Z digit uses lowercase and a mixed digit uses uppercase X/Z, matching the independently tested Icarus behavior. Decimal output uses x/z for wholly unknown values and X/Z for mixed values, with X taking precedence when both occur.
 
-Radix deposits use a bounded unsigned subset: hex accepts 1–16 digits, octal 1–22 digits, with 0–9/a–f as appropriate and case-insensitive X/Z. Leading X/Z extends through the port; leading known digits zero-extend. Excess value bits truncate to the declared width. Characters are literal radix digits; there is no prefix interpretation. Signs, whitespace and underscores are rejected. Decimal accepts 1–20 unsigned digits within uint64 range or a single X/Z; numeric overflow is rejected rather than wrapped. A valid uint64 value truncates when assigned to a narrower port. Parsing errors leave the input unchanged. Scalar callback requests on wider signals fail during registration.
+Radix deposits use a bounded unsigned subset: hex accepts 1–32 digits, octal 1–43 digits, with 0–9/a–f as appropriate and case-insensitive X/Z. Leading X/Z extends through the port; leading known digits zero-extend. Excess value bits truncate to the declared width. Characters are literal radix digits; there is no prefix interpretation. Signs, whitespace and underscores are rejected. Decimal accepts 1–39 unsigned digits within the 128-bit range or a single X/Z; numeric overflow is rejected rather than wrapped. A valid 128-bit value truncates when assigned to a narrower port. Parsing errors leave the input unchanged. Scalar callback requests on wider signals fail during registration.
 
 `requestEval()` can request another pass from a callback; `evalNeeded()` remains true until that pass consumes the request. After `finish()`/`final()`, it returns false and time advances, evaluation requests and new plugin loads are rejected.
 

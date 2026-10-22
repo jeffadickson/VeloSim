@@ -46,7 +46,7 @@ public static class RtlExternalSdk
 
             Include the generated V<top>.h in your host. Drive input port proxies,
             call eval() explicitly for settle/clock transitions, and final() once.
-            Use bits() for X/Z; integer conversion rejects unknown values.
+            Use bits() for X/Z and up to 128-bit words; uint64 conversion rejects unknown or overflowing values.
             loadVpi() accepts a native plugin with a null-terminated exported
             vlog_startup_routines table before the first eval().
             The VPI subset supports signal lookup, metadata, identity, immediate
@@ -54,11 +54,11 @@ public static class RtlExternalSdk
             callbacks. There is no HDL delay scheduler or Verilator/DPI ABI.
             Models and handles belong to their creating thread.
             Concatenation NBA targets require distinct destination words and at
-            most 64 total assigned bits.
+            most 128 total assigned bits.
             Known bases for indexed reads and selected writes are limited to
             0..INT32_MAX; larger known bases throw before sequential updates commit.
 
-            Linux/WSL builds are qualified. Keep the host and shared runtime together
+            Linux/WSL GCC/Clang builds with unsigned __int128 support are qualified. Keep the host and shared runtime together
             when relocating the Linux build; the build RPATH uses $ORIGIN.
             Other platforms require separate qualification.
             external-model.json input paths are relative to this SDK directory;
@@ -72,7 +72,7 @@ public static class RtlExternalSdk
         {
             writer.WriteStartObject(); writer.WriteString("schema", "velosim.external.model.v1"); writer.WriteString("top", top); writer.WriteString("model_class", "V" + top); writer.WriteString("execution_scope", "one known-clock posedge process; serial; explicit eval");
             writer.WriteStartArray("ports"); var names = design.ExternalPortNames();
-            foreach (var signal in design.Signals.Where(s => s.Direction != "internal")) { writer.WriteStartObject(); writer.WriteString("name", signal.Name); writer.WriteNumber("width", signal.Width); writer.WriteString("direction", signal.Direction); writer.WriteString("member", names[signal.Name]); writer.WriteEndObject(); }
+            foreach (var signal in design.Signals.Where(s => s.Direction != "internal")) { writer.WriteStartObject(); writer.WriteString("name", signal.Name); writer.WriteNumber("width", signal.Width);writer.WriteBoolean("signed",signal.Signed); writer.WriteString("direction", signal.Direction); writer.WriteString("member", names[signal.Name]); writer.WriteEndObject(); }
             writer.WriteEndArray(); writer.WriteStartArray("inputs");
             foreach (var input in inputs) { writer.WriteStartObject(); writer.WriteString("path", Path.GetFileName(input.Path)); writer.WriteString("sha256", input.Sha256); writer.WriteEndObject(); }
             writer.WriteEndArray(); writer.WriteEndObject();

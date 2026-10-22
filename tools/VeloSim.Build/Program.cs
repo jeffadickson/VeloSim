@@ -258,7 +258,9 @@ internal static class Build
         if (environment != null) foreach (var entry in environment) start.Environment[entry.Key] = entry.Value;
         Console.WriteLine($"> {executable} {string.Join(' ', start.ArgumentList)}");
         using var process = Process.Start(start) ?? throw new IOException($"could not start {executable}");
-        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+        // Full conformance includes independent standalone and SDK builds for each fixture.
+        int timeoutMinutes = executable == "dotnet" && start.ArgumentList.FirstOrDefault() == "test" ? 45 : 15;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(timeoutMinutes));
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(deadline.Token);
         Task<string> stderr = process.StandardError.ReadToEndAsync(deadline.Token);
         try

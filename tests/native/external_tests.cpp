@@ -25,7 +25,9 @@ PLI_INT32 shouldNotStart(p_cb_data){++badStart;return 0;}
 PLI_INT32 switchContext(p_cb_data){alternate->useVpi();return 0;}
 PLI_INT32 pinnedContext(p_cb_data){auto q=named("test.q");s_vpi_value value{};value.format=vpiBinStrVal;vpi_get_value(q,&value);pinned=q&&std::string(value.value.str)==std::string(63,'0')+"1";return 0;}
 #include "external_cycles.h"
+#include "external_wide_tests.h"
 int main(int argc,char** argv){try{
+ externalWideTests();
  runCycles();
  check(!named("test.q")&&vpi_chk_error(nullptr));
  vpiHandle expired=nullptr;

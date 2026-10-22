@@ -11,18 +11,18 @@
 #include <dlfcn.h>
 #endif
 namespace {
-using vsrtl::Model; using vsrtl::W;
+using vsrtl::Model; using vsrtl::W; using vsrtl::Bits;
 struct Handle {
  Model* model{}; std::weak_ptr<int> life; int kind{}; size_t id{}; bool released=false, active=true;
  std::vector<size_t> items; size_t cursor=0; int itemKind=0;
  s_cb_data cb{}; s_vpi_time callbackTime{}; s_vpi_value callbackValue{};
- std::string stringValue; s_vpi_vecval vectorValue[2]{}; W previous{};
+ std::string stringValue; s_vpi_vecval vectorValue[4]{}; W previous{};
 };
 thread_local std::unordered_map<vpiHandle,std::unique_ptr<Handle>> handles;
 thread_local Model* current=nullptr;
 thread_local std::weak_ptr<int> currentLife;
 thread_local std::string error, resultString;
-thread_local s_vpi_vecval resultVector[2];
+thread_local s_vpi_vecval resultVector[4];
 Model& selected(){if(!current||currentLife.expired())throw std::runtime_error("no active VeloSim model; call useVpi()");current->checkThread();return *current;}
 struct Activation {
  Model* previous=current; std::weak_ptr<int> life=currentLife;
@@ -45,13 +45,13 @@ std::string radixText(W w,int group){
 }
 W radixWord(const char* input,int width,int group){
  if(!input)throw std::runtime_error("null radix string");
- const int limit=(64+group-1)/group;
- uint64_t v=0,x=0,z=0;bool any=false;
+ const int limit=(128+group-1)/group;
+ Bits v=0,x=0,z=0;bool any=false;
  for(int i=0;i<=limit;i++){
   unsigned char c=input[i];if(!c){if(!any)throw std::runtime_error("empty radix string");return vsrtl::word(v,x,z,width);}
-  if(i==limit)throw std::runtime_error("radix string exceeds64-bit digit budget");
+  if(i==limit)throw std::runtime_error("radix string exceeds128-bit digit budget");
   if(c>='A'&&c<='Z')c+=32;
-  if(!i){if(c=='x')x=UINT64_MAX;else if(c=='z')z=UINT64_MAX;}
+  if(!i){if(c=='x')x=~Bits(0);else if(c=='z')z=~Bits(0);}
   v<<=group;x<<=group;z<<=group;auto bits=vsrtl::mask(group);
   if(c=='x')x|=bits;else if(c=='z')z|=bits;else{int digit=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:-1;if(digit<0||digit>=(1<<group))throw std::runtime_error("invalid radix digit");v|=unsigned(digit);}
   any=true;
@@ -60,22 +60,22 @@ W radixWord(const char* input,int width,int group){
 }
 W decimalWord(const char* input,int width){
  if(!input)throw std::runtime_error("null decimal string");
- size_t n=0;while(n<=20&&input[n])++n;
- if(!n||n>20)throw std::runtime_error("decimal string requires1..20characters");
+ size_t n=0;while(n<=39&&input[n])++n;
+ if(!n||n>39)throw std::runtime_error("decimal string requires1..39characters");
  if(n==1&&(input[0]=='x'||input[0]=='X'))return vsrtl::unknown(width);
- if(n==1&&(input[0]=='z'||input[0]=='Z'))return vsrtl::word(0,0,UINT64_MAX,width);
- uint64_t value=0;auto parsed=std::from_chars(input,input+n,value,10);
- if(parsed.ec!=std::errc{}||parsed.ptr!=input+n)throw std::runtime_error("unsigned decimal digit or64-bit overflow error");
+ if(n==1&&(input[0]=='z'||input[0]=='Z'))return vsrtl::word(0,0,~Bits(0),width);
+ Bits value=0;for(size_t i=0;i<n;++i){if(input[i]<'0'||input[i]>'9')throw std::runtime_error("unsigned decimal digit error");unsigned digit=input[i]-'0';if(value>(~Bits(0)-digit)/10)throw std::runtime_error("128-bit decimal overflow");value=value*10+digit;}
  return vsrtl::word(value,0,0,width);
 }
-void encode(W w,p_vpi_value value,std::string& buffer,s_vpi_vecval* vector){
+std::string decimalText(Bits v){std::string s;do{s+=char('0'+v%10);v/=10;}while(v);std::reverse(s.begin(),s.end());return s;}
+void encode(W w,p_vpi_value value,std::string& buffer,s_vpi_vecval* vector,bool is_signed=false){
  valueFormat(value->format);
  switch(value->format){
  case vpiBinStrVal:buffer=vsrtl::text(w);value->value.str=buffer.data();break;
- case vpiDecStrVal:buffer=w.x?(w.x==vsrtl::mask(w.w)?"x":"X"):w.z?(w.z==vsrtl::mask(w.w)?"z":"Z"):std::to_string(w.v);value->value.str=buffer.data();break;
+ case vpiDecStrVal:buffer=w.x?(w.x==vsrtl::mask(w.w)?"x":"X"):w.z?(w.z==vsrtl::mask(w.w)?"z":"Z"):((is_signed&&vsrtl::negative(w))?"-"+decimalText((~w.v+1)&vsrtl::mask(w.w)):decimalText(w.v));value->value.str=buffer.data();break;
  case vpiOctStrVal:buffer=radixText(w,3);value->value.str=buffer.data();break;
  case vpiHexStrVal:buffer=radixText(w,4);value->value.str=buffer.data();break;
- case vpiVectorVal:{uint64_t a=w.v|w.x,b=w.x|w.z;for(int i=0;i<2;i++)vector[i]={uint32_t(a>>(32*i)),uint32_t(b>>(32*i))};value->value.vector=vector;break;}
+ case vpiVectorVal:{Bits a=w.v|w.x,b=w.x|w.z;for(int i=0;i<4;i++)vector[i]={uint32_t(a>>(32*i)),uint32_t(b>>(32*i))};value->value.vector=vector;break;}
  case vpiIntVal:if(w.x||w.z)throw std::runtime_error("X/Z integer read; request binary or vector format");value->value.integer=static_cast<int32_t>(uint32_t(w.v));break;
  case vpiScalarVal:if(w.w!=1)throw std::runtime_error("scalar format requires width1");value->value.scalar=w.x?vpiX:w.z?vpiZ:w.v?vpi1:vpi0;break;
  default:break;
@@ -85,7 +85,7 @@ void timeNow(Model& m,p_vpi_time t){if(!t||t->type!=vpiSimTime)throw std::runtim
 std::vector<Handle*> callbacks(Model& m){std::vector<Handle*> result;for(auto& [key,h]:handles)if(h->model==&m&&!h->life.expired()&&h->kind==vpiCallback&&h->active&&!h->released)result.push_back(h.get());
  // Handles are allocated in registration order; retain that order explicitly below.
  std::sort(result.begin(),result.end(),[](auto a,auto b){return a->id<b->id;});return result;}
-void invoke(Handle& h){if(!h.active||h.released)return;Activation active(*h.model);auto data=h.cb;if(data.time){h.callbackTime=h.cb.time->type==vpiSuppressTime?s_vpi_time{vpiSuppressTime,0,0,0}:s_vpi_time{vpiSimTime,uint32_t(h.model->time()>>32),uint32_t(h.model->time()),0};data.time=&h.callbackTime;}if(data.value&&data.obj){auto& obj=signal(data.obj);encode(h.model->get(obj.id),&h.callbackValue,h.stringValue,h.vectorValue);data.value=&h.callbackValue;}data.cb_rtn(&data);}
+void invoke(Handle& h){if(!h.active||h.released)return;Activation active(*h.model);auto data=h.cb;if(data.time){h.callbackTime=h.cb.time->type==vpiSuppressTime?s_vpi_time{vpiSuppressTime,0,0,0}:s_vpi_time{vpiSimTime,uint32_t(h.model->time()>>32),uint32_t(h.model->time()),0};data.time=&h.callbackTime;}if(data.value&&data.obj){auto& obj=signal(data.obj);encode(h.model->get(obj.id),&h.callbackValue,h.stringValue,h.vectorValue,obj.model->signals()[obj.id].is_signed);data.value=&h.callbackValue;}data.cb_rtn(&data);}
 }
 namespace vsrtl {
 struct Model::State {
@@ -97,8 +97,8 @@ struct Model::State {
 Model::Model(std::string name,std::vector<Signal> signals,int clock):state(std::make_unique<State>()){
  if(name.empty()||signals.empty()||signals.size()>256||clock<0||size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)throw std::invalid_argument("invalid external model interface");
  state->name=std::move(name);state->names.reserve(signals.size());
- for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>64||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(unknown(sig.width));}
- for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction});s[clock]=word(0,0,0,1);
+ for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>128||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(unknown(sig.width));}
+ for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction,signals[i].is_signed});s[clock]=word(0,0,0,1);
 }
 Model::~Model(){
  // Derived state is already gone; destruction invalidates callbacks, never calls HDL or plugins.
@@ -161,18 +161,18 @@ vpiHandle vpi_iterate(PLI_INT32 kind,vpiHandle scope){return api([&]()->vpiHandl
 vpiHandle vpi_scan(vpiHandle iterator){return api([&]()->vpiHandle{auto& h=handle(iterator);if(h.kind!=vpiIterator)throw std::runtime_error("iterator required");if(h.cursor==h.items.size()){h.released=true;return nullptr;}return make(*h.model,h.itemKind,h.items[h.cursor++]);},vpiHandle{});}
 PLI_INT32 vpi_free_object(vpiHandle object){return api([&](){auto& h=handle(object);h.released=true;h.active=false;return PLI_INT32(1);},PLI_INT32(0));}
 PLI_INT32 vpi_compare_objects(vpiHandle left,vpiHandle right){return api([&](){auto& a=handle(left);auto& b=handle(right);return PLI_INT32(a.model==b.model&&a.kind==b.kind&&((a.kind==vpiReg||a.kind==vpiPort||a.kind==vpiModule)?a.id==b.id:left==right));},PLI_INT32(0));}
-PLI_INT32 vpi_get(PLI_INT32 property,vpiHandle object){return api([&](){auto& h=handle(object);if(property==vpiType)return PLI_INT32(h.kind);if(property==vpiTopModule&&h.kind==vpiModule)return PLI_INT32(1);auto& x=signal(object);if(property==vpiScalar)return PLI_INT32(x.model->signals()[x.id].width==1);if(property==vpiVector)return PLI_INT32(x.model->signals()[x.id].width>1);if(property==vpiSigned)return PLI_INT32(0);if(property==vpiSize)return PLI_INT32(x.model->signals()[x.id].width);if(property==vpiDirection)return PLI_INT32(x.model->signals()[x.id].direction);throw std::runtime_error("unsupported VPI property");},PLI_INT32(0));}
+PLI_INT32 vpi_get(PLI_INT32 property,vpiHandle object){return api([&](){auto& h=handle(object);if(property==vpiType)return PLI_INT32(h.kind);if(property==vpiTopModule&&h.kind==vpiModule)return PLI_INT32(1);auto& x=signal(object);if(property==vpiScalar)return PLI_INT32(x.model->signals()[x.id].width==1);if(property==vpiVector)return PLI_INT32(x.model->signals()[x.id].width>1);if(property==vpiSigned)return PLI_INT32(x.model->signals()[x.id].is_signed);if(property==vpiSize)return PLI_INT32(x.model->signals()[x.id].width);if(property==vpiDirection)return PLI_INT32(x.model->signals()[x.id].direction);throw std::runtime_error("unsupported VPI property");},PLI_INT32(0));}
 PLI_BYTE8* vpi_get_str(PLI_INT32 property,vpiHandle object){return api([&]()->PLI_BYTE8*{auto& h=handle(object);if(h.kind!=vpiModule&&h.kind!=vpiReg&&h.kind!=vpiPort)throw std::runtime_error("named object required");std::string local=h.kind==vpiModule?h.model->name():h.model->signals()[h.id].name;if(property==vpiName)resultString=local;else if(property==vpiFullName)resultString=h.kind==vpiModule?local:h.model->name()+"."+local;else if(property==vpiDefName&&h.kind==vpiModule)resultString=local;else throw std::runtime_error("unsupported VPI string property");return resultString.data();},static_cast<PLI_BYTE8*>(nullptr));}
-void vpi_get_value(vpiHandle object,p_vpi_value value){action([&](){if(!value)throw std::runtime_error("null VPI value");auto& h=signal(object);encode(h.model->get(h.id),value,resultString,resultVector);});}
+void vpi_get_value(vpiHandle object,p_vpi_value value){action([&](){if(!value)throw std::runtime_error("null VPI value");auto& h=signal(object);encode(h.model->get(h.id),value,resultString,resultVector,h.model->signals()[h.id].is_signed);});}
 vpiHandle vpi_put_value(vpiHandle object,p_vpi_value value,p_vpi_time time,PLI_INT32 flags){return api([&]()->vpiHandle{
  if(!value||flags!=vpiNoDelay||(time&&(time->type!=vpiSimTime&&time->type!=vpiSuppressTime||time->high||time->low)))throw std::runtime_error("only immediate input deposits supported");auto& h=signal(object);int width=h.model->signals()[h.id].width;W w{};
- if(value->format==vpiBinStrVal){if(!value->value.str)throw std::runtime_error("null binary string");std::string bits;for(int i=0;i<=64;i++){char c=value->value.str[i];if(!c)break;if(i==64)throw std::runtime_error("binary value exceeds64bits");bits+=c=='X'?'x':c=='Z'?'z':c;}if(bits.size()!=size_t(width))throw std::runtime_error("binary deposit must match declared width");w=vsrtl::parse(bits);}
+ if(value->format==vpiBinStrVal){if(!value->value.str)throw std::runtime_error("null binary string");std::string bits;for(int i=0;i<=128;i++){char c=value->value.str[i];if(!c)break;if(i==128)throw std::runtime_error("binary value exceeds128bits");bits+=c=='X'?'x':c=='Z'?'z':c;}if(bits.size()!=size_t(width))throw std::runtime_error("binary deposit must match declared width");w=vsrtl::parse(bits);}
  else if(value->format==vpiDecStrVal)w=decimalWord(value->value.str,width);
  else if(value->format==vpiOctStrVal)w=radixWord(value->value.str,width,3);
  else if(value->format==vpiHexStrVal)w=radixWord(value->value.str,width,4);
  else if(value->format==vpiIntVal){if(width>32&&value->value.integer<0)throw std::runtime_error("negative integer deposit wider than32bits; use vector format");w=vsrtl::word(uint32_t(value->value.integer),0,0,32);}
  else if(value->format==vpiScalarVal){if(width!=1||value->value.scalar<0||value->value.scalar>3)throw std::runtime_error("invalid scalar deposit");int n=value->value.scalar;w=vsrtl::word(n==vpi1,n==vpiX,n==vpiZ,1);}
- else if(value->format==vpiVectorVal){if(!value->value.vector)throw std::runtime_error("null vector");uint64_t a=0,b=0;for(int i=0;i<(width+31)/32;i++){a|=uint64_t(value->value.vector[i].aval)<<(i*32);b|=uint64_t(value->value.vector[i].bval)<<(i*32);}w=vsrtl::word(a&~b,a&b,~a&b,width);}
+ else if(value->format==vpiVectorVal){if(!value->value.vector)throw std::runtime_error("null vector");Bits a=0,b=0;for(int i=0;i<(width+31)/32;i++){a|=Bits(value->value.vector[i].aval)<<(i*32);b|=Bits(value->value.vector[i].bval)<<(i*32);}w=vsrtl::word(a&~b,a&b,~a&b,width);}
  else throw std::runtime_error("unsupported VPI deposit format");h.model->put(h.id,w);return nullptr;
  },vpiHandle{});}
 void vpi_get_time(vpiHandle object,p_vpi_time time){action([&](){auto& m=object?*handle(object).model:selected();timeNow(m,time);});}
