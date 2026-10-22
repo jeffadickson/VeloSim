@@ -30,4 +30,12 @@ public class RtlConcatConformanceTests
         var vectors=Vectors();vectors[7]["a"]=Bits(0x1a);vectors[8]["a"]=Bits(0x35);
         await Qualify(61,"indexed-old-index",source,[..Ports(),new("idx",7,"output")],vectors);
     }
+    [Test,Category("RealFifo")]
+    public async Task NestedAndOrderedCycles81To90()
+    {
+        const string source="module dut(input logic clk,rst_n,enable,input logic[63:0]nba0,i,output logic[7:0]q,r,snapshot,t);always_ff @(posedge clk) begin if(!rst_n)begin q<='0;r<='0;t<='0;snapshot<='0;end else begin snapshot<=q;if(enable)begin q<=nba0;r<=~nba0;t<=nba0[15:8];{q,{r,t}}<=(nba0[0]<<17);if(i[0]){{q,r},t}<={t,q,r};end end end endmodule";
+        var vectors=Vectors();vectors[3]["a"]=Bits(1);vectors[5]["a"]=Bits(1);vectors[6]["a"]=Bits(0);foreach(var row in vectors){row["nba0"]=row["a"];row.Remove("a");}
+        var ports=Ports().Select(s=>s.Name=="a"?new RtlSignal("nba0",64,"input"):s).Append(new("t",8,"output")).ToArray();
+        await Qualify(81,"nested-ordered",source,ports,vectors);
+    }
 }

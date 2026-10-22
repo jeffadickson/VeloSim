@@ -16,7 +16,7 @@ The RHS is evaluated once in the total concatenation width, resized once, and sp
 |60|51–60|Dynamic target and sizing boundaries|30/30 managed IR cases pass; independent review accepted|
 |70|61–70|Actual indexed targets and old indices|33 focused tests and strengthened ten-vector actual rerun pass; reviewer visibility finding fixed and accepted|
 |80|71–80|Nested groups and expression contexts|40/40 IR cases pass; association, width and naming boundaries independently reviewed and accepted|
-|90|81–90|Actual nested/ordered assignments|Planned|
+|90|81–90|Actual nested/ordered assignments|Ten actual vectors and explicit known-state rotation rerun pass at workers 1/4/8; independent review accepted|
 |100|91–100|Reusable C++ model matrix and documentation|Planned|
 
 Final full-suite coverage, sanitizer, native publication and GitHub outcomes are recorded in the delivered validation report after the last source commit.
