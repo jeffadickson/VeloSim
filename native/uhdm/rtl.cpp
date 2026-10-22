@@ -64,10 +64,14 @@ std::string expr(H h,int depth=0){
  need(!name(h).empty()&&(type(h)==vpiReg||type(h)==vpiNet||type(h)==vpiRefObj||type(h)==vpiVariables),"unsupported reference type "+std::to_string(type(h)));
  return "{\"kind\":\"ref\",\"name\":"+q(name(h))+"}";
 }
+void target_shape(H h,int depth=0){
+ need(h&&depth<64,"assignment target depth exceeded");
+ if(type(h)==vpiOperation){need(vpi_get(vpiOpType,h)==vpiConcatOp,"only concatenation operations supported in assignment targets");for(auto child:many(h,vpiOperand))target_shape(child,depth+1);}
+}
 std::string stmt(H h,int depth=0){
  need(h&&depth<64&&++nodes<=20000,"statement missing or resource limit exceeded");
  if(type(h)==vpiBegin){std::string s="{\"kind\":\"block\",\"items\":[";bool first=true;for(auto a:many(h,vpiStmt)){if(!first)s+=",";first=false;s+=stmt(a,depth+1);}return s+"]}";}
- if(type(h)==vpiAssignment){need(vpi_get(vpiBlocking,h)==0,"blocking procedural assignment unsupported");need(!one(h,vpiDelayControl)&&!one(h,vpiEventControl),"assignment timing unsupported");return "{\"kind\":\"nba\",\"target\":"+expr(one(h,vpiLhs))+",\"value\":"+expr(one(h,vpiRhs))+"}";}
+ if(type(h)==vpiAssignment){need(vpi_get(vpiBlocking,h)==0,"blocking procedural assignment unsupported");need(!one(h,vpiDelayControl)&&!one(h,vpiEventControl),"assignment timing unsupported");target_shape(one(h,vpiLhs));return "{\"kind\":\"nba\",\"target\":"+expr(one(h,vpiLhs))+",\"value\":"+expr(one(h,vpiRhs))+"}";}
  if(type(h)==vpiIf||type(h)==vpiIfElse){auto e=one(h,vpiElseStmt);return "{\"kind\":\"if\",\"condition\":"+expr(one(h,vpiCondition))+",\"then\":"+stmt(one(h,vpiStmt),depth+1)+",\"else\":"+(e?stmt(e,depth+1):"{\"kind\":\"block\",\"items\":[]}")+"}";}
  if(type(h)==vpiCase){need(vpi_get(vpiCaseType,h)==vpiCaseExact,"only exact case supported");std::string s="{\"kind\":\"case\",\"value\":"+expr(one(h,vpiCondition))+",\"items\":[";bool first=true;for(auto item:many(h,vpiCaseItem)){if(!first)s+=",";first=false;auto conditions=many(item,vpiExpr);need(conditions.size()<=1,"multiple case labels unsupported");s+="{\"match\":"+(conditions.empty()?"null":expr(conditions[0]))+",\"body\":"+stmt(one(item,vpiStmt),depth+1)+"}";}return s+"]}";}
  throw std::runtime_error("unsupported statement type "+std::to_string(type(h)));

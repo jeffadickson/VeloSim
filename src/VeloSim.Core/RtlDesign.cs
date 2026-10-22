@@ -97,9 +97,15 @@ public sealed class RtlDesign
             case "nba":
                 JsonShape.Fields(e, ["kind", "target", "value"]); var target = e.GetProperty("target"); ValidateExpression(target, depth + 1); ValidateExpression(e.GetProperty("value"), depth + 1);
                 if (Kind(target) == "index") { writers.Add(Name(target)); break; }
-                var word = Kind(target) is "bitselect" or "partselect" or "indexedselect" ? target.GetProperty("value") : target;
-                if (Kind(target) is not ("ref" or "bitselect" or "partselect" or "indexedselect") || Kind(word) != "ref" || Name(word) == Clock || Signals[SignalId(Name(word))].Direction == "input") throw new IrValidationException("Selected sequential targets require a writable declared word.");
-                writers.Add(Name(word)); break;
+                var parents = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var leaf in TargetLeaves(target))
+                {
+                    var word = Kind(leaf) is "bitselect" or "partselect" or "indexedselect" ? leaf.GetProperty("value") : leaf;
+                    if (Kind(leaf) is not ("ref" or "bitselect" or "partselect" or "indexedselect") || Kind(word) != "ref" || Name(word) == Clock || Signals[SignalId(Name(word))].Direction == "input") throw new IrValidationException("Selected sequential targets require a writable declared word.");
+                    if (!parents.Add(Name(word))) throw new IrValidationException("Concatenation targets require distinct destination words.");
+                    writers.Add(Name(word));
+                }
+                break;
             case "if": JsonShape.Fields(e, ["kind", "condition", "then", "else"]); ValidateExpression(e.GetProperty("condition"), depth + 1); ValidateStatement(e.GetProperty("then"), writers, depth + 1); ValidateStatement(e.GetProperty("else"), writers, depth + 1); break;
             case "case":
                 JsonShape.Fields(e, ["kind", "value", "items"]); ValidateExpression(e.GetProperty("value"), depth + 1); int defaults = 0;
@@ -107,6 +113,11 @@ public sealed class RtlDesign
                 if (defaults > 1) throw new IrValidationException("Duplicate default case."); break;
             default: throw new IrValidationException("Unsupported RTL statement.");
         }
+    }
+    private static IEnumerable<JsonElement> TargetLeaves(JsonElement target)
+    {
+        if (Kind(target) == "concat") foreach (var child in target.GetProperty("args").EnumerateArray()) foreach (var leaf in TargetLeaves(child)) yield return leaf;
+        else yield return target;
     }
     private int ExpressionWidth(JsonElement e) => Kind(e) switch
     {
@@ -144,6 +155,14 @@ public sealed class RtlDesign
             "concat" => $"concat({Expression(args[0])},{Expression(args[1])})", _ => throw new IrValidationException("Unsupported expression.")
         };
     }
+    private void WordWrite(StringBuilder code, JsonElement target, string value)
+    {
+        if (Kind(target) == "ref") { int id = SignalId(Name(target)); code.AppendLine($"next[{id}]=resize({value},{Signals[id].Width});"); return; }
+        int selectedId = SignalId(Name(target.GetProperty("value"))), width = ExpressionWidth(target);
+        string basis = Kind(target) == "bitselect" ? Expression(target.GetProperty("index")) : Kind(target) == "indexedselect" ? Expression(target.GetProperty("base")) : $"W{{{target.GetProperty("right").GetInt32()},0,0,64}}";
+        bool descending = Kind(target) == "indexedselect" && target.GetProperty("descending").GetBoolean();
+        code.AppendLine($"next[{selectedId}]=deposit_indexed(next[{selectedId}],{basis},{width},{(descending ? "true" : "false")},{value});");
+    }
     private void Statement(StringBuilder code, JsonElement e, ref int unique)
     {
         switch (Kind(e))
@@ -151,8 +170,14 @@ public sealed class RtlDesign
             case "block": foreach (var item in e.GetProperty("items").EnumerateArray()) Statement(code, item, ref unique); break;
             case "nba":
                 var target = e.GetProperty("target");
-                if (Kind(target) == "ref") { int id = SignalId(Name(target)); code.AppendLine($"next[{id}]=resize({Expression(e.GetProperty("value"), Signals[id].Width)},{Signals[id].Width});"); }
-                else if (Kind(target) is "bitselect" or "partselect" or "indexedselect") { int id = SignalId(Name(target.GetProperty("value"))), width = ExpressionWidth(target); string basis = Kind(target) == "bitselect" ? Expression(target.GetProperty("index")) : Kind(target) == "indexedselect" ? Expression(target.GetProperty("base")) : $"W{{{target.GetProperty("right").GetInt32()},0,0,64}}"; bool descending = Kind(target) == "indexedselect" && target.GetProperty("descending").GetBoolean(); code.AppendLine($"next[{id}]=deposit_indexed(next[{id}],{basis},{width},{(descending ? "true" : "false")},{Expression(e.GetProperty("value"), width)});"); }
+                if (Kind(target) == "concat")
+                {
+                    int total = ExpressionWidth(target), remaining = total; string rhs = "nba" + unique++;
+                    code.AppendLine($"{{auto {rhs}=resize({Expression(e.GetProperty("value"), total)},{total});");
+                    foreach (var leaf in TargetLeaves(target)) { int width = ExpressionWidth(leaf); remaining -= width; WordWrite(code, leaf, $"select_part({rhs},{remaining + width - 1},{remaining})"); }
+                    code.AppendLine("}");
+                }
+                else if (Kind(target) is "ref" or "bitselect" or "partselect" or "indexedselect") WordWrite(code, target, Expression(e.GetProperty("value"), ExpressionWidth(target)));
                 else { int id = MemoryId(Name(target)); code.AppendLine($"write(nextMem[{id}],{Expression(target.GetProperty("index"))},{Expression(e.GetProperty("value"), Memories[id].Width)},{Memories[id].Width});"); } break;
             case "if": code.AppendLine($"if(yes({Expression(e.GetProperty("condition"))})){{"); Statement(code, e.GetProperty("then"), ref unique); code.AppendLine("}else{"); Statement(code, e.GetProperty("else"), ref unique); code.AppendLine("}"); break;
             case "case":
