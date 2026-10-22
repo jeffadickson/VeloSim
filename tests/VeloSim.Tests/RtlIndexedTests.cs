@@ -73,4 +73,27 @@ public class RtlIndexedTests
         }
         if (id is >= 65 and <= 69) Assert.Throws<IrValidationException>(() => RtlDesign.Parse(node.ToJsonString()));
         TestContext.Progress.WriteLine($"RTL_CYCLE {id} PASS indexed-word NBA IR");
+    }    [TestCase(81), TestCase(82), TestCase(83), TestCase(84), TestCase(85), TestCase(86), TestCase(87), TestCase(88), TestCase(89), TestCase(90)]
+    public void SelectedTargetBoundariesCycle(int id)
+    {
+        var node = JsonNode.Parse(Fixture(Ref("a"), new { kind = "indexedselect", value = Ref("q"), @base = Ref("i"), width = 4, descending = false }))!; var lhs = node["body"]!["target"]!;
+        string message = "writable declared word";
+        switch (id)
+        {
+            case 81: lhs["value"]!["name"] = "a"; break;
+            case 82: lhs["value"]!["name"] = "clk"; break;
+            case 83: lhs["value"] = JsonSerializer.SerializeToNode(new { kind = "bitselect", value = Ref("q"), index = Ref("i") }); break;
+            case 84: lhs["value"] = JsonSerializer.SerializeToNode(new { kind = "partselect", value = Ref("q"), left = 3, right = 0 }); break;
+            case 85:
+                node["memories"] = JsonSerializer.SerializeToNode(new[] { new { name = "m", width = 64, depth = 2 } }); lhs["value"] = JsonSerializer.SerializeToNode(new { kind = "index", name = "m", index = new { kind = "const", bits = "0" } }); break;
+            case 86: lhs["value"] = JsonSerializer.SerializeToNode(new { kind = "add", args = new[] { Ref("q"), Ref("a") } }); break;
+            case 87: lhs.AsObject().Remove("descending"); message = ""; break;
+            case 88: node["continuous"] = new JsonArray(new JsonObject { ["target"] = JsonSerializer.SerializeToNode(Ref("q")), ["value"] = JsonSerializer.SerializeToNode(Ref("a")) }); message = "conflicting"; break;
+            case 89: node["body"]!["target"] = JsonSerializer.SerializeToNode(new { kind = "partselect", value = Ref("q"), left = 64, right = 0 }); message = "1..64"; break;
+            case 90:
+                var expression = lhs.DeepClone(); expression["value"] = JsonSerializer.SerializeToNode(Ref("a")); expression["base"] = JsonSerializer.SerializeToNode(Ref("clk"));
+                node["body"] = new JsonObject { ["kind"] = "block", ["items"] = new JsonArray() }; node["continuous"] = new JsonArray(new JsonObject { ["target"] = JsonSerializer.SerializeToNode(Ref("q")), ["value"] = expression }); message = "Clock-dependent"; break;
+        }
+        var error = Assert.Throws<IrValidationException>(() => RtlDesign.Parse(node.ToJsonString())); if (message.Length > 0) Assert.That(error!.Message, Does.Contain(message));
+        TestContext.Progress.WriteLine($"RTL_CYCLE {id} PASS selected-target boundary");
     }}
