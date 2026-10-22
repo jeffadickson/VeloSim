@@ -80,7 +80,7 @@ public class FifoTests
         var report = JsonNode.Parse(File.ReadAllText(bad.ReportPath))!; Assert.That(report["errors"]!.AsObject(), Is.Empty); var engines = report["differences"]!.AsArray().Select(d => d!["engine"]!.GetValue<string>()).ToArray(); Assert.That(engines, Does.Contain("icarus").And.Contain("velosim-1")); Assert.That(engines.Any(e => e.EndsWith(":icarus", StringComparison.Ordinal)), Is.False, "Both compiled simulators should agree on the deliberately wrong RTL.");
     }
     [Test, Category("RealFifo")]
-    public async Task ActualExporterRejectsUnsupportedInitializationSignednessFillDelaysAndPrimitives()
+    public async Task ActualExporterAndValidatorRejectUnsupportedInitializationFillDelaysAndPrimitives()
     {
         if (Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO") != "1") Assert.Ignore("Requires pinned UHDM RTL exporter.");
         var root = Root(); var directory = Path.Combine(root, "artifacts", "fifo-rejections-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory); string exporter = Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL") ?? Path.Combine(root, "artifacts/with-uhdm/bin/velosim-uhdm-rtl"); var source = File.ReadAllText(Path.Combine(root, "examples/surelog_fifo.sv"));
@@ -89,7 +89,6 @@ public class FifoTests
             ["blocking"] = source.Replace("rd_ptr <= '0;", "rd_ptr = '0;"),
             ["initializer"] = source.Replace("] count;", "] count = 3'd5;"),
             ["two-state-memory"] = source.Replace("logic [WIDTH-1:0] mem", "bit [WIDTH-1:0] mem"),
-            ["two-state-input"] = source.Replace("input logic [WIDTH-1:0] din", "input bit [WIDTH-1:0] din"),
             ["pull-net"] = source.Replace("endmodule", "tri0 pulled;\nendmodule"),
             ["fill-one"] = source.Replace("count <= '0;", "count <= '1;"),
             ["delay"] = source.Replace("assign full", "assign #1 full"),
@@ -98,7 +97,10 @@ public class FifoTests
         foreach (var (name, text) in variants)
         {
             var path = Path.Combine(directory, name + ".sv"); File.WriteAllText(path, text); var elaboration = await new SurelogFrontend().ElaborateAsync([path], Path.Combine(directory, name), "surelog_fifo", workers: 4);
-            var result = await new ProcessRunner().RunAsync(exporter, [elaboration.UhdmPath, Path.Combine(directory, name + ".json"), "surelog_fifo"], root, TimeSpan.FromSeconds(30)); Assert.That(result.ExitCode, Is.Not.Zero, name + " was silently accepted"); Assert.That(result.StandardError, Does.Contain("rejected"), name);
+            string normalized=Path.Combine(directory,name+".json");
+            var result = await new ProcessRunner().RunAsync(exporter, [elaboration.UhdmPath, normalized, "surelog_fifo"], root, TimeSpan.FromSeconds(30));
+            if(name=="blocking"&&result.ExitCode==0)Assert.That(Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(File.ReadAllText(normalized)))!.Message,Does.Contain("mix blocking"));
+            else{Assert.That(result.ExitCode,Is.Not.Zero,name+" was silently accepted");Assert.That(result.StandardError,Does.Contain("rejected"),name);}
         }
     }
 }

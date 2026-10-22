@@ -85,14 +85,14 @@ internal static class Build
             string results = Path.Combine(Artifacts, "tests", RunId);
             var test = new List<string> { "test", "tests/VeloSim.Tests", "-c", "Release", "--no-build", "--results-directory", results, "--logger", "trx" };
             if (command == "coverage") test.AddRange(["--collect:XPlat Code Coverage", "--settings", "coverage.runsettings"]);
-            await Run("dotnet", test, nativeDirectory: Path.Combine(Native, "lib"));
+            if(command=="coverage")await RunNativeCoverage(test);
+            else await Run("dotnet", test, nativeDirectory: Path.Combine(Native, "lib"));
             if (command == "coverage")
             {
                 bool managedMeasured = Directory.GetFiles(results, "coverage.cobertura.xml", SearchOption.AllDirectories)
                     .Select(XDocument.Load).Any(document => document.Descendants("package").Any(package =>
                         (string?)package.Attribute("name") == "VeloSim" && package.Descendants("line").Any()));
                 if (!managedMeasured) throw new IOException("Managed coverage is empty; refusing to publish a native-only report as combined coverage.");
-                await RunNativeCoverage();
                 await Run("dotnet", ["tool", "restore"]);
                 await Run("dotnet", ["tool", "run", "reportgenerator", $"-reports:{results}/**/coverage.cobertura.xml;{NativeCoverage}/native.lcov", $"-targetdir:{Artifacts}/coverage/{RunId}", "-reporttypes:Html;TextSummary;Cobertura"]);
                 string report = Path.Combine(Artifacts, "coverage", RunId, "Cobertura.xml");
@@ -219,7 +219,7 @@ internal static class Build
         await Run("cmake", ["--build", directory, "--parallel", Jobs.ToString(CultureInfo.InvariantCulture)]);
     }
 
-    private static async Task RunNativeCoverage()
+    private static async Task RunNativeCoverage(IEnumerable<string>? testArguments=null)
     {
         if (!OperatingSystem.IsLinux()) throw new PlatformNotSupportedException("LLVM native coverage currently requires Linux/WSL.");
         await ConfigureNative(NativeCoverage, true);
@@ -227,7 +227,7 @@ internal static class Build
         Directory.CreateDirectory(profiles);
         var environment = new Dictionary<string, string> { ["LLVM_PROFILE_FILE"] = Path.Combine(profiles, "%m-%p.profraw") };
         await Run("ctest", ["--test-dir", NativeCoverage, "--output-on-failure", "--parallel", Jobs.ToString(CultureInfo.InvariantCulture)], environment: environment);
-        await Run("dotnet", ["test", "tests/VeloSim.Tests", "-c", "Release", "--no-build"], nativeDirectory: Path.Combine(NativeCoverage, "lib"), environment: environment);
+        await Run("dotnet", testArguments??new[]{"test", "tests/VeloSim.Tests", "-c", "Release", "--no-build"}, nativeDirectory: Path.Combine(NativeCoverage, "lib"), environment: environment);
         string[] raw = Directory.GetFiles(profiles, "*.profraw");
         if (raw.Length == 0) throw new IOException("Native coverage produced no profiles.");
         string merged = Path.Combine(profiles, "merged.profdata");
@@ -259,7 +259,7 @@ internal static class Build
         Console.WriteLine($"> {executable} {string.Join(' ', start.ArgumentList)}");
         using var process = Process.Start(start) ?? throw new IOException($"could not start {executable}");
         // Full conformance includes independent standalone and SDK builds for each fixture.
-        int timeoutMinutes = executable == "dotnet" && start.ArgumentList.FirstOrDefault() == "test" ? 45 : 15;
+        int timeoutMinutes = executable == "dotnet" && start.ArgumentList.FirstOrDefault() == "test" ? 90 : 15;
         using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(timeoutMinutes));
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(deadline.Token);
         Task<string> stderr = process.StandardError.ReadToEndAsync(deadline.Token);
