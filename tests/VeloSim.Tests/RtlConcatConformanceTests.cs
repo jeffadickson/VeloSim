@@ -23,4 +23,11 @@ public class RtlConcatConformanceTests
         const string source="module dut(input logic clk,rst_n,enable,input logic[63:0]a,i,output logic[7:0]q,r,snapshot);always_ff @(posedge clk) begin if(!rst_n)begin q<='0;r<='0;snapshot<='0;end else begin snapshot<=q;if(enable)begin q<=a;r<=~a;{q[7:4],r[3:0]}<=(a[0]<<5);{q[0],r[7]}<=a[1:0];if(i[0]){q[9:6],r[1:0]}<=a[5:0];end end end endmodule";
         await Qualify(41,"fixed-bit",source);
     }
+    [Test,Category("RealFifo")]
+    public async Task IndexedAndOldIndexCycles61To70()
+    {
+        const string source="module dut(input logic clk,rst_n,enable,input logic[63:0]a,i,output logic[7:0]q,r,snapshot,output logic[6:0]idx);always_ff @(posedge clk) begin if(!rst_n)begin q<='0;r<='0;snapshot<='0;idx<='0;end else begin snapshot<=q;idx<=idx+1'b1;if(enable)begin q<=a;r<=~a;{q[idx],r[i +: 4]}<=a[4:0];{q[i -: 4],r[idx]}<=(a[0]<<4);end end end endmodule";
+        var vectors=Vectors();vectors[7]["a"]=Bits(0x1a);vectors[8]["a"]=Bits(0x35);
+        await Qualify(61,"indexed-old-index",source,[..Ports(),new("idx",7,"output")],vectors);
+    }
 }
