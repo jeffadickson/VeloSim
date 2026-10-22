@@ -54,4 +54,27 @@ public class RtlConcatTargetTests
         Assert.That(Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(node.ToJsonString()))!.Message,Does.Contain(error).IgnoreCase);
         TestContext.Progress.WriteLine($"CONCAT_CYCLE {cycle} PASS invalid target boundary");
     }
+    [TestCase(51), TestCase(52), TestCase(53), TestCase(54), TestCase(55), TestCase(56), TestCase(57), TestCase(58), TestCase(59), TestCase(60)]
+    public void DynamicTargetBoundary(int cycle)
+    {
+        var bit=new{kind="bitselect",value=Ref("q"),index=Ref("i")};
+        object target=Concat(bit,Indexed("r",4,false)); string? error=null;
+        switch(cycle)
+        {
+            case 52: target=Concat(bit,Indexed("r",63,true)); break;
+            case 53: target=Concat(Ref("q"),Indexed("r",64,false)); error="64 bits"; break;
+            case 54: target=Concat(bit,Indexed("r",0,false)); error="1..64"; break;
+            case 55: target=Concat(bit,Indexed("r",-1,true)); error="1..64"; break;
+            case 56: case 57: error=""; break;
+            case 58: target=Concat(bit,new{kind="bitselect",value=Fixed("r",3,0),index=Ref("i")}); error="writable declared"; break;
+            case 59: target=Concat(bit,new{kind="bitselect",value=Ref("clk"),index=Ref("i")}); error="writable declared"; break;
+            case 60: error="conflicting"; break;
+        }
+        var node=Fixture(target);var selected=node["body"]!["items"]![1]!["target"]!["args"]![1]!;
+        if(cycle==56)selected["descending"]="false";if(cycle==57)selected.AsObject().Remove("base");
+        if(cycle==60)node["continuous"]=JsonSerializer.SerializeToNode(new[]{new{target=Ref("r"),value=Ref("a")}});
+        if(error is null){var design=RtlDesign.Parse(node.ToJsonString());Assert.DoesNotThrow(()=>design.EmitCpp());Assert.DoesNotThrow(()=>design.EmitModelHeader("dynamic_concat"));}
+        else Assert.That(Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(node.ToJsonString()))!.Message,Does.Contain(error));
+        TestContext.Progress.WriteLine($"CONCAT_CYCLE {cycle} PASS dynamic target boundary");
+    }
 }
