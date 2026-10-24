@@ -258,8 +258,9 @@ internal static class Build
         if (environment != null) foreach (var entry in environment) start.Environment[entry.Key] = entry.Value;
         Console.WriteLine($"> {executable} {string.Join(' ', start.ArgumentList)}");
         using var process = Process.Start(start) ?? throw new IOException($"could not start {executable}");
-        // Full conformance includes independent standalone and SDK builds for each fixture.
-        int timeoutMinutes = executable == "dotnet" && start.ArgumentList.FirstOrDefault() == "test" ? 90 : 15;
+        // The full suite includes hundreds of independent standalone and SDK builds.
+        // Keep a bounded suite budget without confusing it with each fixture's shorter tool deadlines.
+        int timeoutMinutes = executable == "dotnet" && start.ArgumentList.FirstOrDefault() == "test" ? 240 : 15;
         using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(timeoutMinutes));
         Task<string> stdout = process.StandardOutput.ReadToEndAsync(deadline.Token);
         Task<string> stderr = process.StandardError.ReadToEndAsync(deadline.Token);
@@ -274,7 +275,7 @@ internal static class Build
             await process.WaitForExitAsync();
             process.StandardOutput.Dispose(); process.StandardError.Dispose();
             try { await Task.WhenAll(stdout, stderr); } catch (OperationCanceledException) { } catch (ObjectDisposedException) { }
-            throw new TimeoutException($"{executable} exceeded 15 minutes");
+            throw new TimeoutException($"{executable} exceeded {timeoutMinutes} minutes");
         }
         string text = await stdout;
         string errors = await stderr;

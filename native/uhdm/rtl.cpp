@@ -12,6 +12,10 @@
 #include <vector>
 #include <algorithm>
 #include <set>
+#include <cstdlib>
+#ifdef VELOSIM_EXPORTER_COVERAGE
+extern "C" void __llvm_profile_set_filename(const char*);
+#endif
 namespace {
 using H=vpiHandle;
 void need(bool b,const std::string& s){if(!b)throw std::runtime_error(s);}
@@ -81,7 +85,8 @@ std::string expr(H h,int depth=0){
   need(operands.size()==(unary?1:it->second=="cond"?3:2),"unsupported expression arity");
   std::string s="{\"kind\":"+q(it->second)+",\"args\":[";bool first=true;for(auto a:operands){if(!first)s+=",";first=false;s+=expr(a,depth+1);}return s+"]}";
  }
- need(!name(h).empty()&&(type(h)==vpiReg||type(h)==vpiNet||type(h)==vpiBitVar||type(h)==vpiRefObj||type(h)==vpiVariables),"unsupported reference type "+std::to_string(type(h)));
+ // Packed selections may point directly to a collected UHDM logic_var declaration.
+ need(!name(h).empty()&&(type(h)==vpiReg||type(h)==vpiNet||type(h)==vpiBitVar||type(h)==vpiLogicVar||type(h)==vpiRefObj||type(h)==vpiVariables),"unsupported reference type "+std::to_string(type(h)));
  return "{\"kind\":\"ref\",\"name\":"+q(signal_name(h))+"}";
 }
 void target_shape(H h,int depth=0){
@@ -100,6 +105,10 @@ std::string stmt(H h,int depth=0){
 #include "rtl_flatten.h"
 }
 int main(int argc,char** argv){
+#ifdef VELOSIM_EXPORTER_COVERAGE
+ // Keep exporter measurements separate from instrumented simulator libraries in the same test run.
+ if(const char* destination=std::getenv("VELOSIM_UHDM_PROFILE_FILE");destination&&*destination)__llvm_profile_set_filename(destination);
+#endif
  if(argc!=4){std::cerr<<"usage: velosim-uhdm-rtl <design.uhdm> <rtl.json> <top>\n";return 2;}
  try{
   UHDM::Serializer serializer;store=&serializer;auto designs=serializer.Restore(std::string(argv[1]));need(designs.size()==1,"one design required");auto modules=many(designs[0],UHDM::uhdmtopModules);need(modules.size()==1,"one top required");mod=modules[0];need(name(mod)==argv[3]||name(mod)==std::string("work@")+argv[3],"top mismatch");

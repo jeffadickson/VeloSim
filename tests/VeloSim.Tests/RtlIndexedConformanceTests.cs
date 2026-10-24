@@ -11,7 +11,11 @@ public class RtlIndexedConformanceTests
     internal static async Task Qualify(string tag, string sourceText, RtlSignal[] expected, List<Dictionary<string, string>> vectors, int firstRowCycle = 0, bool sdk = false, bool selectedProbe = true)
     {
         if (Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO") != "1") Assert.Ignore("Requires pinned Surelog/UHDM and Icarus.");
-        string root = Root(), path = Path.Combine(root, "artifacts", "rtl-indexed-" + tag + "-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path);
+        string root = Root();
+        // Linux-side evidence avoids mounted-filesystem compiler-probe stalls under WSL.
+        // Unique directories retain the same HDL, tool fingerprints, commands and complete traces.
+        string evidenceRoot = Path.GetFullPath(Environment.GetEnvironmentVariable("VELOSIM_RTL_EVIDENCE_ROOT") ?? Path.Combine(root, "artifacts"));
+        string path = Path.Combine(evidenceRoot, "rtl-indexed-" + tag + "-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path);
         string source = Path.Combine(path, "design.sv"); File.WriteAllText(source, sourceText); var sources = ArtifactMetadata.SourceClosure([source]);
         var runner = new RecordingProcessRunner(new ProcessRunner()); var tools = new Dictionary<string, FileFingerprint>(StringComparer.Ordinal);
         string Tool(string executable) { string resolved = ArtifactMetadata.ResolveExecutable(executable, path) ?? throw new IOException("Missing tool " + executable); tools.TryAdd(resolved, ArtifactMetadata.Fingerprint(resolved)); return resolved; }

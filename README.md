@@ -1,6 +1,6 @@
 # VeloSim
 
-Current development: [100 open-item iterations and the execution contract](docs/open-items-100.md), building on [shared-clock processes, hierarchy and signed 1–128-bit words](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
+Current development: [200 requirement and coverage qualification cases](docs/requirements-200.md) and [stable StrictDoc requirements](requirements/velosim.sdoc), extending isolated blocking assignments to selected words, concatenations and fixed-memory elements. See the [earlier execution contract](docs/open-items-100.md) and [process, hierarchy and signed-word bounds](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
 
 Open-source experimental Verilog/SystemVerilog simulation project.
 

@@ -2,7 +2,8 @@ name: VeloSim compiled CI
 on: [push, pull_request]
 jobs:
   compiled:
-    timeout-minutes: 45
+    # The suite has a 240-minute bound; allow bootstrap and NativeAOT packaging too.
+    timeout-minutes: 300
     env:
       VELOSIM_MIN_MANAGED_LINE: 80
       VELOSIM_MIN_NATIVE_LINE: 95
@@ -23,17 +24,18 @@ jobs:
       - name: Install Ninja (macOS)
         if: runner.os == 'macOS'
         run: brew install ninja
-      - name: Build and test compiled C# and native kernels
+      - name: Build and test compiled C# and native kernels (macOS)
+        if: runner.os == 'macOS'
         run: make test JOBS=4
+      - name: NativeAOT publishing
+        if: runner.os == 'Linux'
+        run: make bundle JOBS=4
       - name: Managed and native coverage
         if: runner.os == 'Linux'
         run: make coverage JOBS=4
       - name: Verify coverage source and binary evidence
         if: runner.os == 'Linux'
         run: make coverage-current JOBS=4
-      - name: NativeAOT publishing
-        if: runner.os == 'Linux'
-        run: make bundle JOBS=4
       - name: Independent Icarus conformance through native C# tools
         if: runner.os == 'Linux'
         env:

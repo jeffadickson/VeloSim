@@ -17,7 +17,8 @@ public static class SourceEvidence
                 else if (entry is FileInfo file && (extensions.Contains(file.Extension) || file.Name is "CMakeLists.txt" or "Makefile")) paths.Add(file.FullName);
             }
         }
-        foreach (var relative in new[] { "src", "native", "tests", "tools/VeloSim.Build", "examples" }) { var path = Path.Combine(root, relative); if (Directory.Exists(path)) Walk(new(path)); }
+        // File-based qualification apps live beside the build-tool project and must invalidate stale evidence too.
+        foreach (var relative in new[] { "src", "native", "tests", "tools", "examples" }) { var path = Path.Combine(root, relative); if (Directory.Exists(path)) Walk(new(path)); }
         paths.AddRange(new[] { "CMakeLists.txt", "Makefile", "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "global.json", "NuGet.config", "coverage.runsettings", "VeloSim.slnx", ".config/dotnet-tools.json" }.Select(p => Path.Combine(root, p)).Where(File.Exists));
         if (paths.Any(p => new FileInfo(p).LinkTarget is not null)) throw new IOException("Coverage source files cannot be symbolic links.");
         return paths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToDictionary(p => Path.GetRelativePath(root, p).Replace('\\', '/'), p => Convert.ToHexString(SHA256.HashData(Path.GetFileName(p) == "packages.lock.json" ? DependencySnapshot(p) : File.ReadAllBytes(p))).ToLowerInvariant(), StringComparer.Ordinal);

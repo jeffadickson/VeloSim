@@ -1,0 +1,218 @@
+[DOCUMENT]
+TITLE: VeloSim bounded RTL requirements
+UID: VS-SRS
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-001
+STATUS: Active
+TITLE: Selected blocking word assignment
+STATEMENT: >>>
+The simulator shall apply supported bit, fixed-part and indexed-part blocking writes to writable 1..128-bit words, preserving untouched bits and making the result visible to later statements in the same process. Unknown indices shall suppress writes; partially out-of-range selections shall modify only in-range bits. Known selected-write bases above INT32_MAX shall raise the existing qualified-range error.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.Statement, WordWrite and ProcessStatement; runtime deposit_indexed; UHDM expr lowering of logic_var declarations behind selections. Verification: RequirementIteration001..080 and 161..168, the minimized UhdmLogicVariableBlockingSelectionMatchesIcarus regression, plus seeded robustness tests. Evidence: ``artifacts/requirements-200/test-*.log`` and per-case manifest.json/commands.log. Acceptance status and final regression/coverage gates are recorded in docs/requirements-200.md.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-002
+STATUS: Active
+TITLE: Concatenated blocking destinations
+STATEMENT: >>>
+The simulator shall support concatenated blocking assignments to distinct writable signal words or supported selections with a combined width of at most 128 bits. It shall sample the RHS and all target index expressions before publishing any destination's local blocking result.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.Statement and TargetLeaves. Verification: RequirementIteration081..100 and 169..172. Case 100 independently checks that a destination used as another destination's index retains its pre-assignment value for that index. Evidence: artifacts/requirements-200/ and docs/requirements-200.md.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-003
+STATUS: Active
+TITLE: Fixed-memory blocking assignment
+STATEMENT: >>>
+The simulator shall support blocking writes to whole elements of supported fixed one-dimensional four-state memories. Later statements in the same process shall read the updated element. Invalid or unknown memory indices shall retain the existing unknown-read/ignored-write policy and other elements shall persist.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.Statement, MemoryIndex, ProcessStatement and runtime read/write. Verification: RequirementIteration101..120 and 173..176, with nonzero bounds, persistence and unknown/out-of-range indices. Selected memory-element writes, two-state memories and memory elements inside concatenation targets are outside this contract. Evidence: artifacts/requirements-200/.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-004
+STATUS: Active
+TITLE: Blocking ownership and race rejection
+STATEMENT: >>>
+The validator shall reject mixed blocking/nonblocking writes to the same parent word or whole memory and shall reject blocking storage read by another process or continuous logic. Ownership and isolation shall hold independently of declaration order and target selection shape. Memory dependencies shall include the memory identity and its index expressions.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.References, TargetOwner and ValidateBlockingIsolation. Verification: RequirementIteration121..160 and reproducible malformed-input/property tests. Mutation probes shall remove relevant guards and establish that focused tests detect the changed behavior. Evidence and limitations: docs/requirements-200.md and artifacts/requirements-200/.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-005
+STATUS: Active
+TITLE: Two-state blocking storage
+STATEMENT: >>>
+The simulator shall coerce X/Z bits to zero at writes to two-state signal storage, including selected blocking writes. Later same-process reads shall observe the coerced result; untouched bits shall preserve their two-state value.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.StoreWord, WordWrite and Statement. Verification: RequirementIteration181..200, existing signed two-state integration tests and final coverage. Evidence: artifacts/requirements-200/ and docs/requirements-200.md.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-QUAL-001
+STATUS: Active
+TITLE: Reproducible qualification evidence
+STATEMENT: >>>
+Qualification shall retain stable case IDs, implementation/input/executable fingerprints, command results, reproducible randomized seeds, mutation outcomes and malformed-input results. Mutation acceptance shall require a passing control and distinguish semantic assertion failures from build, timeout and infrastructure failures. Coverage reports shall distinguish line and branch measurements, measured object scope and tooling limitations. Coverage shall not substitute for behavioral comparisons.
+<<<
+COMMENT: >>>
+Verification ledger: docs/requirements-200.md; native execution evidence: ``artifacts/requirements-200/native/<run>/NNN/manifest.json``, status.json and commands.log. Same-source HDL evidence uses unique ``rtl-indexed-requirements-NNN-*`` directories under checkout artifacts or the configured VELOSIM_RTL_EVIDENCE_ROOT. Final coverage, mirror and source/binary evidence paths are recorded in the ledger after completion. AI reviews occur at 15-case boundaries and before the final commit. The full suite has a bounded 240-minute budget; individual fixture tool deadlines remain shorter. CI allows packaging headroom and measures the Linux test run once through coverage.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+- TYPE: File
+  VALUE: tools/VeloSim.Build/Program.cs
+- TYPE: File
+  VALUE: tools/BlockingMutationProbe.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlBlockingRobustnessTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlIndexedConformanceTests.cs
+- TYPE: File
+  VALUE: tools/VeloSim.Build/SourceEvidence.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/CoverageEvidenceTests.cs
+- TYPE: File
+  VALUE: .github/workflows/ci.yml
+
+[REQUIREMENT]
+UID: VS-RTL-EVENT-001
+STATUS: Active
+TITLE: Bounded independent input-edge processes
+STATEMENT: >>>
+The simulator shall support up to 256 independently triggered processes, each with 1..16 distinct scalar top-input rising/falling edge controls. Each triggered process shall start from pre-commit state while observing its own isolated blocking updates in later statements. Nonblocking updates from the sampled input batch shall commit together. Auxiliary four-state inputs shall retain the scalar 0/1/X/Z edge table; the primary clock shall start known zero.
+<<<
+COMMENT: >>>
+Baseline implementation and evidence: RtlDesign.EventEvaluation; runtime edge_event; docs/open-items-100.md, numbered cases 001..040 and primary-negedge startup regression. This requirement excludes generated clocks, arbitrary event expressions and general timed scheduling. Final regression rechecks baseline behavior after this batch.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlOpenItems100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-HIER-001
+STATUS: Active
+TITLE: Bounded elaborated hierarchy
+STATEMENT: The frontend shall normalize supported module instances and elaborated generate scopes, preserving source paths and sizing whole-word input/output connections with source expression signedness.
+COMMENT: Baseline evidence: docs/open-items-100.md, cases 071..080 and hierarchical falling-clock alias integration. Inout, open and selected output connections remain outside this contract.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlHierarchyTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-WORD-001
+STATUS: Active
+TITLE: Bounded signed and two-state words
+STATEMENT: The simulator shall support its normalized signed/unsigned logic and bit word operators for widths 1..128, preserving four-state masks and coercing two-state storage at assignment boundaries.
+COMMENT: Baseline qualification: docs/open-items-100.md; RtlSignedWideTests, RtlOperatorTests and two-state cases 061..070. This requirement covers the operator subset accepted by validation, not every SystemVerilog expression or type.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlSignedWideTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-REPEAT-001
+STATUS: Active
+TITLE: Constant bounded repetition
+STATEMENT: The simulator shall support literal repeat counts 0..256 and reject expanded nested execution above its 20000-statement budget.
+COMMENT: Baseline evidence: docs/open-items-100.md, cases 041..050 and nested-repeat budget regression. Runtime-controlled for/while loops remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlOpenItems100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-MEM-001
+STATUS: Active
+TITLE: Fixed one-dimensional four-state memories
+STATEMENT: The simulator shall support 1..256-word fixed four-state memories with nonnegative declared bounds through INT32_MAX, in either direction, with unknown reads and ignored writes for invalid or X/Z indices.
+COMMENT: Baseline evidence: docs/open-items-100.md, cases 081..090 and runtime memory_index guards. VS-RTL-BLOCK-003 extends the assignment kinds supported by this storage contract.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlOpenItems100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-TIME-001
+STATUS: Draft
+TITLE: General event and delay scheduling
+STATEMENT: The simulator shall support a general timed event queue, arbitrary event expressions and delay scheduling.
+COMMENT: Open backlog; this batch does not implement or verify this general requirement. Existing scalar top-input edge processing remains a bounded subset.
+
+[REQUIREMENT]
+UID: VS-RTL-COMB-001
+STATUS: Draft
+TITLE: General combinational processes
+STATEMENT: The simulator shall support always_comb processes with language-defined sensitivity and scheduling.
+COMMENT: Open backlog; the existing continuous-assignment DAG is a separate bounded contract.
+
+[REQUIREMENT]
+UID: VS-RTL-PROC-001
+STATUS: Draft
+TITLE: General procedural constructs
+STATEMENT: The simulator shall support initialization, runtime-controlled loops, functions and tasks.
+COMMENT: Open backlog; constant repeat and supported sequential statements do not close this requirement.
+
+[REQUIREMENT]
+UID: VS-RTL-TYPE-001
+STATUS: Draft
+TITLE: Composite and broader scalar types
+STATEMENT: The simulator shall support structures, unions, enums and additional scalar integer types.
+COMMENT: Open backlog; supported signed/unsigned logic/bit words remain bounded to 128 bits.
+
+[REQUIREMENT]
+UID: VS-RTL-ARRAY-001
+STATUS: Draft
+TITLE: General array and container operations
+STATEMENT: The simulator shall support multidimensional, queue, dynamic and associative array operations.
+COMMENT: Open backlog; this batch only extends blocking writes to whole elements of existing fixed one-dimensional memories.

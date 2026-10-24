@@ -5,6 +5,7 @@ namespace VeloSim;
 
 public sealed record RtlSignal(string Name, int Width, string Direction, string? SourcePath = null, bool Signed = false, bool TwoState = false);
 public sealed record RtlMemory(string Name, int Width, int Depth, bool Signed = false, int LowerBound = 0);
+/// <summary>Validated bounded RTL IR and native-code emitter. Blocking storage is process-local until group commit.</summary>
 public sealed class RtlDesign
 {
     public IReadOnlyList<RtlSignal> Signals { get; }
@@ -67,6 +68,7 @@ public sealed class RtlDesign
         if (Signals.Any(s => s.Direction != "input" && !sequential.Contains(s.Name) && !combWriters.Contains(s.Name))) throw new IrValidationException("Undriven non-input signals are unsupported; net/variable initialization must not be guessed.");
         Continuous = sorted.AsReadOnly(); ValidateBlockingIsolation(); Json = json;
     }
+    /// <summary>Parses the bounded IR and rejects unsupported, malformed or conflicting execution contracts.</summary>
     public static RtlDesign Parse(string json)
     {
         try { return new(json); }
@@ -90,7 +92,8 @@ public sealed class RtlDesign
     private IEnumerable<string> References(JsonElement e)
     {
         if (Kind(e) == "ref") yield return Name(e);
-        else if (Kind(e) == "index") { foreach (var n in References(e.GetProperty("index"))) yield return n; }
+        // A memory access reads storage as well as address expressions; isolation needs both identities.
+        else if (Kind(e) == "index") { yield return Name(e); foreach (var n in References(e.GetProperty("index"))) yield return n; }
         else if (Kind(e) is "bitselect" or "partselect" or "indexedselect") { foreach (var n in References(e.GetProperty("value"))) yield return n; if (e.TryGetProperty("index", out var index)) foreach (var n in References(index)) yield return n; if (e.TryGetProperty("base", out var basis)) foreach (var n in References(basis)) yield return n; }
         else if (e.TryGetProperty("args", out var args)) foreach (var a in args.EnumerateArray()) foreach (var n in References(a)) yield return n;
     }
@@ -124,7 +127,6 @@ public sealed class RtlDesign
             case "block": JsonShape.Fields(e, ["kind", "items"]); foreach (var item in e.GetProperty("items").EnumerateArray()) ValidateStatement(item, writers, depth + 1); break;
             case "blocking": case "nba":
                 JsonShape.Fields(e, ["kind", "target", "value"]); var target = e.GetProperty("target"); ValidateExpression(target, depth + 1); ValidateExpression(e.GetProperty("value"), depth + 1);
-                if(Kind(e)=="blocking"&&Kind(target)!="ref")throw new IrValidationException("Blocking assignments require whole signal words.");
                 if (Kind(target) == "index") { writers.Add(Name(target)); break; }
                 var parents = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var leaf in TargetLeaves(target))
@@ -157,8 +159,8 @@ public sealed class RtlDesign
         var processes=Kind(Body)=="parallel"?Body.GetProperty("items").EnumerateArray().ToArray():[Body];
         var reads=processes.Select(p=>Statements(p).SelectMany(e=>new[]{"value","target","condition"}.Where(name=>e.TryGetProperty(name,out _)).SelectMany(name=>References(e.GetProperty(name)))).ToHashSet(StringComparer.Ordinal)).ToArray();
         for(int i=0;i<processes.Length;++i){
-            var statements=Statements(processes[i]).ToArray();var blocking=statements.Where(e=>Kind(e)=="blocking").Select(e=>Name(e.GetProperty("target"))).ToHashSet(StringComparer.Ordinal);
-            var nonblocking=statements.Where(e=>Kind(e)=="nba").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(t=>Kind(t) is "bitselect" or "partselect" or "indexedselect"?Name(t.GetProperty("value")):Name(t)).ToHashSet(StringComparer.Ordinal);
+            var statements=Statements(processes[i]).ToArray();var blocking=statements.Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);
+            var nonblocking=statements.Where(e=>Kind(e)=="nba").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);
             if(blocking.Overlaps(nonblocking))throw new IrValidationException("A word cannot mix blocking and nonblocking assignments.");
             if(Enumerable.Range(0,processes.Length).Any(j=>j!=i&&blocking.Overlaps(reads[j]))||Continuous.Any(a=>References(a.GetProperty("value")).Any(blocking.Contains)))throw new IrValidationException("Blocking destinations must be isolated from other processes and continuous logic.");
         }
@@ -178,6 +180,8 @@ public sealed class RtlDesign
         if (Kind(target) == "concat") foreach (var child in target.GetProperty("args").EnumerateArray()) foreach (var leaf in TargetLeaves(child)) yield return leaf;
         else yield return target;
     }
+    // Ownership and mixed-assignment checks operate on whole parent storage, even for disjoint selections.
+    private static string TargetOwner(JsonElement target) => Kind(target) is "bitselect" or "partselect" or "indexedselect" ? Name(target.GetProperty("value")) : Name(target);
     private int ExpressionWidth(JsonElement e) => Kind(e) switch
     {
         "ref" => Signals[SignalId(Name(e))].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
@@ -240,8 +244,6 @@ public sealed class RtlDesign
     {
         switch (Kind(e))
         {
-            case "blocking":
-                int blockingId=SignalId(Name(e.GetProperty("target")));code.AppendLine($"next[{blockingId}]={StoreWord(Expression(e.GetProperty("value"),Signals[blockingId].Width),Signals[blockingId])};s[{blockingId}]=next[{blockingId}];");break;
             case "repeat":
                 string loop="repeat"+unique++;code.AppendLine($"for(int {loop}=0;{loop}<{e.GetProperty("count").GetInt32()};++{loop}){{");Statement(code,e.GetProperty("body"),ref unique);code.AppendLine("}");break;
             case "process":
@@ -249,7 +251,7 @@ public sealed class RtlDesign
                 ProcessStatement(code, e.GetProperty("body"), ref unique); code.AppendLine("}"); break;
             case "parallel": foreach(var item in e.GetProperty("items").EnumerateArray())ProcessStatement(code,item,ref unique);break;
             case "block": foreach (var item in e.GetProperty("items").EnumerateArray()) Statement(code, item, ref unique); break;
-            case "nba":
+            case "blocking": case "nba":
                 var target = e.GetProperty("target");
                 if (Kind(target) == "concat")
                 {
@@ -259,7 +261,13 @@ public sealed class RtlDesign
                     code.AppendLine("}");
                 }
                 else if (Kind(target) is "ref" or "bitselect" or "partselect" or "indexedselect") WordWrite(code, target, Expression(e.GetProperty("value"), ExpressionWidth(target)));
-                else { int id = MemoryId(Name(target)); code.AppendLine($"write(nextMem[{id}],{MemoryIndex(target.GetProperty("index"),id)},{Expression(e.GetProperty("value"), Memories[id].Width)},{Memories[id].Width});"); } break;
+                else { int id = MemoryId(Name(target)); code.AppendLine($"write(nextMem[{id}],{MemoryIndex(target.GetProperty("index"),id)},{Expression(e.GetProperty("value"), Memories[id].Width)},{Memories[id].Width});"); }
+                // Publish local blocking results only after all RHS and target indices have been sampled.
+                if (Kind(e)=="blocking") foreach (var leaf in TargetLeaves(target)) {
+                    if (Kind(leaf)=="index") { int id=MemoryId(Name(leaf));code.AppendLine($"mem[{id}]=nextMem[{id}];"); }
+                    else { int id=SignalId(TargetOwner(leaf));code.AppendLine($"s[{id}]=next[{id}];"); }
+                }
+                break;
             case "if": code.AppendLine($"if(yes({Expression(e.GetProperty("condition"))})){{"); Statement(code, e.GetProperty("then"), ref unique); code.AppendLine("}else{"); Statement(code, e.GetProperty("else"), ref unique); code.AppendLine("}"); break;
             case "case":
                 var label = "case" + unique++; var items = e.GetProperty("items").EnumerateArray().ToArray(); int caseWidth = Math.Max(ExpressionWidth(e.GetProperty("value")), items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).Select(i => ExpressionWidth(i.GetProperty("match"))).DefaultIfEmpty(1).Max()); bool caseSigned=ExpressionSigned(e.GetProperty("value"))&&items.Where(i=>i.GetProperty("match").ValueKind!=JsonValueKind.Null).All(i=>ExpressionSigned(i.GetProperty("match"))); code.AppendLine($"{{auto {label}={Expression(e.GetProperty("value"), caseWidth,caseSigned)};"); bool first = true;
