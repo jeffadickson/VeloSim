@@ -14,7 +14,7 @@ int collect_scope(H scope,H module,int parent,const std::string& path,int depth=
  need(depth<32&&flat_scopes.size()<256,"hierarchy depth/scope budget exceeded");
  auto seen=visited_scopes.insert(identity(scope));need(seen.second,"duplicate elaborated scope");
  int id=int(flat_scopes.size());flat_scopes.push_back({scope,module,parent,path,{}});mod=module;
- for(int relation:{vpiPrimitive,vpiPrimitiveArray,vpiFunction,vpiTask,vpiModuleArray})need(many(scope,relation).empty(),"primitives, functions, tasks and module arrays unsupported");
+ for(int relation:{vpiPrimitive,vpiPrimitiveArray,vpiModuleArray})need(many(scope,relation).empty(),"primitives and module arrays unsupported");
  std::map<std::string,int> directions;
  if(parent<0)for(auto port:many(scope,vpiPort)){int direction=vpi_get(vpiDirection,port);need(direction==vpiInput||direction==vpiOutput,"inout unsupported");directions[name(port)]=direction;}
  for(int relation:{vpiNet,vpiReg,vpiVariables})for(auto h:many(scope,relation)){
@@ -48,8 +48,9 @@ std::string flatten_design(H top){
  for(size_t index=1;index<flat_scopes.size();++index){auto scope=flat_scopes[index];if(type(scope.handle)!=vpiModule)continue;
   for(auto port:many(scope.handle,vpiPort)){auto high=one(port,vpiHighConn),low=one(port,vpiLowConn);int direction=vpi_get(vpiDirection,port);need(high&&low,"open/unresolved instance ports unsupported");need(direction==vpiInput||direction==vpiOutput,"inout instance ports unsupported");need(declared_reference(low),"instance low connection must be a declared word");in_scope(int(index));auto child=signal_name(low);need(flat_signals.count(child),"memory instance ports unsupported");int childWidth=flat_signals.at(child).width;in_scope(scope.parent);need(width(high)>=1&&childWidth>=1,"instance connections require word widths");if(direction==vpiOutput)need(declared_reference(high),"instance output requires a whole declared destination word");bindings.push_back({scope.parent,int(index),direction,high,low,child});if(direction==vpiInput&&declared_reference(high))input_links[child]=signal_name(high);}
  }
- std::vector<FlatProcess> processes;std::string clock;bool explicit_events=false;
+ std::vector<std::pair<int,H>> combinational;std::vector<FlatProcess> processes;std::string clock;bool explicit_events=false;
  for(size_t index=0;index<flat_scopes.size();++index)for(auto process:many(flat_scopes[index].handle,vpiProcess)){
+  if(type(process)==vpiAlways&&vpi_get(vpiAlwaysType,process)==vpiAlwaysComb){need(combinational.size()<256,"combinational process budget exceeded");combinational.push_back({int(index),one(process,vpiStmt)});continue;}
   need(processes.size()<256,"process budget exceeded");need(type(process)==vpiAlways&&vpi_get(vpiAlwaysType,process)!=vpiAlwaysComb&&vpi_get(vpiAlwaysType,process)!=vpiAlwaysLatch,"only explicitly edge-controlled always processes supported");auto event=one(process,vpiStmt);need(type(event)==vpiEventControl,"event control required");FlatProcess lowered{int(index),one(event,vpiStmt),{}};input_events(one(event,vpiCondition),int(index),input_links,lowered.events);need(!lowered.events.empty(),"empty event list");auto primary=lowered.events.front().first;if(clock.empty())clock=primary;explicit_events|=lowered.events.size()!=1||!lowered.events.front().second||primary!=clock;processes.push_back(std::move(lowered));
  }
  need(!processes.empty(),"at least one sequential process required");
@@ -59,6 +60,6 @@ std::string flatten_design(H top){
  out+="],\"continuous\":[";first=true;auto append=[&](const std::string& target,const std::string& value){if(!first)out+=",";first=false;out+="{\"target\":"+target+",\"value\":"+value+"}";};
  for(auto& binding:bindings){if(clock_aliases.count(binding.target))continue;in_scope(binding.parent);auto high=expr(binding.high);in_scope(binding.child);auto low=expr(binding.low);if(binding.direction==vpiInput)append(low,high);else append(high,low);}
  for(size_t index=0;index<flat_scopes.size();++index){in_scope(int(index));for(auto assignment:many(flat_scopes[index].handle,vpiContAssign)){auto object=static_cast<const UHDM::cont_assign*>(identity(assignment));need(!object->Delay()&&!object->VpiStrength0()&&!object->VpiStrength1(),"continuous delays and strengths unsupported");append(expr(one(assignment,vpiLhs)),expr(one(assignment,vpiRhs)));}}
- out+="],\"clock\":"+q(clock)+",\"body\":";if(processes.size()>1)out+="{\"kind\":\"parallel\",\"items\":[";first=true;
+ out+="],\"combinational\":[";first=true;for(auto& [scope,body]:combinational){in_scope(scope);if(!first)out+=",";first=false;out+=stmt(body);}out+="],\"clock\":"+q(clock)+",\"body\":";if(processes.size()>1)out+="{\"kind\":\"parallel\",\"items\":[";first=true;
  for(auto& process:processes){in_scope(process.scope);if(!first)out+=",";first=false;if(explicit_events){out+="{\"kind\":\"process\",\"events\":[";bool first_event=true;for(auto& [signal,positive]:process.events){if(!first_event)out+=",";first_event=false;out+="{\"signal\":"+q(signal)+",\"edge\":"+q(positive?"posedge":"negedge")+"}";}out+="],\"body\":";}out+=stmt(process.body);if(explicit_events)out+="}";}if(processes.size()>1)out+="]}";return out+"}\n";
 }

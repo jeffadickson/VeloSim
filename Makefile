@@ -21,3 +21,10 @@ build test coverage native-coverage benchmark publish bundle doctor coverage-che
 	if [ "$@" != publish ] && [ "$@" != bundle ] && [ -x "$(NATIVE_BUILD_TOOL)" ] && [ "$$use_native" = true ]; then \
 	  VELOSIM_JOBS=$(JOBS) "$(NATIVE_BUILD_TOOL)" $@; \
 	else VELOSIM_JOBS=$(JOBS) $(DOTNET) "$(BUILD_DLL)" $@; fi
+
+.PHONY: combinational-mutation-probe combinational-qualification-tool
+combinational-qualification-tool:
+	$(DOTNET) publish tools/CombinationalQualification.cs -c Release -r linux-x64 -p:PublishAot=true -p:VeloSimNativeJobs=$(JOBS) -o artifacts/publish/CombinationalQualification
+combinational-mutation-probe:
+	$(DOTNET) publish tools/CombinationalMutationProbe.cs -c Release -r linux-x64 -p:PublishAot=true -p:VeloSimNativeJobs=$(JOBS) -o artifacts/publish/CombinationalMutationProbe
+	"artifacts/publish/CombinationalMutationProbe/CombinationalMutationProbe" "$(CURDIR)"

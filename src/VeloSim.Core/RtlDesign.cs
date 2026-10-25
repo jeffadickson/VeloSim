@@ -5,8 +5,8 @@ namespace VeloSim;
 
 public sealed record RtlSignal(string Name, int Width, string Direction, string? SourcePath = null, bool Signed = false, bool TwoState = false);
 public sealed record RtlMemory(string Name, int Width, int Depth, bool Signed = false, int LowerBound = 0);
-/// <summary>Validated bounded RTL IR and native-code emitter. Blocking storage is process-local until group commit.</summary>
-public sealed class RtlDesign
+/// <summary>Validated bounded RTL IR with acyclic settling and process-local sequential blocking storage.</summary>
+public sealed partial class RtlDesign
 {
     public IReadOnlyList<RtlSignal> Signals { get; }
     public IReadOnlyList<RtlMemory> Memories { get; }
@@ -36,7 +36,7 @@ public sealed class RtlDesign
     {
         if (json.Length > 4 * 1024 * 1024) throw new IrValidationException("RTL IR too large.");
         using var document = JsonDocument.Parse(json); var root = document.RootElement;
-        JsonShape.Fields(root, ["format", "signals", "memories", "continuous", "clock", "body"]);
+        JsonShape.Fields(root, ["format", "signals", "memories", "continuous", "clock", "body"], ["combinational"]);
         if (root.GetProperty("format").GetString() != "velosim.rtl.v1") throw new IrValidationException("Unsupported RTL IR.");
         Signals = root.GetProperty("signals").EnumerateArray().Select(e => { JsonShape.Fields(e, ["name", "width", "direction"], ["path", "signed", "two_state"]); return new RtlSignal(Name(e), e.GetProperty("width").GetInt32(), e.GetProperty("direction").GetString()!, e.TryGetProperty("path", out var path) ? path.GetString() : null, e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("two_state",out var two)&&two.GetBoolean()); }).ToArray();
         Memories = root.GetProperty("memories").EnumerateArray().Select(e => { JsonShape.Fields(e, ["name", "width", "depth"], ["signed", "lower"]); return new RtlMemory(Name(e), e.GetProperty("width").GetInt32(), e.GetProperty("depth").GetInt32(),e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("lower",out var lower)?lower.GetInt32():0); }).ToArray();
@@ -56,15 +56,8 @@ public sealed class RtlDesign
             if (References(assignment.GetProperty("value")).Intersect(EventSignals.Append(Clock)).Any()) throw new IrValidationException("Clock-dependent continuous logic is outside the race-free input-event subset.");
             if (Kind(target) != "ref" || Signals[SignalId(Name(target))].Direction == "input" || sequential.Contains(Name(target)) || !pending.TryAdd(Name(target), assignment)) throw new IrValidationException("Invalid or conflicting continuous writer.");
         }
-        // Emit a combinational DAG in dependency order. Feedback and oscillation are rejected.
-        var sorted = new List<JsonElement>();
-        while (pending.Count > 0)
-        {
-            var ready = pending.Where(p => !References(p.Value.GetProperty("value")).Any(pending.ContainsKey)).Select(p => p.Key).ToArray();
-            if (ready.Length == 0) throw new IrValidationException("Combinational feedback is unsupported.");
-            foreach (var key in ready) { sorted.Add(pending[key]); pending.Remove(key); }
-        }
-        var combWriters = sorted.Select(a => Name(a.GetProperty("target"))).ToHashSet(StringComparer.Ordinal);
+        var sorted = SortCombinational(root, sequential, pending);
+        var combWriters = SettledSteps.SelectMany(step => Statements(step).Where(e => Kind(e)=="blocking").SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(TargetOwner)).ToHashSet(StringComparer.Ordinal);
         if (Signals.Any(s => s.Direction != "input" && !sequential.Contains(s.Name) && !combWriters.Contains(s.Name))) throw new IrValidationException("Undriven non-input signals are unsupported; net/variable initialization must not be guessed.");
         Continuous = sorted.AsReadOnly(); ValidateBlockingIsolation(); Json = json;
     }
@@ -79,6 +72,7 @@ public sealed class RtlDesign
     private int ValidateExpression(JsonElement e, int depth)
     {
         Budget(depth); string kind = Kind(e);
+        if (kind == "convert") return ValidateConversion(e,depth);
         if (kind == "ref") { JsonShape.Fields(e, ["kind", "name"]); return Signals[SignalId(Name(e))].Width; }
         if (kind == "const") { JsonShape.Fields(e, ["kind", "bits"], ["signed"]); if(e.TryGetProperty("signed",out var sign))_=sign.GetBoolean(); var bits=e.GetProperty("bits").GetString();if(string.IsNullOrEmpty(bits)||bits.Length>128||bits.Any(c=>c is not ('0' or '1' or 'x' or 'z')))throw new IrValidationException("Invalid RTL constant.");return bits.Length; }
         if (kind == "index") { JsonShape.Fields(e, ["kind", "name", "index"]); ValidateIndex(e.GetProperty("index"), depth + 1); return Memories[MemoryId(Name(e))].Width; }
@@ -95,6 +89,7 @@ public sealed class RtlDesign
         // A memory access reads storage as well as address expressions; isolation needs both identities.
         else if (Kind(e) == "index") { yield return Name(e); foreach (var n in References(e.GetProperty("index"))) yield return n; }
         else if (Kind(e) is "bitselect" or "partselect" or "indexedselect") { foreach (var n in References(e.GetProperty("value"))) yield return n; if (e.TryGetProperty("index", out var index)) foreach (var n in References(index)) yield return n; if (e.TryGetProperty("base", out var basis)) foreach (var n in References(basis)) yield return n; }
+        else if (Kind(e)=="convert") { foreach(var n in References(e.GetProperty("value")))yield return n; }
         else if (e.TryGetProperty("args", out var args)) foreach (var a in args.EnumerateArray()) foreach (var n in References(a)) yield return n;
     }
     private void ValidateStatement(JsonElement e, HashSet<string> writers, int depth)
@@ -162,7 +157,7 @@ public sealed class RtlDesign
             var statements=Statements(processes[i]).ToArray();var blocking=statements.Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);
             var nonblocking=statements.Where(e=>Kind(e)=="nba").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);
             if(blocking.Overlaps(nonblocking))throw new IrValidationException("A word cannot mix blocking and nonblocking assignments.");
-            if(Enumerable.Range(0,processes.Length).Any(j=>j!=i&&blocking.Overlaps(reads[j]))||Continuous.Any(a=>References(a.GetProperty("value")).Any(blocking.Contains)))throw new IrValidationException("Blocking destinations must be isolated from other processes and continuous logic.");
+            if(Enumerable.Range(0,processes.Length).Any(j=>j!=i&&blocking.Overlaps(reads[j]))||SettledSteps.SelectMany(Statements).Any(a=>new[]{"value","condition"}.Where(n=>a.TryGetProperty(n,out _)).Any(n=>References(a.GetProperty(n)).Any(blocking.Contains))))throw new IrValidationException("Blocking destinations must be isolated from other processes and continuous logic.");
         }
     }
     private static long StatementCost(JsonElement e)
@@ -184,13 +179,13 @@ public sealed class RtlDesign
     private static string TargetOwner(JsonElement target) => Kind(target) is "bitselect" or "partselect" or "indexedselect" ? Name(target.GetProperty("value")) : Name(target);
     private int ExpressionWidth(JsonElement e) => Kind(e) switch
     {
-        "ref" => Signals[SignalId(Name(e))].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
+        "convert"=>e.GetProperty("width").GetInt32(), "ref" => Signals[SignalId(Name(e))].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
         "bitselect" => 1, "partselect" => e.GetProperty("left").GetInt32() - e.GetProperty("right").GetInt32() + 1, "indexedselect" => e.GetProperty("width").GetInt32(),
         var kind when Scalar(kind) => 1, "shl" or "shr" or "ashr" => ExpressionWidth(e.GetProperty("args")[0]), "cond" => e.GetProperty("args").EnumerateArray().Skip(1).Max(ExpressionWidth), "concat" => e.GetProperty("args").EnumerateArray().Sum(ExpressionWidth), _ => e.GetProperty("args").EnumerateArray().Max(ExpressionWidth)
     };
     private bool ExpressionSigned(JsonElement e) => Kind(e) switch
     {
-        "ref"=>Signals[SignalId(Name(e))].Signed,"index"=>Memories[MemoryId(Name(e))].Signed,
+        "convert"=>e.GetProperty("signed").GetBoolean(), "ref"=>Signals[SignalId(Name(e))].Signed,"index"=>Memories[MemoryId(Name(e))].Signed,
         "const"=>e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),"castsigned"=>true,
         "castunsigned" or "bitselect" or "partselect" or "indexedselect" or "concat"=>false,
         var k when Scalar(k)=>false,"shl" or "shr" or "ashr"=>ExpressionSigned(e.GetProperty("args")[0]),
@@ -201,6 +196,7 @@ public sealed class RtlDesign
     {
         string kind = Kind(e);bool signed=forceSigned??ExpressionSigned(e);
         string Extend(string value)=>signed&&context>ExpressionWidth(e)?$"signed_resize({value},{context})":value;
+        if (kind == "convert") return Extend(Conversion(e));
         if (kind == "ref") return Extend($"s[{SignalId(Name(e))}]");
         if (kind == "const") return Extend("parse(\"" + e.GetProperty("bits").GetString() + "\")");
         if (kind == "index") { int id = MemoryId(Name(e)); return Extend($"read(mem[{id}],{MemoryIndex(e.GetProperty("index"),id)},{Memories[id].Width})"); }
@@ -308,7 +304,7 @@ public sealed class RtlDesign
         if (names.Values.Contains(className)) throw new ArgumentException("Port conflicts with generated class name.", nameof(top));
         var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
         code.AppendLine($"class {className} final : public vsrtl::Model {{\nbool previous_clock=false;\nstd::vector<W> previous_events;\nvoid settle(){{");
-        foreach (var assignment in Continuous) { int id = SignalId(Name(assignment.GetProperty("target"))); code.AppendLine($"s[{id}]={StoreWord(Expression(assignment.GetProperty("value"), Signals[id].Width),Signals[id])};"); }
+        EmitSettle(code);
         code.AppendLine("}\nvoid evaluate() override {");
         if(EventDriven)EventEvaluation(code);
         else {code.AppendLine($"auto clock=s[{SignalId(Clock)}];if(clock.x||clock.z)throw std::runtime_error(\"external clock must be known0/1\");settle();\nif(!previous_clock&&clock.v){{auto next=s;auto nextMem=mem;");int unique=0;ProcessStatement(code,Body,ref unique);code.AppendLine("s=std::move(next);mem=std::move(nextMem);settle();}\nprevious_clock=clock.v!=0;");}
@@ -328,7 +324,7 @@ public sealed class RtlDesign
     {
         var code = new StringBuilder("#include \"runtime.h\"\n#include <iostream>\n#include <fstream>\n#include <sstream>\nusing namespace vsrtl;\nint main(int argc,char**argv){try{if(argc!=3)throw std::runtime_error(\"stimulus and workers required\");int workers=std::stoi(argv[2]);if(workers<1||workers>256)throw std::runtime_error(\"workers out of range\");\nstd::vector<W>s{\n");
         code.AppendJoin(',', Signals.Select(s => s.TwoState?$"word(0,0,0,{s.Width})":$"unknown({s.Width})")); code.AppendLine("};std::vector<std::vector<W>>mem{"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},unknown({m.Width}))")); code.AppendLine("};auto settle=[&](){");
-        foreach (var assignment in Continuous) { int id = SignalId(Name(assignment.GetProperty("target"))); code.AppendLine($"s[{id}]={StoreWord(Expression(assignment.GetProperty("value"), Signals[id].Width),Signals[id])};"); } code.AppendLine("};");
+        EmitSettle(code); code.AppendLine("};");
         if(EventDriven){code.AppendLine($"std::vector<W> previous_events({Signals.Count},unknown(1));previous_events[{SignalId(Clock)}]=word(0,0,0,1);");foreach(var signal in Signals.Where(s=>s.TwoState&&s.Width==1))code.AppendLine($"previous_events[{SignalId(signal.Name)}]=word(0,0,0,1);");code.AppendLine("auto evaluate=[&](){");EventEvaluation(code);code.AppendLine("};");}
         code.AppendLine("std::ifstream input(argv[1]);if(!input)throw std::runtime_error(\"stimulus missing\");std::string line;int cycle=0;while(std::getline(input,line)){if(++cycle>100000)throw std::runtime_error(\"cycle budget\");std::istringstream row(line);std::string value;");
         foreach (var signal in Signals.Where(s => s.Direction == "input" && s.Name != Clock)) code.AppendLine($"if(!(row>>value)||value.size()!={signal.Width})throw std::runtime_error(\"invalid input width\");s[{SignalId(signal.Name)}]={(signal.TwoState?"two_state(parse(value))":"parse(value)")};");

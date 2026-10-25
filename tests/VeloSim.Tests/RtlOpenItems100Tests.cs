@@ -23,7 +23,8 @@ public class RtlOpenItems100Tests
         if(Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO")!="1")Assert.Ignore("Requires pinned Surelog/UHDM.");
         string[] bodies=iteration switch {
             91=>["initial q=0;"],92=>["always_ff @(posedge clk) #1 q<=a;"],93=>["always_comb q=a;"],
-            94=>["function automatic logic[7:0]f(input logic[7:0]x);f=x;endfunction always_ff @(posedge clk)q<=f(a);"],
+            // Pure automatic calls are now qualified; preserve the unsupported static-lifetime boundary.
+            94=>["function logic[7:0]f(input logic[7:0]x);f=x;endfunction always_ff @(posedge clk)q<=f(a);"],
             95=>["task automatic t(input logic[7:0]x);q<=x;endtask always @(posedge clk)t(a);"],
             96=>["typedef struct packed{logic[3:0]hi;logic[3:0]lo;} pair_t;pair_t s;always_ff @(posedge clk)begin s<=a;q<=s;end"],
             97=>["typedef union packed{logic[7:0]hi;logic[7:0]lo;} pair_t;pair_t s;always_ff @(posedge clk)begin s<=a;q<=s;end"],

@@ -1,6 +1,6 @@
 # VeloSim
 
-Current development: [200 requirement and coverage qualification cases](docs/requirements-200.md) and [stable StrictDoc requirements](requirements/velosim.sdoc), extending isolated blocking assignments to selected words, concatenations and fixed-memory elements. See the [earlier execution contract](docs/open-items-100.md) and [process, hierarchy and signed-word bounds](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
+Current development: [combinational and automatic-subroutine qualification](docs/combinational-subroutines-200.md), covering bounded `always_comb` and pure automatic functions/tasks. The previous milestone is [200 requirement and coverage qualification cases](docs/requirements-200.md) and [stable StrictDoc requirements](requirements/velosim.sdoc), extending isolated blocking assignments to selected words, concatenations and fixed-memory elements. See the [earlier execution contract](docs/open-items-100.md) and [process, hierarchy and signed-word bounds](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
 
 Open-source experimental Verilog/SystemVerilog simulation project.
 

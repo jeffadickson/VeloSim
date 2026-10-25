@@ -216,3 +216,59 @@ STATUS: Draft
 TITLE: General array and container operations
 STATEMENT: The simulator shall support multidimensional, queue, dynamic and associative array operations.
 COMMENT: Open backlog; this batch only extends blocking writes to whole elements of existing fixed one-dimensional memories.
+
+[REQUIREMENT]
+UID: VS-RTL-COMB-002
+STATUS: Active
+TITLE: Acyclic fully assigned combinational blocks
+STATEMENT: >>>
+The simulator shall settle bounded always_comb blocks together with continuous assignments in dependency order before sequential sampling and after the nonblocking commit. Within each block it shall preserve blocking statement order and procedural four-state conditions. Assignments may concatenate distinct whole-word parents up to 128 combined bits. Every whole-word destination shall have one owner and be assigned on every path before it is read. Feedback, read-before-write, latches, combinational memory writes, selected combinational writes and event-input-dependent combinational logic shall be rejected.
+<<<
+COMMENT: >>>
+Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: RtlCombinational200Tests cases 001..040 and CombinationalRepeatSettlesBeforeEdge; external SDK first evaluation, no-edge input changes, repeated eval, pre-edge sampling and post-commit settling; RtlCombinationalRobustnessTests including aggregate budget rejection. The frontend requires at least one supported sequential process; direct IR still requires a designated scalar clock. VS-RTL-COMB-001 remains the broader backlog.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCombinational.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCombinational200Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCombinationalRobustnessTests.cs
+- TYPE: File
+  VALUE: tools/CombinationalQualification.cs
+- TYPE: File
+  VALUE: tools/CombinationalMutationProbe.cs
+
+[REQUIREMENT]
+UID: VS-RTL-FUNC-001
+STATUS: Active
+TITLE: Pure bounded automatic functions
+STATEMENT: >>>
+The frontend shall inline nonrecursive automatic packed-word functions with positional input formals, whole-local blocking assignments, block and if statements, and function-name return assignment on every path. Every argument, local assignment and result shall retain its declared width, signedness and two-state conversion. Captured globals and parameter references, global writes, timing, explicit return statements, selected local writes and persistent-state reads shall be rejected. Calls shall have bounded depth, argument/local counts and symbolic expansion.
+<<<
+COMMENT: Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: cases 041..080 and 161..180, same original source through Surelog/UHDM and Icarus, standalone and SDK. General functions remain part of VS-RTL-PROC-001.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlConversion.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCombinational200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-TASK-001
+STATUS: Active
+TITLE: Pure zero-time automatic tasks
+STATEMENT: >>>
+The frontend shall inline automatic zero-time tasks with positional input and whole-word output arguments, pure local blocking computation and definite assignment of every output. Output copy-out shall sample all results before changing destination words. Inout/ref, aliased output parents, selected output actuals, timing, captured globals and nested task calls shall be rejected. Combined outputs shall be bounded to 128 bits.
+<<<
+COMMENT: Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: cases 081..120 and negative cases 181..200. Blocking-isolation rules continue to apply to calls in sequential processes. General tasks remain part of VS-RTL-PROC-001.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCombinational200Tests.cs
