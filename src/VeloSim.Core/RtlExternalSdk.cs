@@ -47,8 +47,9 @@ public static class RtlExternalSdk
             Include the generated V<top>.h in your host. Drive input port proxies,
             call eval() explicitly for settle/clock transitions, and final() once.
             One eval samples input changes as one event batch. The designated
-            primary clock starts at zero; other logic inputs start X and bit inputs
-            start zero. Bit inputs and destinations convert X/Z bits to zero.
+            primary clock, when present, starts at zero; other logic inputs start X and bit inputs
+            start zero. Clockless models have no synthetic clock: eval() settles their DAG on startup and input changes.
+            Bit inputs and destinations convert X/Z bits to zero.
             Use bits() for X/Z and up to 128-bit words; uint64 conversion rejects unknown or overflowing values.
             loadVpi() accepts a native plugin with a null-terminated exported
             vlog_startup_routines table before the first eval().
@@ -73,7 +74,7 @@ public static class RtlExternalSdk
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
         {
-            writer.WriteStartObject(); writer.WriteString("schema", "velosim.external.model.v1"); writer.WriteString("top", top); writer.WriteString("model_class", "V" + top); writer.WriteString("execution_scope", "one known-clock posedge process; serial; explicit eval");
+            writer.WriteStartObject(); writer.WriteString("schema", "velosim.external.model.v1"); writer.WriteString("top", top); writer.WriteString("model_class", "V" + top); writer.WriteString("execution_scope", design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
             writer.WriteStartArray("ports"); var names = design.ExternalPortNames();
             foreach (var signal in design.Signals.Where(s => s.Direction != "internal")) { writer.WriteStartObject(); writer.WriteString("name", signal.Name); writer.WriteNumber("width", signal.Width);writer.WriteBoolean("signed",signal.Signed);writer.WriteBoolean("two_state",signal.TwoState); writer.WriteString("direction", signal.Direction); writer.WriteString("member", names[signal.Name]); writer.WriteEndObject(); }
             writer.WriteEndArray(); writer.WriteStartArray("inputs");

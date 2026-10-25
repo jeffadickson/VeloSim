@@ -9,11 +9,11 @@ std::map<std::string,FlatMemory> flat_memories;
 std::set<const void*> visited_scopes;
 std::set<std::string> used_flat_names;
 std::string scope_name(H h){auto local=name(h);if(!local.empty())return local;const char* raw=vpi_get_str(vpiFullName,h);std::string full=raw?raw:"";auto dot=full.rfind('.');need(dot!=std::string::npos&&dot+1<full.size(),"unnamed hierarchy scope");return full.substr(dot+1);}
-void in_scope(int id){mod=flat_scopes.at(id).module;active_symbols=flat_scopes.at(id).names;}
+void in_scope(int id){mod=flat_scopes.at(id).module;active_symbols=flat_scopes.at(id).names;parameter_context=flat_scopes.at(id).handle;parameter_visible_scopes.clear();for(int parent=id;parent>=0;parent=flat_scopes.at(parent).parent)parameter_visible_scopes.push_back(flat_scopes.at(parent).handle);}
 int collect_scope(H scope,H module,int parent,const std::string& path,int depth=0){
  need(depth<32&&flat_scopes.size()<256,"hierarchy depth/scope budget exceeded");
  auto seen=visited_scopes.insert(identity(scope));need(seen.second,"duplicate elaborated scope");
- int id=int(flat_scopes.size());flat_scopes.push_back({scope,module,parent,path,{}});mod=module;
+ int id=int(flat_scopes.size());flat_scopes.push_back({scope,module,parent,path,{}});mod=module;bind_parameters(scope);
  for(int relation:{vpiPrimitive,vpiPrimitiveArray,vpiModuleArray})need(many(scope,relation).empty(),"primitives and module arrays unsupported");
  std::map<std::string,int> directions;
  if(parent<0)for(auto port:many(scope,vpiPort)){int direction=vpi_get(vpiDirection,port);need(direction==vpiInput||direction==vpiOutput,"inout unsupported");directions[name(port)]=direction;}
@@ -53,13 +53,13 @@ std::string flatten_design(H top){
   if(type(process)==vpiAlways&&vpi_get(vpiAlwaysType,process)==vpiAlwaysComb){need(combinational.size()<256,"combinational process budget exceeded");combinational.push_back({int(index),one(process,vpiStmt)});continue;}
   need(processes.size()<256,"process budget exceeded");need(type(process)==vpiAlways&&vpi_get(vpiAlwaysType,process)!=vpiAlwaysComb&&vpi_get(vpiAlwaysType,process)!=vpiAlwaysLatch,"only explicitly edge-controlled always processes supported");auto event=one(process,vpiStmt);need(type(event)==vpiEventControl,"event control required");FlatProcess lowered{int(index),one(event,vpiStmt),{}};input_events(one(event,vpiCondition),int(index),input_links,lowered.events);need(!lowered.events.empty(),"empty event list");auto primary=lowered.events.front().first;if(clock.empty())clock=primary;explicit_events|=lowered.events.size()!=1||!lowered.events.front().second||primary!=clock;processes.push_back(std::move(lowered));
  }
- need(!processes.empty(),"at least one sequential process required");
+ // An absent clock is explicit; combinational-only models never invent an event port.
  std::string out="{\"format\":\"velosim.rtl.v1\",\"signals\":[";bool first=true;
  for(auto& [flat,signal]:flat_signals){if(clock_aliases.count(flat))continue;if(!first)out+=",";first=false;out+="{\"name\":"+q(flat)+",\"width\":"+std::to_string(signal.width)+",\"direction\":"+q(signal.direction==vpiInput?"input":signal.direction==vpiOutput?"output":"internal");if(signal.is_signed)out+=",\"signed\":true";if(signal.two_state)out+=",\"two_state\":true";if(!signal.path.empty())out+=",\"path\":"+q(signal.path);out+="}";}
  out+="],\"memories\":[";first=true;for(auto& [flat,memory]:flat_memories){if(!first)out+=",";first=false;out+="{\"name\":"+q(flat)+",\"width\":"+std::to_string(memory.width)+",\"depth\":"+std::to_string(memory.depth)+(memory.lower?",\"lower\":"+std::to_string(memory.lower):"")+(memory.is_signed?",\"signed\":true":"")+"}";}
  out+="],\"continuous\":[";first=true;auto append=[&](const std::string& target,const std::string& value){if(!first)out+=",";first=false;out+="{\"target\":"+target+",\"value\":"+value+"}";};
  for(auto& binding:bindings){if(clock_aliases.count(binding.target))continue;in_scope(binding.parent);auto high=expr(binding.high);in_scope(binding.child);auto low=expr(binding.low);if(binding.direction==vpiInput)append(low,high);else append(high,low);}
  for(size_t index=0;index<flat_scopes.size();++index){in_scope(int(index));for(auto assignment:many(flat_scopes[index].handle,vpiContAssign)){auto object=static_cast<const UHDM::cont_assign*>(identity(assignment));need(!object->Delay()&&!object->VpiStrength0()&&!object->VpiStrength1(),"continuous delays and strengths unsupported");append(expr(one(assignment,vpiLhs)),expr(one(assignment,vpiRhs)));}}
- out+="],\"combinational\":[";first=true;for(auto& [scope,body]:combinational){in_scope(scope);if(!first)out+=",";first=false;out+=stmt(body);}out+="],\"clock\":"+q(clock)+",\"body\":";if(processes.size()>1)out+="{\"kind\":\"parallel\",\"items\":[";first=true;
- for(auto& process:processes){in_scope(process.scope);if(!first)out+=",";first=false;if(explicit_events){out+="{\"kind\":\"process\",\"events\":[";bool first_event=true;for(auto& [signal,positive]:process.events){if(!first_event)out+=",";first_event=false;out+="{\"signal\":"+q(signal)+",\"edge\":"+q(positive?"posedge":"negedge")+"}";}out+="],\"body\":";}out+=stmt(process.body);if(explicit_events)out+="}";}if(processes.size()>1)out+="]}";return out+"}\n";
+ out+="],\"combinational\":[";first=true;for(auto& [scope,body]:combinational){in_scope(scope);if(!first)out+=",";first=false;out+=stmt(body);}out+="],\"clock\":"+(processes.empty()?"null":q(clock))+",\"body\":";if(processes.size()>1)out+="{\"kind\":\"parallel\",\"items\":[";first=true;
+ for(auto& process:processes){in_scope(process.scope);if(!first)out+=",";first=false;if(explicit_events){out+="{\"kind\":\"process\",\"events\":[";bool first_event=true;for(auto& [signal,positive]:process.events){if(!first_event)out+=",";first_event=false;out+="{\"signal\":"+q(signal)+",\"edge\":"+q(positive?"posedge":"negedge")+"}";}out+="],\"body\":";}out+=stmt(process.body);if(explicit_events)out+="}";}if(processes.empty())out+="{\"kind\":\"block\",\"items\":[]}";if(processes.size()>1)out+="]}";return out+"}\n";
 }

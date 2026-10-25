@@ -17,6 +17,7 @@ protected:
  std::vector<std::vector<W>> mem;
  virtual void evaluate() = 0;
 public:
+ // clock is a scalar input index, or -1 for a clockless model. Initial evaluation is explicit.
  Model(std::string name, std::vector<Signal> signals, int clock);
  virtual ~Model();
  Model(const Model&) = delete; Model& operator=(const Model&) = delete;

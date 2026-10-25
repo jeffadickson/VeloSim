@@ -1,94 +1,87 @@
-# VeloSim handoff / continuation prompt
+# VeloSim continuation prompt
 
-Read this first in a new chat or VS Code. Follow applicable AGENTS.md/user instructions. Use C#/F# automation and PowerShell/native file operations; keep meaningful code comments, stable StrictDoc IDs, line/branch coverage, negative/malformed tests, reproducible property/fuzz inputs and focused mutations. New helpers are C# file-based apps published as Linux NativeAOT executables. Existing StrictDoc Python configuration/runtime is a required-tool exception.
+Read this file, docs/functions-100.md and requirements/velosim.sdoc first in another chat or VS Code. Follow applicable AGENTS.md/user instructions. Use C#/F# automation and native PowerShell file operations, Ninja with four jobs, meaningful comments, stable StrictDoc IDs, line/branch coverage, seeded properties/fuzzing, negative tests and focused mutations. Active helpers are C# file-based apps with Linux NativeAOT counterparts. Existing StrictDoc Python configuration/runtime is a required-tool exception.
 
-## Durable instruction
+**Before EVERY commit update this root prompt.md with the current outcome, evidence, limits and next steps, and include it in that commit.** Git is authoritative for the subsequent commit/push state; a commit cannot contain its own hash.
 
-**Before EVERY commit, update this root prompt.md with current state, evidence, limitations and concrete continuation steps. Include it in that commit.** Do not insert the new commit's own hash into itself: obtain it afterwards with `git log -1`.
+## Outcome and Git state
 
-## Git and task state
+The authorized 100-case batch implements three bounded contracts: clockless combinational-only models, explicit function returns with statically bounded loops, and safe parameter/localparam captures. All 100 ordered cases, ten scheduled builds, six AI checkpoint reviews (every fifteen cases), and three final deep source reviews passed. Main regression and coverage passed; final actual-evidence review found no source blocker. These were AI reviews, not human expert reviews or GitHub Actions runs.
 
-- Repository: https://github.com/jeffadickson/VeloSim.git
-- Initial requested push completed: origin/requirements-coverage-200 at de0cd6ce5a4ce38deeb2749ca073c83b1ab89d7a.
-- Current branch: combinational-subroutines-200, based on de0cd6c. This handoff is updated immediately before the final local batch commit. Run `git status --short` and `git log -1 --oneline` to establish the actual saved state; do not assume an interrupted chat committed.
-- User requested 200 numbered iterations, build every 10, AI peer review every 15 and final deep review before commit, focusing always_comb and functions/tasks. All 200 cases,20 scheduled builds and13 peer checkpoints passed. Three independent final source reviews accepted the bounded implementation. All three final AI evidence reviews accepted the measurements and bounded claims; see artifacts/comb-subroutines-200/reviews.md.
-- The new batch is for a LOCAL commit. Do not push this branch unless requested. No PR, automation or active goal was created. No human expert or executed GitHub Actions claim.
+Branch: clockless-functions-100. Parent milestone: c4bd7ae. Origin: https://github.com/jeffadickson/VeloSim.git. This handoff is updated immediately before the final batch commit. The user explicitly authorizes pushing the completed branch, including its parent local milestone. Do not force-push, merge the default branch or create a PR without a request. No goal or automation was created.
 
-## Open in VS Code / another chat
+Before continuing, inspect git status, the latest commit and remote branch SHA. Check artifacts/functions-100/final-evidence.json for the later actual commit/push verification. If that push is already complete, do not repeat development just because this file records precommit state.
+
+## Open in VS Code or another chat
 
 Windows PowerShell:
 
     Set-Location C:\Users\jeffd\Documents\Codex\2026-10-20\rea\work\VeloSim
     git status --short
     git log -1 --oneline
+    git ls-remote origin refs/heads/clockless-functions-100
     code .
 
-For native development use VS Code's WSL connection to Ubuntu-24.04 and open:
+For native development connect VS Code to WSL Ubuntu-24.04 and open:
 
     /mnt/c/Users/jeffd/Documents/Codex/2026-10-20/rea/work/VeloSim
 
-Tell the next chat: "Read root prompt.md, docs/combinational-subroutines-200.md and requirements/velosim.sdoc; inspect Git state and retained evidence before changing code. Continue one bounded open requirement with differential tests, coverage and review. Update prompt.md before every commit."
-
-Linux-only PATH used for qualification:
+Linux PATH:
 
     /home/jeffd/.local/bin:/opt/velosim/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-Use Ninja with 4 build jobs. Do not overlap primary builds/publications. Helpers and fixture paths currently target Linux-x64 on this host; /home/jeffd paths need adaptation on another machine. Linux-native fixture directories avoid mounted-filesystem build stalls. SDK 10.0.402, GCC 13, Clang/LLVM18, Ninja and Linux pwsh 7.6.7 were used.
+Toolchain: SDK10.0.402, GCC13, Clang/LLVM18, Ninja, Linux pwsh7.6.7, StrictDoc0.30.4. NativeAOT currently targets Linux-x64. Helpers/evidence use /home/jeffd paths; adapt them on another machine. Do not overlap primary builds/publications or kill unrelated processes. Copied mutation experiments use separate workspaces.
 
-## Current implementation
+Tell the next chat: "Read prompt.md, docs/functions-100.md and requirements/velosim.sdoc; verify Git and local evidence state. The bounded 100-case work is qualified. If its commit/push is unfinished, finish those authorized steps; otherwise select a documented open requirement, add reproductions and maintain traceability and coverage before changing code. Update prompt.md before every commit."
 
-- RtlCombinational.cs: unified continuous/procedural acyclic graph, whole-word/concat writes, definite assignment, procedural blocking order, unique ownership, no own read-before-write, no clock/event-input dependencies, aggregate20000 expanded-statement budget. Settle before sequential sampling and after NBA commit. Public Continuous inventory retains original continuous assignments only.
-- RtlConversion.cs: explicit argument/local/return width 1..128, signedness and two-state conversion barriers. Caller context cannot remove local/formal truncation.
-- RtlDesign.cs integrates optional combinational IR, conversions, both emitters and blocking isolation against every settled RHS/condition read.
-- native/uhdm/rtl_subroutines.h structurally interprets pure automatic function/task bodies into typed expressions using fresh frames. Actuals lower in caller context; nested function frames restore correctly. Procedural if handles X/Z as else. UHDM cloned locals bind by declaration type/scope/file/line/column. Task results are sampled together before copy-out.
-- rtl.cpp checks each expression subtree and cumulative concat expansion. Global/memory/parameter captures are rejected. rtl_flatten.h collects always_comb with supported sequential processes.
-- Cases001..120 include independent SDK first-eval, input-only/no-edge, rising-edge and repeated-eval assertions, plus standalone/SDK/Icarus full traces using the SAME original HDL. Workers1/4/8 check determinism; RTL evaluation is serial.
-- Cases121..140 assert intended semantic diagnostics with reversed order/limb widths in the second half.141..160 are schema/declaration negatives.161..180 use128-bit actuals/results and1..128-bit signed formals/local overflow/two-state boundaries.181..200 reject actual unsupported HDL with specific diagnostics. Additional tests cover comb repeat, local parameter captures and cross-scope call rejection.
+## Implementation invariants
 
-## Completed verification / retained evidence
+- RtlDesign.Clock is nullable. clock:null requires a canonical empty sequential body. Emitters settle every actual input without inventing a clock or discarding an input named clk. Native Model accepts -1 only as the absent-clock sentinel; all other interface validation remains. SDK manifests/readmes describe both modes.
+- Pure calls use continuation interpretation and fresh frames. Explicit return terminates its path, including enclosing loop increments. Evaluate nested return expressions before taking references into the caller return map, since frame restoration invalidates them. Branch-only loop locals must not escape path merges.
+- repeat samples a known nonnegative count once, at most256. for uses a known local counter up to32bits, typed width/sign/context rules, one initializer/increment, counter+immutable-constant controls, at most256 trips, progress/wrap rejection and shared budgets. Nested-loop scanning must visit both singular/vector init/inc and++/--, deduplicate identities and retain its20k traversal bound. Body controls may not mutate an enclosing counter. Independent nested counters are qualified.
+- Formal IODecl reads are allowed only inside pure calls and resolve through registered local identity/strict clone metadata; IODecl.Expr may link to its registered word. Parity regressions cross bits63/64 and read127. Selected local writes remain rejected.
+- Parameter binding uses original typed declarations and visible elaborated instance context. Original lexical lookup honors variable/formal shadowing and rejects ambiguity. Exact file/coordinates reconnect malformed elaborated links; never substitute a caller parameter by spelling. Preserve original declaration types independently from override values. Known literal/unary-literal int32 and packed logic/bit values through128bits, including literal overrides, are qualified. Compound parameter expressions and parameter selections are rejected, including folded source forms, rather than trusting lossy UHDM folding. Whole parameters may pass through typed formals for later formal indexing. Hierarchical function calls/general constant evaluation remain unsupported.
+- Existing acyclic fully assigned whole-word ownership/isolation rules still apply. General scheduling, latches/feedback, runtime-dependent loops, while/do, break/continue, persistent/mutable captures, ref/inout and broader aggregates/containers remain open. Consult Draft requirements before claiming completeness.
 
-Batch root: artifacts/comb-subroutines-200/. Generated artifacts are ignored by Git and are local evidence; keep them separately if moving machines.
+## Final verification
 
-- qualification-summary.json:40 groups of 5 passed cases;20 scheduled solution/native/exporter builds, Ninja 4; reviews.md:13 accepted checkpoints015..195 and final reviews. Early zero-test filters/setup failures are retained but excluded from qualification.
-- Full run20261025-042139-8795316:831 executed/passed,0 failed; TRX 835 total with 4 Explicit opt-in tests excluded. Six native CTest checks passed. Full log coverage-final.log, TRX artifacts/tests/<RunID>/.
-- Main report artifacts/coverage/<RunID>/index.html, Cobertura.xml, gate.json and source/binary evidence. Managed2930/3234lines90.60%,4363/5913branches73.79%; native runtime528/533lines99.06%,1087/1242branches87.52%. Explicit85/70/95/85line/branch gates passed. LLVM reported 43mismatched functions; retain that coverage limitation.
-- Separate exporter-coverage/:344 fresh profiles, exact LLVM18/binary and six-source hashes;250/264lines94.70%,755/1052branches71.77%. No merge/export warnings. Separate denominator; no runtime threshold claim.
-- helper-coverage/evidence.json: managed counterpart controller 23/23 lines (100%),28/40 branches (70%); mutation 73/73 lines (100%),47/66 branches (71.21%). Same-source managed IL measured; AOT machine-code coverage unmeasured. Native ELF binaries were verified and executed.
-- Final NativeAOT mutation run mutations/20261025-040937-8751431/report.json and managed measured run20261025-041608-5991804:5/5 control,5/5 focused semantic faults caught. Faults: omit settling, disable definite assignment, disable read-before-write, corrupt second concat output, omit conversion. Infrastructure failures/compile failures/timeouts/zero tests never count as kills. Not a whole-program mutation score.
-- Both guard properties ran 500 trials with seeds(20261025,864013)/(20261026,864013), shrinking disabled-guard counterexamples to(0uy,true), one shrink. Malformed structural IR fuzzing ran 500 trials seed 20261025; not a general HDL grammar fuzzer.
-- sanitizers/report.json: generated models001/061/101/176 matched full36/36/36/24vector traces under ASan+UBSan, no diagnostics. Four models are bounded evidence, not all-generated-code coverage.
-- Native bundle artifacts/bundles/20261025-040938-3068248/velosim-linux-x64.tar.gz passed packaged checks. Built from qualified dirty working tree at base de0cd6c before final commit, not from the eventual commit hash.
-- frontend-evidence/index.json now retains485completed historical/final fixture reports and12,302referenced files, all SHA-verified. These are retained runs, not485distinct language requirements. It maps Linux fixtures to retained files; mutations/native-evidence-index.json retains 654 mutation/control fixture files. Original reports use Linux absolute paths; mirror indexes provide retained mappings.
-- Final StrictDoc export: artifacts/comb-subroutines-200/strictdoc/html/. Stable narrower contracts VS-RTL-COMB-002, VS-RTL-FUNC-001 and VS-RTL-TASK-001 are Active. Broad COMB-001/PROC-001 remain Draft backlog. Relations are file-level with named test evidence; no automatic C# method tracing claim.
-- coverage-current-precommit.log verifies current source/binary/report binding without rebuilding. After commit run the same readonly check and save coverage-current-postcommit.log. Do not rebuild measured binaries merely to recheck evidence.
+Local ignored batch root: artifacts/functions-100. Preserve artifacts separately when moving machines; Git contains code, fixtures and the summarized report, not all local binaries/traces.
 
-## Reproduction commands (inside WSL checkout)
+- qualification-summary.json:100 passed numbered cases in20groups, ten builds and six accepted checkpoint reviews. Cases081–090 repeat five malformed IR shapes; they are not ten distinct features. reviews.md records fixes and AI acceptances. Later final regression requalifies earlier cases against the final nested-counter guard.
+- Main run20261025-063443-6553218:959 executed tests passed, zero failures; TRX has959Passed and fourNotExecuted Explicit records (counter total963, notExecuted0). Both Release/instrumented CTest suites6/6. Same original HDL goes to Surelog/Icarus; workers1/4/8 check deterministic serial evaluation, not speedup.
+- Main coverage gate: managed2935/3239lines90.61%,4381/5931branches73.87% (minimum85/70); native runtime528/533lines99.06%,1095/1246branches87.88% (minimum95/85). LLVM reported42functions with mismatched data during runtime export/render; native percentages remain qualified by that warning. Gate success does not resolve it. Reports/evidence/source manifest: artifacts/coverage/20261025-063443-6553218. Readonly coverage-current passed after restoring compiler-only generic lockfile entries; normalized application dependencies were unchanged.
+- Separate six-file UHDM exporter coverage:460 fresh profiles,408/431lines94.66%,1157/1630branches70.98%; no threshold imposed. Exact retained binary and six current source hashes verified. Merge/export/LCOV/HTML stderr logs empty. JSON/LCOV/HTML/profiles/bindings: exporter-coverage/. Twenty-three lines and473branches remain uncovered.
+- Native Core mutation run core-mutations/20261025-060609-0387127 and measured managed20261025-061422-3047273 each6passingcontrols+6semanticfaults detected. Final-source exporter runs mutations/20261025-062559-8591642 and20261025-062859-6024218 each3controls+3semanticfaults (return fallthrough, repeat+1, erased capture). Compile errors/timeouts/zero tests are never kills. Reports bind source and loaded binaries; copied workspaces protect the root.
+- helper-coverage/evidence.json: controller26/26lines,40/60branches66.67%; Core mutator74/74,47/66branches71.21%; exporter mutator53/53,37/52branches71.15%. These measure managed counterparts of the same C# source; AOT instructions are unmeasured. Native ELF execution/signatures verified. HTML: helper-coverage/html/.
+- ASan/UBSan sanitizers/report.json: six generated models and matching exporter outputs passed, vectors24/24/24/24/24/16; native external sanitizer suite passed. Generated-model leak checks enabled; exporter leak checks disabled; upstream UHDM uninstrumented. This is selected evidence, not all generated instruction coverage.
+- Malformed clockless fuzz500trials seed20261026; FsCheck hidden-body property500trials seed(20261027,864013), with reproducible counterexample support. Supplemental actual tests cover signed/context sizing, scoped/nested loops, parameter scopes/overrides/types, two sourcefiles, parity reads and negative selection/compound/control guards.
+- intro-example/report.json: published NativeAOT CLI generated the combined clockless/early-return/bounded-loop/BIAS-capture SDK; native host and original-HDL Icarus outputs match independently specified3,4,5,11,4. Original source/logs/host/traces retained.
+- Native bundle artifacts/bundles/20261025-063254-5370740/velosim-linux-x64.tar.gz passed smokes. Built from qualified dirty working tree at basec4bd7ae before this commit, not from the eventual commit archive.
+- StrictDoc IDs VS-RTL-CLOCKLESS-001 / VS-RTL-FLOW-001 / VS-RTL-PARAM-001 are Active with final-run evidence. Broader requirements remain Draft. Final export: artifacts/functions-100/strictdoc/html, strictdoc-final.log. File-level links/named tests maintained; automatic C# method extraction is not claimed.
 
-    dotnet build tests/VeloSim.Tests -c Release -m:4
-    make combinational-qualification-tool JOBS=4
-    artifacts/publish/CombinationalQualification/CombinationalQualification "$PWD" 1 15
+Coverage excludes NativeAOT instructions, all-generated-model instruction coverage, upstream dependencies and uninstrumented configs/workflows; no MC/DC claim. Differential behavior, coverage, focused mutations and sanitizers are separate evidence, not proof of full Verilog compliance.
+
+## Commands and remaining backlog
+
+Inside WSL checkout:
+
+    make test JOBS=4
+    make coverage JOBS=4
+    make function-mutation-probe JOBS=4
     make combinational-mutation-probe JOBS=4
     make bundle JOBS=4
-    make coverage JOBS=4
+    artifacts/publish/CombinationalQualification/CombinationalQualification "$PWD" 1 15 functions100
 
-Set VELOSIM_REAL_FIFO=1 and VELOSIM_RTL_EVIDENCE_ROOT=/home/jeffd/.local/share/VeloSim/comb200/frontend for actual frontend coverage. Default exporter: artifacts/with-uhdm/bin/velosim-uhdm-rtl. Coverage exporter: /home/jeffd/.local/share/VeloSim/requirements-200/exporter-coverage/bin/velosim-uhdm-rtl (current rebuilt binary; prior retained copy is separate). Set VELOSIM_UHDM_RTL and a NEW dedicated VELOSIM_UHDM_PROFILE_FILE pattern when measuring exporter coverage. Never mix setup/old profiles. Runtime LLVM profiles are separate.
+Use a NEW dedicated VELOSIM_UHDM_PROFILE_FILE for exporter measurement; never mix old/setup profiles. The retained merge script is artifacts/functions-100/merge-exporter.ps1; refresh-frontend.ps1 preserves finalized fixture references and verifies hashes. These are local file/report operations, not shipped simulator helpers.
 
-Readonly current-evidence check, with explicit thresholds:
+Readonly current-source/binary gate (do not substitute an older run):
 
-    env VELOSIM_MIN_MANAGED_LINE=85 VELOSIM_MIN_MANAGED_BRANCH=70 VELOSIM_MIN_NATIVE_LINE=95 VELOSIM_MIN_NATIVE_BRANCH=85 artifacts/publish/VeloSim.Build/VeloSim.Build coverage-current artifacts/coverage/20261025-042139-8795316/Cobertura.xml
+    env VELOSIM_MIN_MANAGED_LINE=85 VELOSIM_MIN_MANAGED_BRANCH=70 VELOSIM_MIN_NATIVE_LINE=95 VELOSIM_MIN_NATIVE_BRANCH=85 artifacts/publish/VeloSim.Build/VeloSim.Build coverage-current artifacts/coverage/20261025-063443-6553218/Cobertura.xml
 
-StrictDoc export uses the required tool runtime:
+Requirements export:
 
-    uv tool run --from strictdoc==0.30.4 strictdoc export requirements --config strictdoc_config.py --output-dir artifacts/comb-subroutines-200/strictdoc --no-parallelization
+    uv tool run --from strictdoc==0.30.4 strictdoc export requirements --config strictdoc_config.py --output-dir artifacts/functions-100/strictdoc --no-parallelization
 
-NativeAOT restore changes compiler-only lock entries; those incidental changes were restored. SourceEvidence normalizes those compiler entries while retaining actual dependencies. The checkpoint helper freezes .cs/.cpp/.h/.csproj files only; final SourceEvidence covers wider build configuration. Neither covers the whole external toolchain.
+Next development candidates: broader event/delay scheduling and interacting processes; runtime procedural loops and richer functions/tasks; general constant expressions/parameter selections; broader hierarchy/generate scopes, types and arrays. Preserve fail-closed diagnostics until each new contract has independent same-input comparison and negative/resource tests. Investigate the runtime LLVM42-function profile mismatch before treating its percentages as unqualified coverage.
 
-## Remaining requirements / useful next work
-
-Read the broader Draft requirements before selecting one. Frontend currently requires a supported sequential process; pure comb-only HDL modules remain unsupported, and direct IR still requires a scalar clock. Selected/memory combinational writes, latches, feedback/read-before-write and event-input-dependent comb logic remain rejected. Functions/tasks are pure automatic packed logic/bit only, bounded1..128bits and block/if/whole-local assignments; function-name returns work, explicit return/control flow, persistent/captured state, parameter captures, ref/inout, nested tasks and hierarchical call AST type 5000 remain unsupported. Static local syntax overwritten before every read can be observationally pure; do not claim universal static-local syntax rejection. Task output parents must be distinct whole words with combined width<=128; input/output aliases are supported via snapshot copy-out.
-
-Candidates: qualify comb-only frontend designs without inventing clock semantics; extend pure function control flow one construct at a time; add safe constant-parameter capture using declaration identity rather than names. General scheduling, structures/unions/enums and dynamic containers remain broader work. A manual generate-localparam probe rejected unresolved P and was outside qualified scope; it did not demonstrate silently wrong output.
-
-Report remaining unmeasured areas: upstream dependencies, generated C++ instruction coverage, NativeAOT instructions and uninstrumented configs/workflows. Keep historical docs/requirements-200.md metrics separate from this batch. Before any new commit, complete relevant tests/coverage/review and UPDATE THIS FILE.
-
-Precommit closeout: all final source/evidence reviews accepted; the qualification summary status was refreshed, final StrictDoc export passed, frontend mirror finished485reports/12,302verified files, and the precommit current-source/binary coverage check passed. This file was updated immediately before the batch commit. Verify actual commit/status with Git; postcommit coverage-current is a readonly closeout step.
+Final precommit closeout: all reviews, StrictDoc and gates completed. The final payload mirror verified571 accepted reports and14526 referenced files; final source/retained-report membership hashes matched. final-evidence.json records the completed proof. This prompt was updated immediately before the batch commit. Next: commit the staged intended code/docs/lock; rerun readonly coverage-current; push -u origin clockless-functions-100; verify remote SHA equals HEAD and clean status; record actual SHA/push in ignored final-evidence.json. If Git/evidence show those steps already completed, leave completed history intact.

@@ -95,10 +95,10 @@ struct Model::State {
  std::unordered_map<size_t,W> pending; std::vector<void*> plugins;
 };
 Model::Model(std::string name,std::vector<Signal> signals,int clock):state(std::make_unique<State>()){
- if(name.empty()||signals.empty()||signals.size()>256||clock<0||size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)throw std::invalid_argument("invalid external model interface");
+ if(name.empty()||signals.empty()||signals.size()>256||clock < -1||(clock >= 0 && (size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)))throw std::invalid_argument("invalid external model interface");
  state->name=std::move(name);state->names.reserve(signals.size());
  for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>128||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(sig.two_state?word(0,0,0,sig.width):unknown(sig.width));}
- for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction,signals[i].is_signed,signals[i].two_state});s[clock]=word(0,0,0,1);
+ for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction,signals[i].is_signed,signals[i].two_state});if(clock>=0)s[clock]=word(0,0,0,1);
 }
 Model::~Model(){
  // Derived state is already gone; destruction invalidates callbacks, never calls HDL or plugins.

@@ -28,3 +28,7 @@ combinational-qualification-tool:
 combinational-mutation-probe:
 	$(DOTNET) publish tools/CombinationalMutationProbe.cs -c Release -r linux-x64 -p:PublishAot=true -p:VeloSimNativeJobs=$(JOBS) -o artifacts/publish/CombinationalMutationProbe
 	"artifacts/publish/CombinationalMutationProbe/CombinationalMutationProbe" "$(CURDIR)"
+.PHONY: function-mutation-probe
+function-mutation-probe:
+	$(DOTNET) publish tools/FunctionMutationProbe.cs -c Release -r linux-x64 -p:PublishAot=true -p:VeloSimNativeJobs=$(JOBS) -o artifacts/publish/FunctionMutationProbe
+	"artifacts/publish/FunctionMutationProbe/FunctionMutationProbe" "$(CURDIR)"

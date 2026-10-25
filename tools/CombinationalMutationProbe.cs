@@ -12,14 +12,14 @@ if(args.Length>1)throw new ArgumentException("Usage: CombinationalMutationProbe 
 string root=Path.GetFullPath(args.Length==1?args[0]:Environment.CurrentDirectory);
 string source=Path.Combine(root,"src/VeloSim.Core/RtlDesign.cs");
 if(!File.Exists(source))throw new ArgumentException("A VeloSim checkout is required.");
-string output=Path.Combine(root,"artifacts/comb-subroutines-200/mutations",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff",CultureInfo.InvariantCulture));
+string output=Path.Combine(root,"artifacts/functions-100/core-mutations",DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff",CultureInfo.InvariantCulture));
 Directory.CreateDirectory(output);
 string core=Path.Combine(output,"Core"),probe=Path.Combine(output,"Tests");
 CopySources(Path.GetDirectoryName(source)!,core);Directory.CreateDirectory(probe);
 File.Copy(Path.Combine(root,"Directory.Build.props"),Path.Combine(output,"Directory.Build.props"));
 // This isolated project reuses actual test sources and dependency pins, avoiding a separate test oracle.
 var packages=XDocument.Load(Path.Combine(root,"tests/VeloSim.Tests/VeloSim.Tests.csproj")).Descendants("PackageReference").Select(element=>new XElement(element));
-string[] testFiles=["RtlCombinational200Tests.cs","RtlCombinationalRobustnessTests.cs","RtlIndexedConformanceTests.cs"];
+string[] testFiles=["RtlCombinational200Tests.cs","RtlCombinationalRobustnessTests.cs","RtlIndexedConformanceTests.cs","RtlFunctions100Tests.cs"];
 foreach(string file in testFiles)File.Copy(Path.Combine(root,"tests/VeloSim.Tests",file),Path.Combine(probe,file));
 var project=new XDocument(new XElement("Project",new XAttribute("Sdk","Microsoft.NET.Sdk"),
     new XElement("PropertyGroup",new XElement("AssemblyName","VeloSim.Tests"),new XElement("IsTestProject","true"),new XElement("IsPackable","false"),new XElement("TestingPlatformDotnetTestSupport","false")),
@@ -27,9 +27,10 @@ var project=new XDocument(new XElement("Project",new XAttribute("Sdk","Microsoft
 string projectFile=Path.Combine(probe,"Probe.csproj");project.Save(projectFile);
 string original=File.ReadAllText(source),copy=Path.Combine(core,"RtlDesign.cs");
 string baselineHash=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source)));
-var frozen=new[]{"src/VeloSim.Core/RtlDesign.cs","src/VeloSim.Core/RtlCombinational.cs","src/VeloSim.Core/RtlConversion.cs","tests/VeloSim.Tests/RtlCombinational200Tests.cs","tests/VeloSim.Tests/RtlCombinationalRobustnessTests.cs","tests/VeloSim.Tests/RtlIndexedConformanceTests.cs"}.ToDictionary(file=>file,file=>Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root,file)))));
+var frozen=new[]{"src/VeloSim.Core/RtlDesign.cs","src/VeloSim.Core/RtlCombinational.cs","src/VeloSim.Core/RtlConversion.cs","tests/VeloSim.Tests/RtlCombinational200Tests.cs","tests/VeloSim.Tests/RtlCombinationalRobustnessTests.cs","tests/VeloSim.Tests/RtlIndexedConformanceTests.cs","tests/VeloSim.Tests/RtlFunctions100Tests.cs"}.ToDictionary(file=>file,file=>Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root,file)))));
 void VerifyFrozen(){foreach(var pair in frozen)if(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root,pair.Key))))!=pair.Value)throw new IOException("Source changed during mutations: "+pair.Key);}
 var mutations=new[]{
+ new Mutation("disable-clockless-body-guard","RtlDesign.cs","if (CombinationalOnly && (Kind(Body)","if (CombinationalOnly && Environment.GetEnvironmentVariable(\"VELOSIM_MUTANT_KEEP_GUARD\")==\"1\" && (Kind(Body)","FullyQualifiedName~HiddenClocklessBodyProperty","CLOCKLESS_EMPTY_BODY",0),
  new Mutation("omit-settling","RtlDesign.cs","EmitSettle(code);","code.AppendLine(\"/* omitted settle */\");","TestCategory=Comb200_001","RTL_TRACE_MISMATCH",1),
  new Mutation("disable-definite-assignment","RtlCombinational.cs","if(!owned.SetEquals(assigned))","if(!owned.SetEquals(assigned)&&Environment.GetEnvironmentVariable(\"VELOSIM_MUTANT_KEEP_GUARD\")==\"1\")","FullyQualifiedName~MissingBranchAssignmentProperty","COMB_DEFINITE_ASSIGNMENT",0),
  new Mutation("disable-read-before-write","RtlCombinational.cs","if(References(expression).Any(n=>owned.Contains(n)&&!assigned.Contains(n)))","if(References(expression).Any(n=>owned.Contains(n)&&!assigned.Contains(n))&&Environment.GetEnvironmentVariable(\"VELOSIM_MUTANT_KEEP_GUARD\")==\"1\")","FullyQualifiedName~SelfReadBeforeWriteProperty","COMB_READ_BEFORE_WRITE",0),
@@ -56,7 +57,7 @@ try{
 }finally{VerifyFrozen();
     foreach(var file in new[]{"RtlDesign.cs","RtlCombinational.cs","RtlConversion.cs"})File.Copy(Path.Combine(root,"src/VeloSim.Core",file),Path.Combine(core,file),true);
     using var report=File.Create(Path.Combine(output,"report.json"));using var json=new Utf8JsonWriter(report,new JsonWriterOptions{Indented=true});
-    json.WriteStartObject();json.WriteString("scope","Five focused mutations; not a whole-program mutation score");json.WriteString("source_sha256",baselineHash);json.WriteStartObject("source_hashes");foreach(var file in new[]{"RtlDesign.cs","RtlCombinational.cs","RtlConversion.cs"})json.WriteString(file,Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root,"src/VeloSim.Core",file)))));json.WriteEndObject();json.WriteStartObject("frozen_inputs");foreach(var pair in frozen)json.WriteString(pair.Key,pair.Value);json.WriteEndObject();json.WriteStartArray("runs");
+    json.WriteStartObject();json.WriteString("scope","Six focused mutations; not a whole-program mutation score");json.WriteString("source_sha256",baselineHash);json.WriteStartObject("source_hashes");foreach(var file in new[]{"RtlDesign.cs","RtlCombinational.cs","RtlConversion.cs"})json.WriteString(file,Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root,"src/VeloSim.Core",file)))));json.WriteEndObject();json.WriteStartObject("frozen_inputs");foreach(var pair in frozen)json.WriteString(pair.Key,pair.Value);json.WriteEndObject();json.WriteStartArray("runs");
     foreach(var result in results){json.WriteStartObject();json.WriteString("name",result.Name);json.WriteNumber("exit_code",result.ExitCode);json.WriteNumber("total",result.Total);json.WriteNumber("passed",result.Passed);json.WriteNumber("failed",result.Failed);json.WriteBoolean("semantic_failure",result.SemanticFailure);json.WriteEndObject();}
     json.WriteEndArray();json.WriteEndObject();
 }

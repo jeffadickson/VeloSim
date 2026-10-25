@@ -26,7 +26,20 @@ PLI_INT32 switchContext(p_cb_data){alternate->useVpi();return 0;}
 PLI_INT32 pinnedContext(p_cb_data){auto q=named("test.q");s_vpi_value value{};value.format=vpiBinStrVal;vpi_get_value(q,&value);pinned=q&&std::string(value.value.str)==std::string(63,'0')+"1";return 0;}
 #include "external_cycles.h"
 #include "external_wide_tests.h"
+// The absent-clock sentinel must preserve every actual input and reject all other
+// negative indices, invalid scalar clocks and malformed public interfaces.
+void clocklessInterfaceTests(){
+ struct Probe:Model{
+  Probe(std::vector<Signal> ports,int clock):Model("clockless",std::move(ports),clock){}
+  void evaluate() override{if(s.size()==1)s[0]=word(165,0,0,8);else s[1]=bit_not(s[0],4);}
+ };
+ Probe model({{"clk",4,vpiInput},{"q",4,vpiOutput}},-1);check(text(model.get(0))=="xxxx");model.put(0,word(5,0,0,4));model.eval();check(text(model.get(1))=="1010");model.eval();check(text(model.get(1))=="1010");model.timeInc(2);model.eval();check(text(model.get(1))=="1010");model.final();
+ Probe constant({{"q",8,vpiOutput}},-1);constant.eval();check(text(constant.get(0))=="10100101");constant.final();
+ for(int clock:{-2,2,0,1}){bool rejected=false;try{Probe invalid({{"a",4,vpiInput},{"q",4,vpiOutput}},clock);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
+ bool rejected=false;try{Probe invalid({{nullptr,1,vpiInput}},-1);}catch(const std::invalid_argument&){rejected=true;}check(rejected);
+}
 int main(int argc,char** argv){try{
+ clocklessInterfaceTests();
  externalWideTests();
  runCycles();
  check(!named("test.q")&&vpi_chk_error(nullptr));

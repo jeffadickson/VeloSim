@@ -105,7 +105,7 @@ public class RtlCombinational200Tests
     [Test,Category("RealFifo")]
     public Task CrossScopeCallsAreRejected()=>RejectFrontend(186,2);
     [Test,Category("RealFifo")]
-    public Task SubroutineLocalParameterCaptureIsRejected()=>RejectFrontend(186,1);
+    public Task SubroutineLocalParameterCaptureResolvesOwnDeclaration()=>RtlIndexedConformanceTests.Qualify("localparam-shadow", "module dut(input logic clk,input logic[7:0]a,output logic[7:0]q);parameter int P=1;function automatic logic[7:0]f(input logic[7:0]x);localparam int P=9;return x+P;endfunction always @(posedge clk)q<=f(a);endmodule",[new("clk",1,"input"),new("a",8,"input"),new("q",8,"output")],[new(){["a"]="00000000"},new(){["a"]="11111000"}],sdk:true,selectedProbe:false);
     static async Task RejectFrontend(int id,int captureMode=0){
         if(Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO")!="1")Assert.Ignore("Requires Surelog/UHDM");
         string[] bodies=[
@@ -127,7 +127,7 @@ public class RtlCombinational200Tests
             "function automatic logic[7:0]f(input logic[7:0]x);static logic[7:0]n;begin n=n+1;f=n;end endfunction always_comb q=f(a);",
             "function automatic logic[7:0]f(input logic[7:0]x);begin r=x;f=x;end endfunction always_comb q=f(a);",
             "function automatic logic[7:0]f(output logic[7:0]x);begin x=0;f=x;end endfunction always_comb q=f(a);",
-            "function automatic logic[7:0]f(input logic[7:0]x);return x;endfunction always_comb q=f(a);",
+            "function automatic logic[7:0]f(input logic[7:0]x);return;endfunction always_comb q=f(a);",
             "task automatic t(input logic[7:0]x,output logic[7:0]y);if(x)y=x;endtask always_comb t(a,q);",
             "function automatic logic[7:0]f(input logic[7:0]x);logic[7:0]n;f=n;endfunction always_comb q=f(a);",
             "function automatic logic[7:0]f(input logic[7:0]x);begin f=x;"+string.Concat(Enumerable.Repeat("f=f+f;",20))+"end endfunction always_comb q=f(a);"
@@ -138,7 +138,7 @@ public class RtlCombinational200Tests
         string root=Root(),path=Path.Combine(Environment.GetEnvironmentVariable("VELOSIM_RTL_EVIDENCE_ROOT")??Path.Combine(root,"artifacts"),$"comb200-reject-{id}-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(path);string source=Path.Combine(path,"design.sv");File.WriteAllText(source,text);
         var runner=new RecordingProcessRunner(new ProcessRunner());var elaboration=await new SurelogFrontend(runner).ElaborateAsync([source],Path.Combine(path,"surelog"),"dut",executable:Environment.GetEnvironmentVariable("VELOSIM_SURELOG")??"surelog",workers:4);
         var result=await runner.RunAsync(Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL")??Path.Combine(root,"artifacts/with-uhdm/bin/velosim-uhdm-rtl"),[elaboration.UhdmPath,Path.Combine(path,"design.json"),"dut"],path,TimeSpan.FromMinutes(3));
-        string[] diagnostics=["untimed blocking","every path","before definite","feedback","Conflicting","captured global","only automatic","unsupported pure subroutine statement","input formals and task outputs","aliased task outputs","whole local","every path","recursive","local read before assignment","not bound to a local","input formals and task outputs","unsupported pure subroutine statement","every path","local read before assignment","normalized RTL"];
+        string[] diagnostics=["untimed blocking","every path","before definite","feedback","Conflicting","captured global","only automatic","unsupported pure subroutine statement","input formals and task outputs","aliased task outputs","whole local","every path","recursive","local read before assignment","not bound to a local","input formals and task outputs","function return requires assigned result or expression","every path","local read before assignment","normalized RTL"];
         string expectedDiagnostic=captureMode switch{1=>"subroutine parameter captures",2=>"unsupported reference type 5000",_=>diagnostics[id-181]};bool rejected=result.ExitCode==1&&result.StandardError.Contains("RTL lowering rejected:",StringComparison.Ordinal);
         if(rejected)Assert.That(result.StandardError,Does.Contain(expectedDiagnostic));
         if(result.ExitCode==0){var failure=Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(File.ReadAllText(Path.Combine(path,"design.json"))));Assert.That(failure!.Message,Does.Contain(expectedDiagnostic));rejected=true;}

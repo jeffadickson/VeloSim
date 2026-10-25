@@ -21,8 +21,9 @@ public class RtlOpenItems100Tests
     public async Task Iterations091To100UnsupportedBoundaries(int iteration)
     {
         if(Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO")!="1")Assert.Ignore("Requires pinned Surelog/UHDM.");
+        // Fully assigned clockless blocks are now supported; case93 retains a latch rejection.
         string[] bodies=iteration switch {
-            91=>["initial q=0;"],92=>["always_ff @(posedge clk) #1 q<=a;"],93=>["always_comb q=a;"],
+            91=>["initial q=0;"],92=>["always_ff @(posedge clk) #1 q<=a;"],93=>["always_comb if(a[0])q=a;"],
             // Pure automatic calls are now qualified; preserve the unsupported static-lifetime boundary.
             94=>["function logic[7:0]f(input logic[7:0]x);f=x;endfunction always_ff @(posedge clk)q<=f(a);"],
             95=>["task automatic t(input logic[7:0]x);q<=x;endtask always @(posedge clk)t(a);"],

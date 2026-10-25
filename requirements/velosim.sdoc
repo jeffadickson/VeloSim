@@ -225,13 +225,15 @@ STATEMENT: >>>
 The simulator shall settle bounded always_comb blocks together with continuous assignments in dependency order before sequential sampling and after the nonblocking commit. Within each block it shall preserve blocking statement order and procedural four-state conditions. Assignments may concatenate distinct whole-word parents up to 128 combined bits. Every whole-word destination shall have one owner and be assigned on every path before it is read. Feedback, read-before-write, latches, combinational memory writes, selected combinational writes and event-input-dependent combinational logic shall be rejected.
 <<<
 COMMENT: >>>
-Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: RtlCombinational200Tests cases 001..040 and CombinationalRepeatSettlesBeforeEdge; external SDK first evaluation, no-edge input changes, repeated eval, pre-edge sampling and post-commit settling; RtlCombinationalRobustnessTests including aggregate budget rejection. The frontend requires at least one supported sequential process; direct IR still requires a designated scalar clock. VS-RTL-COMB-001 remains the broader backlog.
+Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: RtlCombinational200Tests cases 001..040 and CombinationalRepeatSettlesBeforeEdge; external SDK first evaluation, no-edge input changes, repeated eval, pre-edge sampling and post-commit settling; RtlCombinationalRobustnessTests including aggregate budget rejection. The clockless extension is specified by VS-RTL-CLOCKLESS-001. VS-RTL-COMB-001 remains the broader backlog.
 <<<
 RELATIONS:
 - TYPE: File
   VALUE: src/VeloSim.Core/RtlCombinational.cs
 - TYPE: File
   VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
 - TYPE: File
   VALUE: native/uhdm/rtl_flatten.h
 - TYPE: File
@@ -248,7 +250,7 @@ UID: VS-RTL-FUNC-001
 STATUS: Active
 TITLE: Pure bounded automatic functions
 STATEMENT: >>>
-The frontend shall inline nonrecursive automatic packed-word functions with positional input formals, whole-local blocking assignments, block and if statements, and function-name return assignment on every path. Every argument, local assignment and result shall retain its declared width, signedness and two-state conversion. Captured globals and parameter references, global writes, timing, explicit return statements, selected local writes and persistent-state reads shall be rejected. Calls shall have bounded depth, argument/local counts and symbolic expansion.
+The frontend shall inline nonrecursive automatic packed-word functions with positional input formals, whole-local blocking assignments, block and if statements, and function-name return assignment on every path. Every argument, local assignment and result shall retain its declared width, signedness and two-state conversion. Captured mutable globals, global writes, timing, selected local writes and persistent-state reads shall be rejected. Extensions for constant captures and explicit returns are specified by VS-RTL-PARAM-001 and VS-RTL-FLOW-001. Calls shall have bounded depth, argument/local counts and symbolic expansion.
 <<<
 COMMENT: Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: cases 041..080 and 161..180, same original source through Surelog/UHDM and Icarus, standalone and SDK. General functions remain part of VS-RTL-PROC-001.
 RELATIONS:
@@ -272,3 +274,61 @@ RELATIONS:
   VALUE: native/uhdm/rtl_subroutines.h
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlCombinational200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-CLOCKLESS-001
+STATUS: Active
+TITLE: Combinational-only structural models
+STATEMENT: >>>
+The frontend and both generated interfaces shall support acyclic, fully assigned combinational-only modules without inventing a clock port. The IR shall represent the absent clock explicitly as null and require a canonical empty sequential body. Initial eval and subsequent input changes shall settle the graph; every actual input, including one named clk, shall retain its declared width and four-state value.
+<<<
+COMMENT: Qualified by functions-100, 959 executed full-regression passes and coverage gate 20261025-063443-6553218: RtlFunctions100Tests cases001..020, ConstantOnlyFirstEval and native clocklessInterfaceTests. Existing ownership, definite-assignment, feedback and resource bounds remain applicable.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: tests/native/external_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlFunctions100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-FLOW-001
+STATUS: Active
+TITLE: Explicit pure-function returns and bounded loops
+STATEMENT: >>>
+Pure automatic functions shall support explicit return expressions with declared conversion and path termination. Supported repeat loops shall sample a known nonnegative count once, bounded to256. Supported for loops shall use a known local counter up to32bits, typed arithmetic and comparisons, a single initializer and increment, and a statically proven trip count up to256. Conditions and increments may read only the counter and immutable constants. The body, including every nested loop initializer and increment, shall not mutate the enclosing counter. Early returns shall skip later statements and enclosing loop increments. Shared node, expression, depth and expansion budgets shall reject unsupported or excessive control flow.
+<<<
+COMMENT: Qualified by functions-100, 959 executed full-regression passes and coverage gate 20261025-063443-6553218: RtlFunctions100Tests cases021..060 and091..100, TypedLoopControl, ExplicitReturnKeepsAssignedValue, BoundedParityReadsFormalBits and RtlNestedLoopSafetyTests. General while/do loops, break/continue and runtime-dependent trip counts remain outside this bounded contract.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlFunctions100Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlNestedLoopSafetyTests.cs
+- TYPE: File
+  VALUE: tools/FunctionMutationProbe.cs
+
+[REQUIREMENT]
+UID: VS-RTL-PARAM-001
+STATUS: Active
+TITLE: Immutable parameter captures by elaborated declaration
+STATEMENT: >>>
+Pure automatic calls shall resolve known literal or unary-literal int and packed logic/bit parameter or localparam values by canonical typed declaration and visible elaborated instance identity. Exact source coordinates and original lexical scope binding may repair malformed elaborated references only when unambiguous, honoring variable/formal shadowing. Captures shall preserve declared width and signedness, local shadowing and distinct instance overrides. Caller spelling shall never substitute for declaration binding. Parameter selections and compound constant expressions shall be rejected rather than trusting lossy elaboration folding. Conflicting duplicate values, unknown or unmaterialized values, unsupported types and unresolved or ambiguous bindings shall be rejected.
+<<<
+COMMENT: Qualified by functions-100, 959 executed full-regression passes and coverage gate 20261025-063443-6553218: RtlFunctions100Tests cases061..080, SignedWideParameter and SubroutineLocalParameterCaptureResolvesOwnDeclaration. Mutable globals, hierarchical function calls and general constant-expression evaluation remain outside this contract.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlFunctions100Tests.cs

@@ -12,7 +12,7 @@ void collect_original_expressions(H h,int depth=0){
  need(depth<128&&original_visited.size()<=100000,"original syntax traversal budget exceeded");
  if(type(h)==vpiOperation||type(h)==vpiRefObj||type(h)==vpiSysFuncCall||type(h)==vpiConstant){auto key=expression_location(h);if(!key.empty()){auto [entry,inserted]=original_expressions.emplace(key,h);if(!inserted&&identity(entry->second)!=identity(h)){bool same=false;if(type(h)==vpiConstant&&type(entry->second)==vpiConstant){auto a=static_cast<const UHDM::constant*>(identity(h)),b=static_cast<const UHDM::constant*>(identity(entry->second));same=a->VpiSize()==b->VpiSize()&&a->VpiValue()==b->VpiValue()&&a->VpiConstType()==b->VpiConstType()&&a->VpiDecompile()==b->VpiDecompile()&&vpi_get(vpiSigned,h)==vpi_get(vpiSigned,entry->second);}if(!same)entry->second=nullptr;}}}
  for(int relation:{vpiStmt,vpiCondition,vpiElseStmt,vpiLhs,vpiRhs,vpiIndex,vpiBaseExpr,vpiWidthExpr,vpiLeftRange,vpiRightRange,vpiHighConn,vpiLowConn})collect_original_expressions(one(h,relation),depth+1);
- for(int relation:{vpiModule,vpiPort,vpiProcess,vpiContAssign,vpiParamAssign,vpiStmt,vpiOperand,vpiArgument,vpiExpr,vpiCaseItem,vpiGenScopeArray,vpiGenScope,vpiGenStmt})for(auto child:many(h,relation))collect_original_expressions(child,depth+1);
+ for(int relation:{vpiModule,vpiTaskFunc,vpiPort,vpiProcess,vpiContAssign,vpiParamAssign,vpiStmt,vpiOperand,vpiArgument,vpiExpr,vpiCaseItem,vpiGenScopeArray,vpiGenScope,vpiGenStmt})for(auto child:many(h,relation))collect_original_expressions(child,depth+1);
 }
 H original_expression(H h){
  if(type(h)!=vpiConstant)return nullptr;auto key=expression_location(h);auto found=original_expressions.find(key);
