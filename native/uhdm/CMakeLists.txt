@@ -31,3 +31,11 @@ if(TARGET velosim_options)
 endif()
 
 install(TARGETS velosim-uhdm-inspect velosim-uhdm-normalize velosim-uhdm-rtl RUNTIME DESTINATION bin)
+
+if(BUILD_TESTING)
+  add_executable(velosim_uhdm_type_tests ../../tests/native/uhdm_type_budget_tests.cpp)
+  target_link_libraries(velosim_uhdm_type_tests PRIVATE ${VELOSIM_UHDM_TARGET} velosim_options)
+  add_test(NAME uhdm_type_budget COMMAND velosim_uhdm_type_tests)
+  # UHDM itself is uninstrumented; this test checks bounded work and ASan/UBSan.
+  set_tests_properties(uhdm_type_budget PROPERTIES TIMEOUT 10 ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0;UBSAN_OPTIONS=halt_on_error=1")
+endif()

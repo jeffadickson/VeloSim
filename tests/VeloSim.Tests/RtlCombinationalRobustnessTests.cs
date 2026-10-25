@@ -44,7 +44,7 @@ public class RtlCombinationalRobustnessTests
         const int seed=20261025;var random=new Random(seed);
         for(int trial=0;trial<500;trial++){
             var node=JsonNode.Parse(Ir([Write("q",Ref("a")),Write("r",Ref("a"))]))!;int shape=random.Next(6);
-            switch(shape){case 0:node["combinational"]=random.Next();break;case 1:node["combinational"]![0]!["target"]=null;break;case 2:node["combinational"]![0]!["value"]!["name"]="absent_"+random.Next();break;case 3:node["combinational"]![0]!["kind"]="nba";break;case 4:node["combinational"]![0]!["bad"]=true;break;default:node["combinational"]![0]!["value"]=new JsonObject{["kind"]="convert",["value"]=new JsonObject{["kind"]="ref",["name"]="a"},["width"]=random.Next(2)==0?0:129,["signed"]=false,["two_state"]=false};break;}
+            switch(shape){case 0:node["combinational"]=random.Next();break;case 1:node["combinational"]![0]!["target"]=null;break;case 2:node["combinational"]![0]!["value"]!["name"]="absent_"+random.Next();break;case 3:node["combinational"]![0]!["kind"]="nba";break;case 4:node["combinational"]![0]!["bad"]=true;break;default:node["combinational"]![0]!["value"]=new JsonObject{["kind"]="convert",["value"]=new JsonObject{["kind"]="ref",["name"]="a"},["width"]=random.Next(2)==0?0:257,["signed"]=false,["two_state"]=false};break;}
             string json=node.ToJsonString();Assert.That(()=>RtlDesign.Parse(json),Throws.TypeOf<IrValidationException>(),$"seed {seed}, trial {trial}, shape {shape}, counterexample {json}");
         }
     }

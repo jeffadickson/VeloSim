@@ -21,16 +21,16 @@ public class RtlOpenItems100Tests
     public async Task Iterations091To100UnsupportedBoundaries(int iteration)
     {
         if(Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO")!="1")Assert.Ignore("Requires pinned Surelog/UHDM.");
-        // Fully assigned clockless blocks are now supported; case93 retains a latch rejection.
+        // Retain nearby unsupported boundaries as startup, aggregates, enums and arrays evolve.
         string[] bodies=iteration switch {
-            91=>["initial q=0;"],92=>["always_ff @(posedge clk) #1 q<=a;"],93=>["always_comb if(a[0])q=a;"],
+            91=>["initial q=a;"],92=>["always_ff @(posedge clk) #1 q<=a;"],93=>["always_comb if(a[0])q=a;"],
             // Pure automatic calls are now qualified; preserve the unsupported static-lifetime boundary.
             94=>["function logic[7:0]f(input logic[7:0]x);f=x;endfunction always_ff @(posedge clk)q<=f(a);"],
             95=>["task automatic t(input logic[7:0]x);q<=x;endtask always @(posedge clk)t(a);"],
-            96=>["typedef struct packed{logic[3:0]hi;logic[3:0]lo;} pair_t;pair_t s;always_ff @(posedge clk)begin s<=a;q<=s;end"],
-            97=>["typedef union packed{logic[7:0]hi;logic[7:0]lo;} pair_t;pair_t s;always_ff @(posedge clk)begin s<=a;q<=s;end"],
-            98=>["typedef enum logic[1:0]{A=0,B=1} state_t;state_t state;always_ff @(posedge clk)begin state<=A;q<={6'b0,state};end"],
-            99=>["logic[7:0]m[0:1][0:1];always_ff @(posedge clk)begin m[0][0]<=a;q<=m[0][0];end"],
+            96=>["typedef struct packed{bit[3:0]hi;logic[3:0]lo;} pair_t;pair_t s;always_ff @(posedge clk)begin s<=a;q<=s;end"],
+            97=>["typedef union tagged packed{logic[7:0]hi;logic[7:0]lo;} pair_t;pair_t s;always_ff @(posedge clk)begin s<=a;q<=s;end"],
+            98=>["typedef enum logic[1:0]{A=0,B=1} state_t;state_t state;always_ff @(posedge clk)begin state<=state.next();q<={6'b0,state};end"],
+            99=>["logic[7:0]m[0:0][0:0][0:0][0:0][0:0];always_ff @(posedge clk)begin m[0][0][0][0][0]<=a;q<=m[0][0][0][0][0];end"],
             _=>["logic[7:0]m[$];always @(posedge clk)begin m.push_back(a);q<=m[0];end","logic[7:0]m[];initial m=new[2];always_ff @(posedge clk)begin m[0]<=a;q<=m[0];end","logic[7:0]m[int];always @(posedge clk)begin m[0]=a;q<=m[0];end"]};
         var checkout=new DirectoryInfo(TestContext.CurrentContext.TestDirectory);while(checkout is not null&&!File.Exists(Path.Combine(checkout.FullName,"native/rtl/runtime.h")))checkout=checkout.Parent;
         Assert.That(checkout,Is.Not.Null);string path=Path.Combine(checkout!.FullName,"artifacts","open-items-100","boundary-"+iteration+"-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(path);

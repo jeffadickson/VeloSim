@@ -7,7 +7,9 @@ void check(bool b){if(!b){std::cerr<<"RTL runtime assertion failed\n";std::abort
 #include "concat_target_cycles.h"
 #include "signed_wide_tests.h"
 #include "input_event_cycles.h"
+#include "evolution_tests.h"
 int main(){
+ evolutionRuntimeTests();
  inputEventCycles();
  signedWideTests();
  indexedReadCycles();
@@ -22,7 +24,7 @@ int main(){
   }
   for(auto index:{parse("x"),parse("z"),parse("1x"),parse("z0"),word(UINT64_MAX,0,0,64)})check(text(select_bit(data,index))=="x");
   for(int right:{0,1,width-1,width,65,2147483584})for(int size:{1,2,8,32,64}){
-   int left=right+size-1;std::string expected;
+   int left=right+(size-1);std::string expected;
    for(int bit=left;bit>=right;--bit)expected+=bit<width?input[width-1-bit]:'x';
    check(text(select_part(data,left,right))==expected);
   }

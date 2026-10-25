@@ -1,3 +1,5 @@
+> Current development uses external model schema v2 and C++ word ABI 2 for RTL words through 256 bits. Rebuild hosts and generated models with matching headers and runtime. Previously compiled three-argument Model constructors cannot bind to the new runtime. See [current qualification and limits](procedural-types-arrays.md).
+
 # Native external interfaces
 
 VeloSim can export the structural RTL IR as a reusable `V<top>.h` C++ model and a shared VPI runtime. Both interfaces access the same design state. The structural backend supports bounded input-edge processes, elaborated hierarchy, signed or unsigned logic/bit words up to 128 bits, and fixed word memories. See [the current execution contract](open-items-100.md). General timed event scheduling remains unsupported. Rebuild SDK hosts and shared libraries together after this ABI metadata expansion.

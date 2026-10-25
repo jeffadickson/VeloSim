@@ -94,7 +94,7 @@ public class RtlCombinational200Tests
         int w=Widths[id-161];var conversion=new{kind="convert",value=Ref("a"),width=w,signed=id%2==0,two_state=id%3==0};
         var design=RtlDesign.Parse(Ir([Write("q",conversion),Write("r",Ref("q"))]));
         // Conversion behavior is executed below against the independent HDL simulator.
-        var malformed=JsonNode.Parse(design.Json)!;malformed["combinational"]![0]!["value"]!["width"]=id%2==0?0:129;
+        var malformed=JsonNode.Parse(design.Json)!;malformed["combinational"]![0]!["value"]!["width"]=id%2==0?0:257;
         Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(malformed.ToJsonString()));        string scalar=id%3==0?"bit":"logic";
         string source=$"module dut(input logic clk,input logic[127:0]a,b,output logic[127:0]q,r);function automatic logic signed[127:0] f(input {scalar} signed[{w-1}:0]x);{scalar}[{w-1}:0]n;begin n=x+{w}'b1;f=$signed(n);end endfunction always_comb r=f(b);always @(posedge clk)q<=f(a);endmodule";
         var random=new Random(20261025+id);string Bits(int row)=>row<4?new("01xz"[row],128):string.Concat(Enumerable.Range(0,128).Select(_=>"01xz"[random.Next(row<20?2:4)]));
@@ -139,7 +139,7 @@ public class RtlCombinational200Tests
         var runner=new RecordingProcessRunner(new ProcessRunner());var elaboration=await new SurelogFrontend(runner).ElaborateAsync([source],Path.Combine(path,"surelog"),"dut",executable:Environment.GetEnvironmentVariable("VELOSIM_SURELOG")??"surelog",workers:4);
         var result=await runner.RunAsync(Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL")??Path.Combine(root,"artifacts/with-uhdm/bin/velosim-uhdm-rtl"),[elaboration.UhdmPath,Path.Combine(path,"design.json"),"dut"],path,TimeSpan.FromMinutes(3));
         string[] diagnostics=["untimed blocking","every path","before definite","feedback","Conflicting","captured global","only automatic","unsupported pure subroutine statement","input formals and task outputs","aliased task outputs","whole local","every path","recursive","local read before assignment","not bound to a local","input formals and task outputs","function return requires assigned result or expression","every path","local read before assignment","normalized RTL"];
-        string expectedDiagnostic=captureMode switch{1=>"subroutine parameter captures",2=>"unsupported reference type 5000",_=>diagnostics[id-181]};bool rejected=result.ExitCode==1&&result.StandardError.Contains("RTL lowering rejected:",StringComparison.Ordinal);
+        string expectedDiagnostic=captureMode switch{1=>"subroutine parameter captures",2=>"packed field root must bind a collected declaration",_=>diagnostics[id-181]};bool rejected=result.ExitCode==1&&result.StandardError.Contains("RTL lowering rejected:",StringComparison.Ordinal);
         if(rejected)Assert.That(result.StandardError,Does.Contain(expectedDiagnostic));
         if(result.ExitCode==0){var failure=Assert.Throws<IrValidationException>(()=>RtlDesign.Parse(File.ReadAllText(Path.Combine(path,"design.json"))));Assert.That(failure!.Message,Does.Contain(expectedDiagnostic));rejected=true;}
         Assert.That(rejected,Is.True,result.StandardOutput+result.StandardError);

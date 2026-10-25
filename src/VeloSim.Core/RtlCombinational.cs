@@ -32,7 +32,7 @@ public sealed partial class RtlDesign
         var writes=steps.Select(step=>Statements(step).Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal)).ToArray();
         for(int i=0;i<steps.Count;i++) foreach(var word in writes[i])
             if(sequential.Contains(word)||!owners.TryAdd(word,i))throw new IrValidationException("Conflicting combinational writer.");
-        var reads=steps.Select(step=>Statements(step).SelectMany(e=>new[]{"value","condition"}.Where(n=>e.TryGetProperty(n,out _)).SelectMany(n=>References(e.GetProperty(n)))).ToHashSet(StringComparer.Ordinal)).ToArray();
+        var reads=steps.Select(step=>Statements(step).SelectMany(e=>new[]{"value","condition","count"}.Where(n=>e.TryGetProperty(n,out var v)&&v.ValueKind==JsonValueKind.Object).SelectMany(n=>References(e.GetProperty(n)))).ToHashSet(StringComparer.Ordinal)).ToArray();
         foreach(var read in reads)if(read.Intersect(EventSignals.Append(Clock)).Any())throw new IrValidationException("Clock-dependent combinational logic is outside the race-free subset.");
         var pending=Enumerable.Range(0,steps.Count).ToHashSet();var ordered=new List<JsonElement>();
         while(pending.Count>0)
@@ -74,6 +74,15 @@ public sealed partial class RtlDesign
                 }
                 if(!hasDefault)paths.Add(new(assigned,StringComparer.Ordinal));
                 if(paths.Count>0){var common=paths[0];foreach(var path in paths.Skip(1))common.IntersectWith(path);assigned.UnionWith(common);}break;
+            case "while": case "do": case "runtime_repeat":
+                if(statement.TryGetProperty("condition",out var condition))Read(condition);
+                if(statement.TryGetProperty("count",out var count))Read(count);
+                var loopAssigned=new HashSet<string>(assigned,StringComparer.Ordinal);
+                ValidateCombFlow(statement.GetProperty("body"),owned,loopAssigned);
+                // A runtime loop may execute zero times; its body cannot establish
+                // definite assignment for any subsequent condition or statement.
+                if(statement.TryGetProperty("condition",out condition))Read(condition);
+                break;
             case "repeat":
                 var bodyAssigned=new HashSet<string>(assigned,StringComparer.Ordinal);ValidateCombFlow(statement.GetProperty("body"),owned,bodyAssigned);
                 if(statement.GetProperty("count").GetInt32()>0)assigned.UnionWith(bodyAssigned);break;

@@ -21,7 +21,7 @@ std::string local_key(H h){
  for(int i=0;h&&i<64;i++){for(auto& [key,word]:call_locals)if(same_local(h,word.declaration))return key;auto actual=one(h,vpiActual);if(!actual&&type(h)==vpiIODecl)actual=one(h,vpiExpr);if(identity(actual)==identity(h))break;h=actual;}
  return "";
 }
-std::string convert_word(H declaration,const std::string& value){output_budget(value);for(int i=0;i<64;i++){auto actual=one(declaration,vpiActual);if(!actual||identity(actual)==identity(declaration))break;declaration=actual;}if(type(word_spec(declaration))!=vpiIntTypespec)logic_word(declaration);auto spec=word_spec(declaration);return "{\"kind\":\"convert\",\"value\":"+value+",\"width\":"+std::to_string(width(declaration))+",\"signed\":"+(declared_signed(declaration)?"true":"false")+",\"two_state\":"+((type(declaration)==vpiBitVar||type(spec)==vpiBitTypespec)?"true":"false")+"}";}
+std::string convert_word(H declaration,const std::string& value){output_budget(value);for(int i=0;i<64;i++){auto actual=one(declaration,vpiActual);if(!actual||identity(actual)==identity(declaration))break;declaration=actual;}if(type(word_spec(declaration))!=vpiIntTypespec)logic_word(declaration);auto spec=word_spec(declaration);return "{\"kind\":\"convert\",\"value\":"+value+",\"width\":"+std::to_string(width(declaration))+",\"signed\":"+(declared_signed(declaration)?"true":"false")+",\"two_state\":"+(two_state_word(declaration)?"true":"false")+"}";}
 H current_function=nullptr;
 H parameter_owner(H declaration){
  std::set<const void*> seen;H current=one(declaration,vpiParent);
@@ -67,8 +67,8 @@ void collect_parameter_syntax(H h,int depth=0){
  if(type(h)==vpiParameter)syntax_binding(syntax_parameters,h,h);
  if(type(h)==vpiParamAssign&&type(one(h,vpiLhs))==vpiParameter){syntax_binding(syntax_assignments,h,one(h,vpiLhs));auto key=lexical_key(h);auto rhs=one(h,vpiRhs);auto [entry,added]=syntax_parameter_values.emplace(key,rhs);if(!added&&expression_location(entry->second)!=expression_location(rhs))entry->second=nullptr;}
  if(type(h)==vpiRefObj||type(h)==vpiRefVar){auto declaration=original_lexical_declaration(h);if(type(declaration)==vpiParameter)syntax_binding(syntax_references,h,declaration);else if(declaration)syntax_nonparameters.insert(lexical_key(h));}
- for(int relation:{vpiStmt,vpiCondition,vpiElseStmt,vpiLhs,vpiRhs,vpiReturn,vpiForInitStmt,vpiForIncStmt})collect_parameter_syntax(one(h,relation),depth+1);
- for(int relation:{vpiModule,vpiTaskFunc,vpiParameter,vpiParamAssign,vpiProcess,vpiContAssign,vpiStmt,vpiOperand,vpiArgument,vpiGenScopeArray,vpiGenScope})for(auto child:many(h,relation))collect_parameter_syntax(child,depth+1);
+ for(int relation:{vpiStmt,vpiCondition,vpiElseStmt,vpiLhs,vpiRhs,vpiReturn,vpiForInitStmt,vpiForIncStmt,vpiHighConn,vpiLowConn,vpiExpr})collect_parameter_syntax(one(h,relation),depth+1);
+ for(int relation:{vpiModule,vpiTaskFunc,vpiPort,vpiVariables,vpiReg,vpiNet,vpiParameter,vpiParamAssign,vpiProcess,vpiContAssign,vpiStmt,vpiOperand,vpiArgument,vpiGenScopeArray,vpiGenScope})for(auto child:many(h,relation))collect_parameter_syntax(child,depth+1);
 }
 H canonical_parameter(H declaration){auto found=syntax_parameters.find(lexical_key(declaration));if(found==syntax_parameters.end())return declaration;need(found->second,"ambiguous original parameter declaration");return found->second;}
 H parameter_context=nullptr;

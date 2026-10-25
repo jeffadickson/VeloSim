@@ -32,3 +32,11 @@ combinational-mutation-probe:
 function-mutation-probe:
 	$(DOTNET) publish tools/FunctionMutationProbe.cs -c Release -r linux-x64 -p:PublishAot=true -p:VeloSimNativeJobs=$(JOBS) -o artifacts/publish/FunctionMutationProbe
 	"artifacts/publish/FunctionMutationProbe/FunctionMutationProbe" "$(CURDIR)"
+
+.PHONY: surelog-tagfix
+# Explicit pinned checkout: this target never modifies the installed frontend.
+SURELOG_SOURCE ?=
+SURELOG_TAGFIX_BUILD ?= artifacts/surelog-tagfix
+surelog-tagfix:
+	cmake -S tools/surelog-tagfix -B "$(SURELOG_TAGFIX_BUILD)" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/opt/velosim -DSURELOG_SOURCE="$(SURELOG_SOURCE)"
+	cmake --build "$(SURELOG_TAGFIX_BUILD)" --parallel $(JOBS)

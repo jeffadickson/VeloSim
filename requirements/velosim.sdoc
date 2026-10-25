@@ -332,3 +332,89 @@ RELATIONS:
   VALUE: native/uhdm/rtl_flatten.h
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlFunctions100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-INIT-001
+STATUS: Active
+TITLE: Ordered startup
+STATEMENT: >>>
+The simulator shall execute bounded, untimed blocking initialization once before event evaluation, with constant declaration initializers preceding at most one procedural initial block. Input-dependent or combinational-destination startup, concurrent initial blocks and timed startup shall fail explicitly.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlInitialization.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlProceduralEvolutionTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-RUNTIME-LOOP-001
+STATUS: Active
+TITLE: Runtime-controlled procedural loops
+STATEMENT: >>>
+The simulator shall execute supported while, do, repeat and for loops using runtime conditions and snapshotted repeat counts under a shared 20000-step evaluation budget. Failure shall restore model storage and edge history. Pure-function general runtime loops and event/delay suspension remain outside this contract.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlProceduralEvolutionTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-INTEGER-001
+STATUS: Active
+TITLE: Additional integral types
+STATEMENT: >>>
+The simulator shall preserve declared widths, signedness and two-state versus four-state storage for supported byte, shortint, int, longint, integer, time and integral enum declarations. Unsupported enum forms shall fail explicitly.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTypeArrayEvolutionTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-PACKED-001
+STATUS: Active
+TITLE: Bounded packed aggregates
+STATEMENT: >>>
+The simulator shall lower uniformly two-state or four-state packed structures and equal-width untagged unions up to 256 bits using typed UHDM member layout. Tagged, unpacked and mixed-state aggregate forms shall fail explicitly. Union acceptance requires corrected frontend tag provenance. Each packed-type query shall bound recursive entries and member-edge traversal to 20000 work steps, including shared aliases, and reset safely after rejection.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_types.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTypeArrayEvolutionTests.cs
+- TYPE: File
+  VALUE: tests/native/uhdm_type_budget_tests.cpp
+
+[REQUIREMENT]
+UID: VS-RTL-WORD-256-001
+STATUS: Active
+TITLE: Four-limb RTL words
+STATEMENT: >>>
+The RTL runtime and external model interface shall support one through 256 bits, preserving four-state values and modular arithmetic. Word ABI version 2 shall prevent binding incompatible previously compiled hosts. The independent IR scheduler word type remains limited to 64 bits.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlWide256Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-ARRAY-SHAPE-001
+STATUS: Active
+TITLE: Fixed multidimensional arrays
+STATEMENT: >>>
+The simulator shall support rank one through four fixed arrays with nonnegative bounds and at most 256 elements, checking every coordinate before linearization. Address expressions shall satisfy the existing unsigned-index contract, with explicit casts for signed values. Unknown or invalid coordinates yield unknown reads and ignored writes. Dynamic arrays, associative arrays and queues require separate lifetime support.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlArrays.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTypeArrayEvolutionTests.cs

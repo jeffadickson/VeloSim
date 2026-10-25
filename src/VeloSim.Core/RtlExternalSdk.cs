@@ -44,13 +44,14 @@ public static class RtlExternalSdk
             cmake -S /path/to/sdk -B /path/to/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVELOSIM_HOST_SOURCE=/absolute/path/to/host.cpp
             cmake --build /path/to/build --parallel 4
 
+            The C++ word ABI is version2; recompile hosts and keep matching headers/runtime together.
             Include the generated V<top>.h in your host. Drive input port proxies,
             call eval() explicitly for settle/clock transitions, and final() once.
             One eval samples input changes as one event batch. The designated
             primary clock, when present, starts at zero; other logic inputs start X and bit inputs
             start zero. Clockless models have no synthetic clock: eval() settles their DAG on startup and input changes.
             Bit inputs and destinations convert X/Z bits to zero.
-            Use bits() for X/Z and up to 128-bit words; uint64 conversion rejects unknown or overflowing values.
+            Use bits() for X/Z and up to 256-bit words; uint64 conversion rejects unknown or overflowing values.
             loadVpi() accepts a native plugin with a null-terminated exported
             vlog_startup_routines table before the first eval().
             The VPI subset supports signal lookup, metadata, identity, immediate
@@ -58,11 +59,11 @@ public static class RtlExternalSdk
             callbacks. There is no HDL delay scheduler or Verilator/DPI ABI.
             Models and handles belong to their creating thread.
             Concatenation NBA targets require distinct destination words and at
-            most 128 total assigned bits.
+            most 256 total assigned bits.
             Known bases for indexed reads and selected writes are limited to
             0..INT32_MAX; larger known bases throw before sequential updates commit.
 
-            Linux/WSL GCC/Clang builds with unsigned __int128 support are qualified. Keep the host and shared runtime together
+            Linux/WSL GCC/Clang builds with unsigned __int128 limb products are qualified. Keep the host and shared runtime together
             when relocating the Linux build; the build RPATH uses $ORIGIN.
             Other platforms require separate qualification.
             external-model.json input paths are relative to this SDK directory;
@@ -74,7 +75,7 @@ public static class RtlExternalSdk
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
         {
-            writer.WriteStartObject(); writer.WriteString("schema", "velosim.external.model.v1"); writer.WriteString("top", top); writer.WriteString("model_class", "V" + top); writer.WriteString("execution_scope", design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
+            writer.WriteStartObject(); writer.WriteString("schema", "velosim.external.model.v2"); writer.WriteNumber("word_abi",2);writer.WriteNumber("max_word_bits",256);writer.WriteString("top", top); writer.WriteString("model_class", "V" + top); writer.WriteString("execution_scope", design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
             writer.WriteStartArray("ports"); var names = design.ExternalPortNames();
             foreach (var signal in design.Signals.Where(s => s.Direction != "internal")) { writer.WriteStartObject(); writer.WriteString("name", signal.Name); writer.WriteNumber("width", signal.Width);writer.WriteBoolean("signed",signal.Signed);writer.WriteBoolean("two_state",signal.TwoState); writer.WriteString("direction", signal.Direction); writer.WriteString("member", names[signal.Name]); writer.WriteEndObject(); }
             writer.WriteEndArray(); writer.WriteStartArray("inputs");

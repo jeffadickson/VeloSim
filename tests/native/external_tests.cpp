@@ -7,7 +7,7 @@ struct TestModel:Model {
  bool previous=false;
  Port clk{*this,0},data{*this,1},q{*this,2};
  TestModel():Model("test",{{"clk",1,vpiInput},{"data",64,vpiInput},{"q",64,vpiOutput}},0){}
- void evaluate() override{auto c=get(0);if(c.x||c.z)throw std::runtime_error("unknown clock");if(!previous&&c.v)s[2]=s[1];previous=c.v;}
+ void evaluate() override{auto c=get(0);if(c.x||c.z)throw std::runtime_error("unknown clock");if(!previous&&c.v)s[2]=s[1];previous=bool(c.v);}
 };
 int changes=0,ends=0,starts=0,readOnly=0;vpiHandle dataHandle;
 PLI_INT32 changed(p_cb_data cb){++changes;check(cb->value&&cb->value->format==vpiVectorVal);return 0;}
@@ -26,6 +26,7 @@ PLI_INT32 switchContext(p_cb_data){alternate->useVpi();return 0;}
 PLI_INT32 pinnedContext(p_cb_data){auto q=named("test.q");s_vpi_value value{};value.format=vpiBinStrVal;vpi_get_value(q,&value);pinned=q&&std::string(value.value.str)==std::string(63,'0')+"1";return 0;}
 #include "external_cycles.h"
 #include "external_wide_tests.h"
+#include "external_256_tests.h"
 // The absent-clock sentinel must preserve every actual input and reject all other
 // negative indices, invalid scalar clocks and malformed public interfaces.
 void clocklessInterfaceTests(){
@@ -41,6 +42,7 @@ void clocklessInterfaceTests(){
 int main(int argc,char** argv){try{
  clocklessInterfaceTests();
  externalWideTests();
+ external256Tests();
  runCycles();
  check(!named("test.q")&&vpi_chk_error(nullptr));
  vpiHandle expired=nullptr;
