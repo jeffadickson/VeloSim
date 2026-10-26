@@ -8,6 +8,8 @@ Start with the illustrated [HTML introduction](docs/introduction.html) to see ho
 
 ## Status
 
+Native container and timed-event [runtime primitives](docs/container-events.md) are now available internally with focused tests. Their HDL lowering and suspended-process integration remain open; they do not enable these constructs in Verilog input yet.
+
 This branch adds bounded untimed startup and runtime loops, integral enums and integer types, packed aggregates, fixed rank-one-to-four arrays, and RTL words through 256 bits. See [current scope and qualification status](docs/procedural-types-arrays.md). Dynamic/associative arrays and queues remain open. External C++ hosts must rebuild against word ABI 2; union models require the corrected frontend described there.
 
 Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET10 C# helpers validate IR, orchestrate frontends and run regressions. The real Surelog/UHDM structural path supports bounded edge-driven processes, instance hierarchy, signed words through 256 bits, two-state storage and fixed word memories. See the current execution contract above for restrictions.

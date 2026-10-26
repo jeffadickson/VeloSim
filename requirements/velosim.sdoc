@@ -418,3 +418,35 @@ RELATIONS:
   VALUE: src/VeloSim.Core/RtlArrays.cs
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlTypeArrayEvolutionTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-CONTAINER-STORAGE-001
+STATUS: Active
+TITLE: Bounded native container storage primitives
+STATEMENT: >>>
+Internal native storage shall provide owned copyable dynamic arrays, double-ended queues and unsigned integral-key associative arrays with 1 through 256-bit elements and at most 256 cells. Allocation shall optionally preserve the existing prefix. Invalid reads shall return the element default and invalid writes shall be ignored. Two-state storage shall coerce X/Z to zero. Resource rejection shall preserve existing contents. HDL lowering, bounded-queue truncation and associative traversal remain outside this contract.
+<<<
+COMMENT: Focused native verification and limitations are recorded in docs/container-events.md. Broad array requirements remain Draft; this requirement does not establish HDL acceptance.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/containers.h
+- TYPE: File
+  VALUE: tests/native/container_event_tests.cpp
+- TYPE: File
+  VALUE: tools/ContainerEventMutationProbe.cs
+
+[REQUIREMENT]
+UID: VS-RTL-EVENT-TRANSPORT-001
+STATUS: Active
+TITLE: Bounded native timed-event transport
+STATEMENT: >>>
+An internal timed-event queue shall order opaque process IDs by unsigned tick, delta, active/inactive/NBA region and insertion order. Zero-delay scheduling into an earlier region shall advance the delta. Future ticks shall start at delta zero. Time overflow, pending-capacity overflow and a lifetime execution budget shall be checked before modifying queue state. This primitive does not implement suspended HDL processes or the complete SystemVerilog scheduling algorithm.
+<<<
+COMMENT: Focused native verification and limitations are recorded in docs/container-events.md. General timed HDL scheduling remains open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/timed_events.h
+- TYPE: File
+  VALUE: tests/native/container_event_tests.cpp
+- TYPE: File
+  VALUE: tools/ContainerEventMutationProbe.cs

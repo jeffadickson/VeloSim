@@ -1,5 +1,22 @@
 # VeloSim continuation prompt
 
+## Latest checkpoint: native containers and timed-event transport
+
+Read docs/container-events.md and the scoped requirements VS-RTL-CONTAINER-STORAGE-001 / VS-RTL-EVENT-TRANSPORT-001. This checkpoint is a native runtime foundation, NOT HDL support for dynamic/associative arrays, queues or suspended/timed processes. Those full requirements remain open. Current branch procedural-types-arrays, base 644917ad9fb9b749eb111d2822489013c47d2037; authorized local commit/push follows this precommit handoff. Git and ignored artifacts/container-events/final-evidence.json establish actual later commit/push state.
+
+Added native/rtl/containers.h: owned copyable dynamic arrays with optional prefix-preserving allocation, front/back queues and unsigned 256-bit-key associative storage. Element widths 1..256, storage bounded to256, two-state coercion, checked defaults and resource exceptions. No bounded-queue truncation, string/signed keys or traversal/reference semantics. native/rtl/timed_events.h is deterministic opaque-ID transport ordered tick/delta/region/insertion, with capacity/lifetime budget20000 and overflow guards. It does not implement full SV scheduling, callbacks, sensitivity waking or suspended process execution. Existing external ABI remains2; older C++ hosts must rebuild with matching headers/runtime.
+
+Qualified current native source: ordinary Clang18/Ninja-parallel4 CTest7/7; ASan/UBSan7/7; focused LLVM coverage64/64lines100%,56/58branches96.55% across new headers; no export diagnostics. Two defensive delta/sequence overflow branches unmeasured. NativeAOT C# tools/ContainerEventMutationProbe.cs control passes and5compiled semantic faults detected; compile errors/timeouts do not count. Dedicated helper lockfile avoids shared tools lock churn. Seed20261030 covers10kqueueoperations+1000eventorders; additional malformed/boundary/snapshot/wideXZ/multilimb tests pass. No managed source changed; full managed suite not rerun, prior metrics are historical. Helper instruction/error-path coverage unmeasured. StrictDoc export artifacts/container-events/strictdoc passed. Read-only AI peer source/docs review accepted, not human signoff. final-evidence.json binds compiler, copied mutation sources/probes, new native binaries, reports and profiles.
+
+Before EVERY commit update this root prompt.md. Continue using C#/F# helpers, PowerShell file ops, meaningful comments, Ninja parallel4, StrictDoc IDs, coverage, reproducible properties/fuzzing and semantic mutation checks. Do not claim a requested number of iterations was completed. Existing prior peer authorization persists; no new agents.
+
+Next implementation work: define typed container IR and emitted owning storage, validate lifetime/method rules, lower real UHDM container operations and compare the SAME original HDL with an independent simulator. Separately define process frames and suspension/resumption before connecting timed transport; establish active/inactive/NBA quiescence and interacting processes using HDL differential tests. Keep unsupported source rejected until that path is verified. General arrays/scheduling remain open; these unit primitives do not close them.
+
+Reproduce commands are in docs/container-events.md. Explicit Windows shell path C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe with login:false and repository workdir avoids os error3. WSL Ubuntu-24.04 checkout /mnt/c/Users/jeffd/Documents/Codex/2026-10-20/rea/work/VeloSim. Keep source frozen during native compilation/coverage/mutation qualification. Verify Git/remote before repeating completed commit/push. No force push, PR or default-branch merge requested.
+
+## Prior qualified handoff (historical)
+# VeloSim continuation prompt
+
 Read this file, docs/procedural-types-arrays.md and requirements/velosim.sdoc first in another chat or VS Code. Follow applicable AGENTS.md/user instructions. Use C#/F# automation and native PowerShell file operations, Ninja with four jobs, meaningful comments, stable StrictDoc IDs, line/branch coverage, seeded properties/fuzzing, negative tests and focused mutations. Active helpers are C# file-based apps with Linux NativeAOT counterparts. Existing StrictDoc Python configuration/runtime is a required-tool exception.
 
 **Before EVERY commit update this root prompt.md with the current outcome, evidence, limits and next steps, and include it in that commit.** Git is authoritative for the subsequent commit/push state; a commit cannot contain its own hash.
