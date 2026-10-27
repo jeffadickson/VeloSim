@@ -50,7 +50,7 @@ try {
     Invoke-RunCommand dotnet @('tool','restore') $Source -LogPrefix (Join-Path $Output 'tool-restore') | Out-Null
     Invoke-RunCommand dotnet @('build','tests/VeloSim.Tests','-c','Release','-m:4') $Source -LogPrefix (Join-Path $Output 'managed-build') | Out-Null
     $env:VELOSIM_REAL_FIFO = '0'
-    $testFilter = '(FullyQualifiedName~RtlDynamicArrayTests&FullyQualifiedName!~AllocationResizeAccessAndDeleteMatchOriginalHdl)|FullyQualifiedName~RtlIndexedTests|FullyQualifiedName~RtlProcessesTests.SharedClockProcessesEmitOneSnapshotAndCommit|FullyQualifiedName~RtlEvolutionRobustnessTests.MalformedShapeProperty'
+    $testFilter = '(FullyQualifiedName~RtlDynamicArrayTests&FullyQualifiedName!~AllocationResizeAccessAndDeleteMatchOriginalHdl)|FullyQualifiedName~RtlIndexedTests|FullyQualifiedName~RtlProcessesTests.SharedClockProcessesEmitOneSnapshotAndCommit|FullyQualifiedName~RtlEvolutionRobustnessTests.MalformedShapeProperty|FullyQualifiedName~RtlArrayMutationRegressionTests'
     Invoke-RunCommand dotnet @('test','tests/VeloSim.Tests','-c','Release','--no-build','--filter',$testFilter,'--collect:XPlat Code Coverage','--settings','coverage.runsettings','--results-directory',(Join-Path $Output 'managed-tests'),'--logger','trx') $Source -LogPrefix (Join-Path $Output 'managed-tests') | Out-Null
     $trx=Get-ChildItem -LiteralPath (Join-Path $Output 'managed-tests') -Filter '*.trx' -File|Select-Object -First 1
     if(-not$trx){throw 'Managed test evidence missing'}

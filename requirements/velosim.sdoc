@@ -418,6 +418,8 @@ RELATIONS:
   VALUE: src/VeloSim.Core/RtlArrays.cs
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlTypeArrayEvolutionTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlArrayMutationRegressionTests.cs
 
 [REQUIREMENT]
 UID: VS-RTL-CONTAINER-STORAGE-001
@@ -470,6 +472,8 @@ RELATIONS:
   VALUE: native/rtl/runtime.h
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlDynamicArrayTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlArrayMutationRegressionTests.cs
 - TYPE: File
   VALUE: examples/dynamic_array.sv
 

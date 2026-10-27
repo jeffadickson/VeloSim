@@ -2,7 +2,7 @@
   "stryker-config": {
     "project": "VeloSim.csproj",
     "mutate": ["**/RtlArrays.cs"],
-    "test-case-filter": "(FullyQualifiedName~RtlDynamicArrayTests&FullyQualifiedName!~AllocationResizeAccessAndDeleteMatchOriginalHdl)|FullyQualifiedName~MalformedShapeProperty",
+    "test-case-filter": "(FullyQualifiedName~RtlDynamicArrayTests&FullyQualifiedName!~AllocationResizeAccessAndDeleteMatchOriginalHdl)|FullyQualifiedName~MalformedShapeProperty|FullyQualifiedName~RtlArrayMutationRegressionTests",
     "configuration": "Release",
     "concurrency": 4,
     "reporters": ["json", "html", "progress"],

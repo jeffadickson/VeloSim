@@ -81,3 +81,7 @@ reported48killed,9survived and4no-coverage mutants(78.69% from these counts).
 1540compile/instrumentation errors and10829filtered/ignored mutants were excluded
 from detections. All three generated dynamic SDKs also pass ASan/UBSan and match
 their original-HDL reference traces, including the failure-recovery probes.
+
+The [array mutation follow-up](array-mutation-review.md) investigates that worker
+report's surviving and uncovered cases, with new public-IR regression tests and
+an explicit disposition for the parser-masked depth mutation.
