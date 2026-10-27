@@ -8,9 +8,9 @@ Start with the illustrated [HTML introduction](docs/introduction.html) to see ho
 
 ## Status
 
-Native container and timed-event [runtime primitives](docs/container-events.md) are now available internally with focused tests. Their HDL lowering and suspended-process integration remain open; they do not enable these constructs in Verilog input yet.
+The [dynamic-array HDL slice](docs/dynamic-arrays.md) adds bounded allocation, self-preserving resize, indexed access, size and delete. Queue/associative HDL lowering and suspended-process scheduling remain open. Native container and timed-event [runtime primitives](docs/container-events.md) and optional [LLVM fuzz campaigns](docs/runtime-fuzz.md) support continued development.
 
-This branch adds bounded untimed startup and runtime loops, integral enums and integer types, packed aggregates, fixed rank-one-to-four arrays, and RTL words through 256 bits. See [current scope and qualification status](docs/procedural-types-arrays.md). Dynamic/associative arrays and queues remain open. External C++ hosts must rebuild against word ABI 2; union models require the corrected frontend described there.
+This branch adds bounded untimed startup and runtime loops, integral enums and integer types, packed aggregates, fixed rank-one-to-four arrays, dynamic-array lifetimes and RTL words through 256 bits. See [the previous qualification milestone](docs/procedural-types-arrays.md) and the newer feature notes above. Associative arrays and queues remain open. External C++ hosts must rebuild against word ABI 2; union models require the corrected frontend described there.
 
 Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET10 C# helpers validate IR, orchestrate frontends and run regressions. The real Surelog/UHDM structural path supports bounded edge-driven processes, instance hierarchy, signed words through 256 bits, two-state storage and fixed word memories. See the current execution contract above for restrictions.
 
@@ -114,3 +114,11 @@ Assignments such as `{high, low} <= data` and nested groups of supported packed 
 ### External C++ hosts and VPI plugins
 
 `rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory>` exports a reusable `V<name>.h` model, four-state public ports, `eval()`/`final()` lifecycle, host time and a shared VPI subset runtime. External C plugins can look up signals, inspect/deposit four-state values and register callbacks against the same model state. See [external interfaces](docs/external-interfaces.md) for the complete build/run example, supported API and qualification scope. `examples/external_main.cpp` and `external_plugin.c` demonstrate both interfaces; this preserves the current bounded HDL subset.
+
+## Standalone Windows testing
+
+The [complete remote Windows guide](docs/remote-windows-campaign.md) includes
+prerequisites, PowerShell download commands, short qualification,12-hour runs,
+result locations and authorization recovery. The launcher commits small reports to
+a fresh results branch and attempts a normal push; publication can resume without
+rerunning tests. [PowerShell launcher source](tools/remote/Start-VeloSimCampaign.ps1).

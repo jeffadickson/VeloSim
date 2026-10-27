@@ -18,7 +18,7 @@ def create_config() -> ProjectConfig:
         ],
         include_source_paths=[
             "/src/VeloSim.Core/**", "/native/rtl/**", "/native/uhdm/**",
-            "/tests/VeloSim.Tests/**", "/tests/native/**", "/tools/**", "/.github/workflows/**",
+            "/tests/VeloSim.Tests/**", "/tests/native/**", "/tests/remote/**", "/examples/**", "/tools/**", "/.github/workflows/**",
         ],
         exclude_source_paths=["/artifacts/**", "/external/**", "/.git/**", "/**/bin/**", "/**/obj/**", "/**/__pycache__/**"],
     )

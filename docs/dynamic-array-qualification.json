@@ -1,0 +1,97 @@
+{
+  "schema": "velosim.dynamic.remote.qualification.v1",
+  "baseCommit": "908013b37eba48b61615e0022d1029d525ae0be4",
+  "sourceHashes": {
+    "tools/RuntimeFuzzCampaign.cs": "b4J2es7DBUGKtTHHN8iXNbX5MJyLHDTP0m2cXE63N9w=",
+    "tools/remote/Start-VeloSimCampaign.ps1": "UGriFLQWs6J03T/lfdVCDiafRR/FGhAYqhDrMNK7rW4=",
+    "tools/remote/Publish-RemoteResults.ps1": "Xf24GliHPjm5+rou8x5QJhAp2bQ4/GtNl+f+rrzFWvQ=",
+    "src/VeloSim.Core/RtlDesign.cs": "ZYzZ5FHGR+DOwHhub2L8Wg1Vg881/2sACrS3uTLPKVs=",
+    "src/VeloSim.Core/RtlArrays.cs": "MTkmFCCiCzsYdAd9y9RcTU44k8nIP94v79fSDN9RwVY=",
+    "tests/native/rtl_runtime_tests.cpp": "4Rkoz1/PYEeSsOUnq0F/AXX5CKI9F7gUxgc311m1cQs=",
+    "tools/remote/Run-LinuxCampaign.ps1": "1R0Jfj5ftYe82+yuLYBSZAnqKAqCVPIov5lkguZUtYI=",
+    "tests/VeloSim.Tests/RtlDynamicArrayTests.cs": "iqQJjclLmIprZef1f4zwS59/4Z1ThVX1Hs3OOJUqZ7s=",
+    "tools/remote/Test-RemoteScripts.ps1": "3PD8SebcvozVk4OR+UmOQfb0YCYazsW+WiHr9vCaXkw=",
+    "tools/remote/Remote.Common.ps1": "b5SXH7QGJZVpdjrrDHc4s522zE0hdCBq0sLRnYZEkN8=",
+    "tools/fuzz/runtime_fuzz.cpp": "VMIuEYV1rD+5zPUf9pvOf3E0MQSIFWfEHmK4sqjFhss=",
+    "tools/remote/Install-UbuntuPrerequisites.sh": "idGBbfeoLaCQPadCkBZg32Xsz6jW0h9Hea6UdBu1mDU=",
+    "native/rtl/runtime.h": "2i4z5l4iq1pHOW3yiU/pxnBV1tUsVBhOsBkSfKHRP/A=",
+    "tools/remote/Worker-Bridge.ps1": "UqYPUyiKoPEiRO0dbGzSsQNsnv14wqnkJzwD2CC0E90=",
+    "tools/fuzz/CMakeLists.txt": "OcjC+TOv7Yg4pSW+0FoYv5AGXk0eCAh8ylIdLVE4WV8=",
+    "native/uhdm/rtl.cpp": "jgm4IGsh+RJBAdBp06d30MIfRt0muayw6Umw59AuA4c=",
+    "native/uhdm/rtl_flatten.h": "sZUccL1VCWutrtA+p/0ywbV5Xm7utWIHY2p4F16bt3o="
+  },
+  "sourceHashEncoding": "SHA256, UTF8 text normalized to LF, base64",
+  "limitations": [
+    "Full managed/HDL suite not rerun",
+    "12-hour completion not yet measured",
+    "Clean-machine WSL installation not measured",
+    "Live expired GitHub credential not exercised; recovery simulated",
+    "NativeAOT helper instructions and full orchestration error paths unmeasured",
+    "Previous full-suite LLVM mapping warning not declared resolved"
+  ],
+  "mutation": {
+    "nativeAllocationFaultsDetected": 4,
+    "stryker": {
+      "scope": "RtlArrays.cs, isolated selected tests",
+      "survived": 9,
+      "compileErrorsExcluded": 1540,
+      "killed": 48,
+      "ignored": 10829,
+      "noCoverage": 4
+    }
+  },
+  "seeds": {
+    "nativeDomains": [
+      20261031,
+      20261032,
+      20261033,
+      20261034
+    ],
+    "dynamicFsCheck": [
+      20261101,
+      864013
+    ]
+  },
+  "coverage": {
+    "runtime": {
+      "linesCovered": 161,
+      "linesTotal": 166,
+      "branchesCovered": 410,
+      "scope": "runtime.h, focused native test",
+      "branchesTotal": 446
+    },
+    "powerShell": {
+      "scope": "Common and publisher only",
+      "linesTotal": 106,
+      "linesCovered": 99,
+      "commandsTotal": 195,
+      "commandsCovered": 173,
+      "branchCoverage": "unavailable"
+    },
+    "exporter": {
+      "linesCovered": 177,
+      "linesTotal": 204,
+      "branchesCovered": 419,
+      "scope": "rtl.cpp and rtl_flatten.h, 15 profiles",
+      "branchesTotal": 1052
+    },
+    "managed": {
+      "linesCovered": 259,
+      "linesTotal": 298,
+      "branchesCovered": 632,
+      "scope": "RtlDesign.cs and RtlArrays.cs, merged selected tests",
+      "branchesTotal": 1023
+    }
+  },
+  "evidence": "Ignored artifacts/dynamic-array, artifacts/remote-script-tests, Linux-side fixture/campaign roots recorded in those reports",
+  "reproduction": "docs/remote-windows-campaign.md and docs/dynamic-arrays.md",
+  "tests": {
+    "selectedManagedRegression": 59,
+    "hdlRegression": 12,
+    "dynamic": 21,
+    "native": 8,
+    "sanitizedNative": 7,
+    "powerShell": 17,
+    "sanitizedSdkModels": 3
+  }
+}

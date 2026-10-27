@@ -6,8 +6,8 @@ namespace VeloSim;
 public sealed record RtlSignal(string Name, int Width, string Direction, string? SourcePath = null, bool Signed = false, bool TwoState = false);
 /// <summary>A fixed unpacked dimension preserving declared bounds; storage offsets ascend from the smaller bound.</summary>
 public sealed record RtlDimension(int Left,int Right);
-/// <summary>Fixed word storage with an optional explicit shape. Two-state cells start at zero and coerce X/Z writes.</summary>
-public sealed record RtlMemory(string Name, int Width, int Depth, bool Signed = false, int LowerBound = 0, IReadOnlyList<RtlDimension>? Dimensions = null, bool TwoState = false);
+/// <summary>Word storage with optional fixed shape or a dynamic lifetime. Dynamic depth1 metadata denotes initially empty storage; two-state cells default to zero.</summary>
+public sealed record RtlMemory(string Name, int Width, int Depth, bool Signed = false, int LowerBound = 0, IReadOnlyList<RtlDimension>? Dimensions = null, bool TwoState = false, bool Dynamic = false);
 /// <summary>Validated bounded RTL IR with acyclic settling and process-local sequential blocking storage.</summary>
 public sealed partial class RtlDesign
 {
@@ -84,6 +84,7 @@ public sealed partial class RtlDesign
     {
         Budget(depth); string kind = Kind(e);
         if (kind == "convert") return ValidateConversion(e,depth);
+        if (kind == "size") { JsonShape.Fields(e,["kind","name"]); RequireDynamic(Name(e)); return 32; }
         if (kind == "ref") { JsonShape.Fields(e, ["kind", "name"]); return Signals[SignalId(Name(e))].Width; }
         if (kind == "const") { JsonShape.Fields(e, ["kind", "bits"], ["signed"]); if(e.TryGetProperty("signed",out var sign))_=sign.GetBoolean(); var bits=e.GetProperty("bits").GetString();if(string.IsNullOrEmpty(bits)||bits.Length>256||bits.Any(c=>c is not ('0' or '1' or 'x' or 'z')))throw new IrValidationException("Invalid RTL constant.");return bits.Length; }
         if (kind == "index") return ValidateMemoryAccess(e,depth);
@@ -96,7 +97,7 @@ public sealed partial class RtlDesign
     }
     private IEnumerable<string> References(JsonElement e)
     {
-        if (Kind(e) == "ref") yield return Name(e);
+        if (Kind(e) is "ref" or "size") yield return Name(e);
         // A memory access reads storage as well as address expressions; isolation needs both identities.
         else if (Kind(e) == "index") { yield return Name(e); foreach(var index in MemoryIndices(e))foreach (var n in References(index)) yield return n; }
         else if (Kind(e) is "bitselect" or "partselect" or "indexedselect") { foreach (var n in References(e.GetProperty("value"))) yield return n; if (e.TryGetProperty("index", out var index)) foreach (var n in References(index)) yield return n; if (e.TryGetProperty("base", out var basis)) foreach (var n in References(basis)) yield return n; }
@@ -108,6 +109,10 @@ public sealed partial class RtlDesign
         Budget(depth);
         switch (Kind(e))
         {
+            case "allocate":
+                JsonShape.Fields(e,["kind","name","count","preserve"]);RequireDynamic(Name(e));ValidateExpression(e.GetProperty("count"),depth+1);_=e.GetProperty("preserve").GetBoolean();writers.Add(Name(e));break;
+            case "delete":
+                JsonShape.Fields(e,["kind","name"]);RequireDynamic(Name(e));writers.Add(Name(e));break;
             case "while": case "do":
                 JsonShape.Fields(e,["kind","condition","body"]);ValidateExpression(e.GetProperty("condition"),depth+1);ValidateStatement(e.GetProperty("body"),writers,depth+1);break;
             case "runtime_repeat":
@@ -137,7 +142,7 @@ public sealed partial class RtlDesign
             case "block": JsonShape.Fields(e, ["kind", "items"]); foreach (var item in e.GetProperty("items").EnumerateArray()) ValidateStatement(item, writers, depth + 1); break;
             case "blocking": case "nba":
                 JsonShape.Fields(e, ["kind", "target", "value"]); var target = e.GetProperty("target"); ValidateExpression(target, depth + 1); ValidateExpression(e.GetProperty("value"), depth + 1);
-                if (Kind(target) == "index") { writers.Add(Name(target)); break; }
+                if (Kind(target) == "index") { if(Kind(e)=="nba"&&Memories[MemoryId(Name(target))].Dynamic)throw new IrValidationException("Dynamic element writes require blocking assignments.");writers.Add(Name(target)); break; }
                 var parents = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var leaf in TargetLeaves(target))
                 {
@@ -169,7 +174,7 @@ public sealed partial class RtlDesign
         var processes=Kind(Body)=="parallel"?Body.GetProperty("items").EnumerateArray().ToArray():[Body];
         var reads=processes.Select(p=>Statements(p).SelectMany(e=>new[]{"value","target","condition","count"}.Where(name=>e.TryGetProperty(name,out var v)&&v.ValueKind==JsonValueKind.Object).SelectMany(name=>References(e.GetProperty(name)))).ToHashSet(StringComparer.Ordinal)).ToArray();
         for(int i=0;i<processes.Length;++i){
-            var statements=Statements(processes[i]).ToArray();var blocking=statements.Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);
+            var statements=Statements(processes[i]).ToArray();var blocking=statements.Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).Concat(statements.Where(e=>Kind(e) is "allocate" or "delete").Select(Name)).ToHashSet(StringComparer.Ordinal);
             var nonblocking=statements.Where(e=>Kind(e)=="nba").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);
             if(blocking.Overlaps(nonblocking))throw new IrValidationException("A word cannot mix blocking and nonblocking assignments.");
             if(Enumerable.Range(0,processes.Length).Any(j=>j!=i&&blocking.Overlaps(reads[j]))||SettledSteps.SelectMany(Statements).Any(a=>new[]{"value","condition"}.Where(n=>a.TryGetProperty(n,out _)).Any(n=>References(a.GetProperty(n)).Any(blocking.Contains))))throw new IrValidationException("Blocking destinations must be isolated from other processes and continuous logic.");
@@ -195,13 +200,13 @@ public sealed partial class RtlDesign
     private static string TargetOwner(JsonElement target) => Kind(target) is "bitselect" or "partselect" or "indexedselect" ? Name(target.GetProperty("value")) : Name(target);
     private int ExpressionWidth(JsonElement e) => Kind(e) switch
     {
-        "convert"=>e.GetProperty("width").GetInt32(), "ref" => Signals[SignalId(Name(e))].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
+        "size"=>32,"convert"=>e.GetProperty("width").GetInt32(), "ref" => Signals[SignalId(Name(e))].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
         "bitselect" => 1, "partselect" => e.GetProperty("left").GetInt32() - e.GetProperty("right").GetInt32() + 1, "indexedselect" => e.GetProperty("width").GetInt32(),
         var kind when Scalar(kind) => 1, "shl" or "shr" or "ashr" => ExpressionWidth(e.GetProperty("args")[0]), "cond" => e.GetProperty("args").EnumerateArray().Skip(1).Max(ExpressionWidth), "concat" => e.GetProperty("args").EnumerateArray().Sum(ExpressionWidth), _ => e.GetProperty("args").EnumerateArray().Max(ExpressionWidth)
     };
     private bool ExpressionSigned(JsonElement e) => Kind(e) switch
     {
-        "convert"=>e.GetProperty("signed").GetBoolean(), "ref"=>Signals[SignalId(Name(e))].Signed,"index"=>Memories[MemoryId(Name(e))].Signed,
+        "size"=>true,"convert"=>e.GetProperty("signed").GetBoolean(), "ref"=>Signals[SignalId(Name(e))].Signed,"index"=>Memories[MemoryId(Name(e))].Signed,
         "const"=>e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),"castsigned"=>true,
         "castunsigned" or "bitselect" or "partselect" or "indexedselect" or "concat"=>false,
         var k when Scalar(k)=>false,"shl" or "shr" or "ashr"=>ExpressionSigned(e.GetProperty("args")[0]),
@@ -214,8 +219,9 @@ public sealed partial class RtlDesign
         string Extend(string value)=>signed&&context>ExpressionWidth(e)?$"signed_resize({value},{context})":value;
         if (kind == "convert") return Extend(Conversion(e));
         if (kind == "ref") return Extend($"s[{SignalId(Name(e))}]");
+        if (kind == "size") return Extend($"word(mem[{MemoryId(Name(e))}].size(),0,0,32)");
         if (kind == "const") return Extend("parse(\"" + e.GetProperty("bits").GetString() + "\")");
-        if (kind == "index") { int id = MemoryId(Name(e));var read=$"read(mem[{id}],{MemoryIndex(e,id)},{Memories[id].Width})";return Extend(read); }
+        if (kind == "index") { int id = MemoryId(Name(e));var memory=Memories[id];var read=memory.Dynamic?$"dynamic_read(mem[{id}],{MemoryIndex(e,id)},{memory.Width},{(memory.TwoState?"true":"false")})":$"read(mem[{id}],{MemoryIndex(e,id)},{memory.Width})";return Extend(read); }
         if (kind == "bitselect") return $"select_bit({Expression(e.GetProperty("value"))},{Expression(e.GetProperty("index"))})";
         if (kind == "partselect") return $"select_part({Expression(e.GetProperty("value"))},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
         if (kind == "indexedselect") return $"select_indexed({Expression(e.GetProperty("value"))},{Expression(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
@@ -256,6 +262,11 @@ public sealed partial class RtlDesign
         code.AppendLine("execution_step(execution_budget);");
         switch (Kind(e))
         {
+            case "allocate": case "delete":
+                int dynamicId=MemoryId(Name(e));var dynamicMemory=Memories[dynamicId];
+                if(Kind(e)=="delete")code.AppendLine($"nextMem[{dynamicId}].clear();");
+                else code.AppendLine($"dynamic_allocate(nextMem[{dynamicId}],{Expression(e.GetProperty("count"))},{dynamicMemory.Width},{(dynamicMemory.TwoState?"true":"false")},{(e.GetProperty("preserve").GetBoolean()?"true":"false")},{(ExpressionSigned(e.GetProperty("count"))?"true":"false")});");
+                code.AppendLine($"mem[{dynamicId}]=nextMem[{dynamicId}];");break;
             case "while": case "do":
                 if(Kind(e)=="do")code.AppendLine("do{");else code.AppendLine($"while(yes({Expression(e.GetProperty("condition"))})){{");
                 code.AppendLine("execution_step(execution_budget);");Statement(code,e.GetProperty("body"),ref unique);
@@ -296,7 +307,7 @@ public sealed partial class RtlDesign
     }
     private void ProcessStatement(StringBuilder code,JsonElement body,ref int unique)
     {
-        if(Kind(body) is "process" or "parallel"||!Statements(body).Any(e=>Kind(e)=="blocking")){Statement(code,body,ref unique);return;}
+        if(Kind(body) is "process" or "parallel"||!Statements(body).Any(e=>Kind(e) is "blocking" or "allocate" or "delete")){Statement(code,body,ref unique);return;}
         var process=new StringBuilder();Statement(process,body,ref unique);
         // Rewrite generated numeric storage accesses, never HDL source or identifiers.
         code.AppendLine("{auto local=s;auto localMem=mem;");code.Append(process.ToString().Replace("s[","local[",StringComparison.Ordinal).Replace("mem[","localMem[",StringComparison.Ordinal));code.AppendLine("}");
@@ -309,7 +320,7 @@ public sealed partial class RtlDesign
     }
     public IReadOnlyDictionary<string, string> ExternalPortNames()
     {
-        var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part select_indexed deposit_indexed parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index execution_budget execution_step repeat_count array_index").Split(' ').ToHashSet(StringComparer.Ordinal);
+        var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part select_indexed deposit_indexed parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index execution_budget execution_step repeat_count array_index dynamic_allocate dynamic_read").Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal); var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var signal in Signals.Where(s => s.Direction != "internal"))
         {
@@ -338,7 +349,7 @@ public sealed partial class RtlDesign
         code.AppendJoin(',', Signals.Select(s => $"{{\"{s.SourcePath ?? s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")},{(s.Signed?"true":"false")},{(s.TwoState?"true":"false")}}}"));
         code.Append($"}},{(CombinationalOnly ? -1 : SignalId(Clock!))})");
         foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)})");
-        code.AppendLine("{mem={"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},{(m.TwoState?$"word(0,0,0,{m.Width})":$"unknown({m.Width})")})"));
+        code.AppendLine("{mem={"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({(m.Dynamic?0:m.Depth)},{(m.TwoState?$"word(0,0,0,{m.Width})":$"unknown({m.Width})")})"));
         code.AppendLine("};");EmitInitialization(code);code.AppendLine($"previous_events.assign({Signals.Count},unknown(1));");
         if(!CombinationalOnly)code.AppendLine($"previous_events[{SignalId(Clock!)}]=word(0,0,0,1);");
         foreach(var signal in Signals.Where(s=>s.TwoState&&s.Width==1))code.AppendLine($"previous_events[{SignalId(signal.Name)}]=word(0,0,0,1);");
@@ -347,7 +358,7 @@ public sealed partial class RtlDesign
     public string EmitCpp()
     {
         var code = new StringBuilder("#include \"runtime.h\"\n#include <iostream>\n#include <fstream>\n#include <sstream>\nusing namespace vsrtl;\nint main(int argc,char**argv){try{if(argc!=3)throw std::runtime_error(\"stimulus and workers required\");int workers=std::stoi(argv[2]);if(workers<1||workers>256)throw std::runtime_error(\"workers out of range\");\nstd::vector<W>s{\n");
-        code.AppendJoin(',', Signals.Select(s => s.TwoState?$"word(0,0,0,{s.Width})":$"unknown({s.Width})")); code.AppendLine("};std::vector<std::vector<W>>mem{"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},{(m.TwoState?$"word(0,0,0,{m.Width})":$"unknown({m.Width})")})")); code.AppendLine("};size_t execution_budget=20000;");EmitInitialization(code);code.AppendLine("auto settle=[&](){");
+        code.AppendJoin(',', Signals.Select(s => s.TwoState?$"word(0,0,0,{s.Width})":$"unknown({s.Width})")); code.AppendLine("};std::vector<std::vector<W>>mem{"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({(m.Dynamic?0:m.Depth)},{(m.TwoState?$"word(0,0,0,{m.Width})":$"unknown({m.Width})")})")); code.AppendLine("};size_t execution_budget=20000;");EmitInitialization(code);code.AppendLine("auto settle=[&](){");
         EmitSettle(code); code.AppendLine("};");
         if(EventDriven){code.AppendLine($"std::vector<W> previous_events({Signals.Count},unknown(1));previous_events[{SignalId(Clock!)}]=word(0,0,0,1);");foreach(var signal in Signals.Where(s=>s.TwoState&&s.Width==1))code.AppendLine($"previous_events[{SignalId(signal.Name)}]=word(0,0,0,1);");code.AppendLine("auto evaluate=[&](){execution_budget=20000;");EventEvaluation(code);code.AppendLine("};");}
         code.AppendLine("std::ifstream input(argv[1]);if(!input)throw std::runtime_error(\"stimulus missing\");std::string line;int cycle=0;while(std::getline(input,line)){execution_budget=20000;if(++cycle>100000)throw std::runtime_error(\"cycle budget\");std::istringstream row(line);std::string value;");

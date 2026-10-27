@@ -450,3 +450,61 @@ RELATIONS:
   VALUE: tests/native/container_event_tests.cpp
 - TYPE: File
   VALUE: tools/ContainerEventMutationProbe.cs
+
+[REQUIREMENT]
+UID: VS-RTL-DYNAMIC-ARRAY-001
+STATUS: Active
+TITLE: Bounded dynamic array allocation through HDL
+STATEMENT: >>>
+The simulator shall lower typed module-scope one-dimensional dynamic arrays into owning native storage and execute blocking new[count], self-preserving new[count](same_array), indexed reads/writes, zero-argument size and delete. Elements shall preserve supported word width, signedness and two/four-state defaults. Counts shall be sampled once and known, nonnegative and at most 256. Dynamic storage shall start empty, preserve the common prefix only for self-preserving allocation, initialize new cells and reject conflicting process ownership. SDK evaluation failure shall restore storage and edge history. Queue/associative methods, cross-array copies and general timed scheduling remain outside this bounded contract.
+<<<
+COMMENT: User-requested bounded slice:21 focused tests pass against original HDL/Icarus, independent traces, standalone and SDK models, including failure recovery after a truncating allocation. Selected regression, malformed-input properties, native semantic mutations, Stryker.NET and coverage evidence are documented in docs/dynamic-arrays.md. The Icarus two-state invalid-read limitation is recorded separately from native default-value checks.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlArrays.cs
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlDynamicArrayTests.cs
+- TYPE: File
+  VALUE: examples/dynamic_array.sv
+
+[REQUIREMENT]
+UID: VS-VERIFY-NATIVE-FUZZ-001
+STATUS: Active
+TITLE: Reproducible bounded native fuzz campaigns
+STATEMENT: >>>
+The optional native fuzz controller shall compile frozen source snapshots with four isolated LLVM libFuzzer domains, bounded execution time, sanitizer checking, independent reference checks and retained corpora, crash inputs, seeds, commands and source/binary fingerprints. Successful corpora shall support separate line/branch coverage replay. Scheduled launch, completed execution and passing results shall be reported distinctly.
+<<<
+COMMENT: Short campaign evidence and scope limitations are documented in docs/runtime-fuzz.md. Scheduling an overnight run is not completed execution evidence. The controller's NativeAOT instructions and error-path coverage remain unmeasured.
+RELATIONS:
+- TYPE: File
+  VALUE: tools/RuntimeFuzzCampaign.cs
+- TYPE: File
+  VALUE: tools/fuzz/runtime_fuzz.cpp
+- TYPE: File
+  VALUE: tools/fuzz/CMakeLists.txt
+
+[REQUIREMENT]
+UID: VS-VERIFY-REMOTE-001
+STATUS: Draft
+TITLE: Standalone Windows test campaigns and resumable results publication
+STATEMENT: >>>
+A standalone PowerShell workflow shall check directories and tools, reuse compatible installed dependencies, obtain a frozen Git source revision, run bounded native and managed mutation campaigns in WSL with isolated outputs, retain actual results and provenance, and prepare a small results commit on a new branch. Commit or authentication failure shall preserve results and local commits, pause for user action, and permit publication-only resume without rerunning tests. Unknown work shall not be discarded or pushed. Successful publication shall verify the remote SHA.
+<<<
+COMMENT: Implemented with local PowerShell/Git recovery tests and Linux worker smoke verification. Clean-machine installation, a live expired GitHub credential and12-hour completion remain unmeasured; broad acceptance remains Draft. See docs/remote-windows-campaign.md.
+RELATIONS:
+- TYPE: File
+  VALUE: tools/remote/Start-VeloSimCampaign.ps1
+- TYPE: File
+  VALUE: tools/remote/Remote.Common.ps1
+- TYPE: File
+  VALUE: tools/remote/Run-LinuxCampaign.ps1
+- TYPE: File
+  VALUE: tools/remote/Publish-RemoteResults.ps1
+- TYPE: File
+  VALUE: tests/remote/RemoteCampaign.Tests.ps1

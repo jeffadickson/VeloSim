@@ -6,7 +6,7 @@ namespace VeloSim.Tests;
 [NonParallelizable]
 public class RtlEvolutionRejectionTests
 {
-    [TestCase("stock-union","union tag provenance"),TestCase("racy","multiple initial blocks"),TestCase("input","Initialization cannot access"),TestCase("timing","unsupported statement type"),TestCase("mixed","mixed two/four-state"),TestCase("unpacked","only bounded packed"),TestCase("tagged","tag-aware storage"),TestCase("rank5","fixed arrays require"),TestCase("dynamic","container-lifetime"),TestCase("queue","container-lifetime"),TestCase("associative","container-lifetime")]
+    [TestCase("stock-union","union tag provenance"),TestCase("racy","multiple initial blocks"),TestCase("input","Initialization cannot access"),TestCase("timing","unsupported statement type"),TestCase("mixed","mixed two/four-state"),TestCase("unpacked","only bounded packed"),TestCase("tagged","tag-aware storage"),TestCase("rank5","fixed arrays require"),TestCase("dynamic","initializer must"),TestCase("queue","container-lifetime"),TestCase("associative","container-lifetime")]
     public async Task UnsupportedFormsAreRejectedByTheActualPipeline(string form,string marker)
     {
         if(Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO")!="1")Assert.Ignore("Requires pinned Surelog/UHDM");
@@ -19,7 +19,7 @@ public class RtlEvolutionRejectionTests
             "stock-union"=>"typedef union packed{logic[7:0]b;logic[7:0]c;}s_t;s_t s;assign q=0;",
             "tagged"=>"typedef union tagged packed{logic[7:0]b;logic[7:0]c;}s_t;s_t s;assign q=0;",
             "rank5"=>"logic[7:0]m[0:0][0:0][0:0][0:0][0:0];assign q=0;",
-            "dynamic"=>"logic[7:0]m[];assign q=0;",
+            "dynamic"=>"logic[7:0]m[],other[];initial m=new[2](other);assign q=0;",
             "queue"=>"logic[7:0]m[$];assign q=0;",
             _=>"logic[7:0]m[int];assign q=0;"};
         string source=$"module dut(input logic[7:0]a,output logic[7:0]q);{body}endmodule";

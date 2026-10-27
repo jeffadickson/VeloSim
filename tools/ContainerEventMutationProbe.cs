@@ -5,11 +5,17 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-if(args.Length!=1)throw new ArgumentException("Usage: ContainerEventMutationProbe <checkout>");
+if(args.Length is <1 or >2||args.Length==2&&args[1]!="dynamic")throw new ArgumentException("Usage: ContainerEventMutationProbe <checkout> [dynamic]");
+bool dynamicMode=args.Length==2;
 string root=Path.GetFullPath(args[0]);
-string output=Path.Combine(root,"artifacts/container-events/mutations",Guid.NewGuid().ToString("N"));
+string output=Path.Combine(root,dynamicMode?"artifacts/dynamic-array/mutations":"artifacts/container-events/mutations",Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(output);
-var mutations=new (string Name,string File,string Before,string After)[]{
+var mutations=dynamicMode?new (string Name,string File,string Before,string After)[]{
+ ("lost-resize-prefix","runtime.h","if(preserve)for(size_t i=0;","if(false)for(size_t i=0;"),
+ ("capacity-off-by-one","runtime.h","if(count.v>256)throw","if(count.v>257)throw"),
+ ("allocation-not-published","runtime.h","memory.swap(next);","/* missing allocation publication */"),
+ ("two-state-invalid-read","runtime.h","return is_two_state?word(0,0,0,width):unknown(width);","return unknown(width);")
+}:new (string Name,string File,string Before,string After)[]{
  ("dynamic-prefix","containers.h","if(preserve)std::copy_n","if(false)std::copy_n"),
  ("queue-direction","containers.h","W value=front?cells_.front():cells_.back();","W value=front?cells_.back():cells_.front();"),
  ("associative-key","containers.h","cells_.insert_or_assign(key,copy.read(0));","cells_.insert_or_assign(Bits(0),copy.read(0));"),
@@ -25,15 +31,17 @@ foreach(var mutation in new[]{("control","","","")}.Concat(mutations)) {
   if(header==file){if(source.Split(before,StringSplitOptions.None).Length!=2)throw new InvalidOperationException("Mutation target drift: "+name);source=source.Replace(before,after,StringComparison.Ordinal);}
   File.WriteAllText(Path.Combine(copy,"native/rtl",header),source);
  }
- File.Copy(Path.Combine(root,"tests/native/container_event_tests.cpp"),Path.Combine(copy,"tests/native/container_event_tests.cpp"));
- await Run("clang++-18",["-std=c++20","-O0","-g","tests/native/container_event_tests.cpp","-o","probe"],copy,name+"-compile",true);
+ string testSource=dynamicMode?"rtl_runtime_tests.cpp":"container_event_tests.cpp";
+ File.Copy(Path.Combine(root,"tests/native",testSource),Path.Combine(copy,"tests/native",testSource));
+ if(dynamicMode)foreach(string header in Directory.GetFiles(Path.Combine(root,"tests/native"),"*.h"))File.Copy(header,Path.Combine(copy,"tests/native",Path.GetFileName(header)));
+ await Run("clang++-18",["-std=c++20","-O0","-g","tests/native/"+testSource,"-o","probe"],copy,name+"-compile",true);
  var run=await Run(Path.Combine(copy,"probe"),[],copy,name+"-run",false);
- bool detected=run.Code!=0&&run.Text.Contains("container/event assertion failed",StringComparison.Ordinal);
+ bool detected=run.Code!=0&&run.Text.Contains(dynamicMode?"RTL runtime assertion failed":"container/event assertion failed",StringComparison.Ordinal);
  results.Add((name,run.Code,detected));
  // Explicit JSON writing keeps this helper compatible with NativeAOT.
  using(var stream=File.Create(Path.Combine(output,"report.json")))using(var json=new Utf8JsonWriter(stream,new JsonWriterOptions{Indented=true})) {
-  json.WriteStartObject();json.WriteNumber("seed",20261030);json.WriteString("scope","Five focused semantic faults; not exhaustive");
-  json.WriteStartObject("headers");foreach(string header in new[]{"containers.h","timed_events.h"})json.WriteString(header,Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root,"native/rtl",header)))));json.WriteEndObject();
+  json.WriteStartObject();json.WriteNumber("seed",20261030);json.WriteString("scope",dynamicMode?"Four dynamic allocation semantic faults; not exhaustive":"Five focused semantic faults; not exhaustive");
+  json.WriteStartObject("headers");foreach(string header in new[]{"runtime.h","containers.h","timed_events.h"})json.WriteString(header,Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(root,"native/rtl",header)))));json.WriteEndObject();
   json.WriteStartArray("results");foreach(var result in results){json.WriteStartObject();json.WriteString("name",result.Name);json.WriteNumber("exit_code",result.Code);json.WriteBoolean("detected",result.Detected);json.WriteEndObject();}json.WriteEndArray();json.WriteEndObject();
  }
  if(name=="control"?run.Code!=0:!detected)throw new InvalidOperationException("Invalid control or surviving mutant: "+name);

@@ -5,19 +5,25 @@ public sealed partial class RtlDesign
 {
     private static RtlMemory ParseMemory(JsonElement e)
     {
-        JsonShape.Fields(e,["name","width","depth"],["signed","lower","dimensions","two_state"]);
+        JsonShape.Fields(e,["name","width","depth"],["signed","lower","dimensions","two_state","dynamic"]);
         RtlDimension[]? dimensions=null;
         if(e.TryGetProperty("dimensions",out var shape))dimensions=shape.EnumerateArray().Select(d=>{JsonShape.Fields(d,["left","right"]);return new RtlDimension(d.GetProperty("left").GetInt32(),d.GetProperty("right").GetInt32());}).ToArray();
-        return new(Name(e),e.GetProperty("width").GetInt32(),e.GetProperty("depth").GetInt32(),e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("lower",out var lower)?lower.GetInt32():0,dimensions,e.TryGetProperty("two_state",out var two)&&two.GetBoolean());
+        return new(Name(e),e.GetProperty("width").GetInt32(),e.GetProperty("depth").GetInt32(),e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("lower",out var lower)?lower.GetInt32():0,dimensions,e.TryGetProperty("two_state",out var two)&&two.GetBoolean(),e.TryGetProperty("dynamic",out var dynamic)&&dynamic.GetBoolean());
     }
 
     private static void ValidateMemoryShape(RtlMemory memory)
     {
+        if(memory.Dynamic&&(memory.Depth!=1||memory.LowerBound!=0||memory.Dimensions is not null))throw new IrValidationException("Dynamic arrays use depth1 metadata, no fixed bounds or dimensions, and initially empty storage.");
         if(memory.Dimensions is not {} shape)return;
         if(shape.Count is <1 or >4||memory.LowerBound!=0)throw new IrValidationException("Memory shape requires 1..4 dimensions and no legacy lower bound.");
         long product=1;
         foreach(var dimension in shape){if(dimension.Left<0||dimension.Right<0)throw new IrValidationException("Memory dimensions require nonnegative bounds.");product*=Math.Abs((long)dimension.Left-dimension.Right)+1;if(product>256)throw new IrValidationException("Memory dimension product exceeds 256.");}
         if(product!=memory.Depth)throw new IrValidationException("Memory depth does not match dimension product.");
+    }
+
+    private void RequireDynamic(string name)
+    {
+        if(!Memories[MemoryId(name)].Dynamic)throw new IrValidationException("Container lifetime operations require a dynamic array.");
     }
 
     private static IEnumerable<JsonElement> MemoryIndices(JsonElement access)=>access.TryGetProperty("index",out var index)?[index]:access.GetProperty("indices").EnumerateArray().ToArray();

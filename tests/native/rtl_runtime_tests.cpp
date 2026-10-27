@@ -9,6 +9,19 @@ void check(bool b){if(!b){std::cerr<<"RTL runtime assertion failed\n";std::abort
 #include "input_event_cycles.h"
 #include "evolution_tests.h"
 int main(){
+ // Runtime allocation validation and state preservation supplement HDL traces.
+ std::vector<W> dynamic;
+ dynamic_allocate(dynamic,word(2,0,0,32),8,false,false,false);check(dynamic.size()==2);dynamic[0]=parse("10100101");
+ dynamic_allocate(dynamic,word(3,0,0,32),8,false,true,false);check(dynamic.size()==3&&text(dynamic[0])=="10100101"&&text(dynamic[2])=="xxxxxxxx");
+ for(auto bad:{word(257,0,0,32),parse("x"),parse("z"),parse("11111111")}){
+  auto before=dynamic;bool rejected=false;try{dynamic_allocate(dynamic,bad,8,false,false,true);}catch(const std::exception&){rejected=true;}
+  check(rejected&&dynamic.size()==before.size()&&text(dynamic[0])==text(before[0]));
+ }
+ for(int invalidWidth:{0,257}){bool rejected=false;try{dynamic_allocate(dynamic,word(1,0,0,32),invalidWidth,false,false,false);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
+ auto badCount=word(0,0,0,32);badCount.w=0;bool rejectedCount=false;try{dynamic_allocate(dynamic,badCount,8,false,false,false);}catch(const std::invalid_argument&){rejectedCount=true;}check(rejectedCount);
+ dynamic_allocate(dynamic,word(1,0,0,32),8,true,false,false);check(text(dynamic[0])=="00000000"&&text(dynamic_read(dynamic,parse("x"),8,true))=="00000000");
+ check(text(dynamic_read(dynamic,word(2,0,0,32),8,false))=="xxxxxxxx"&&text(dynamic_read(dynamic,word(0,0,0,32),8,true))=="00000000");
+ dynamic_allocate(dynamic,word(0,0,0,32),8,false,true,false);check(dynamic.empty());
  evolutionRuntimeTests();
  inputEventCycles();
  signedWideTests();

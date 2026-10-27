@@ -34,6 +34,18 @@ function-mutation-probe:
 	"artifacts/publish/FunctionMutationProbe/FunctionMutationProbe" "$(CURDIR)"
 
 .PHONY: surelog-tagfix
+.PHONY: runtime-fuzz-tool runtime-fuzz-smoke
+.PHONY: remote-script-tests
+remote-script-tests:
+	pwsh -NoProfile -File tools/remote/Test-RemoteScripts.ps1
+FUZZ_TOOL := artifacts/publish/RuntimeFuzzCampaign/RuntimeFuzzCampaign
+FUZZ_OUTPUT ?=
+$(FUZZ_TOOL): tools/RuntimeFuzzCampaign.cs tools/RuntimeFuzzCampaign.packages.lock.json Directory.Build.props Directory.Build.targets global.json
+	$(DOTNET) publish tools/RuntimeFuzzCampaign.cs -c Release -r linux-x64 -p:PublishAot=true -p:VeloSimNativeJobs=$(JOBS) -o artifacts/publish/RuntimeFuzzCampaign
+runtime-fuzz-tool: $(FUZZ_TOOL)
+runtime-fuzz-smoke: runtime-fuzz-tool
+	@test -n "$(FUZZ_OUTPUT)" || { echo 'Set FUZZ_OUTPUT to a fresh path with an existing parent'; exit 2; }
+	"$(FUZZ_TOOL)" "$(CURDIR)" "$(FUZZ_OUTPUT)" 30
 # Explicit pinned checkout: this target never modifies the installed frontend.
 SURELOG_SOURCE ?=
 SURELOG_TAGFIX_BUILD ?= artifacts/surelog-tagfix

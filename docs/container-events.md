@@ -1,6 +1,8 @@
 # Container and timed-event runtime foundation
 
-This change adds internal native primitives. It does not yet accept dynamic arrays,
+This historical checkpoint added internal native primitives. The later
+[dynamic-array slice](dynamic-arrays.md) connects bounded allocation to HDL.
+At this checkpoint it did not yet accept dynamic arrays,
 associative arrays, queues or delayed processes in HDL. Existing exporter rejection
 and generated-model behavior remain in place. The next implementation step is a
 typed IR with container ownership and suspended-process state, followed by UHDM

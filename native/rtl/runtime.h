@@ -130,6 +130,20 @@ inline W arithmetic(W a,W b,int w,bool subtract){if(a.x||a.z||b.x||b.z)return un
 inline W concat(W a,W b){if(a.w+b.w>256)throw std::runtime_error("concat width");return word((a.v<<b.w)|b.v,(a.x<<b.w)|b.x,(a.z<<b.w)|b.z,a.w+b.w);}
 inline W read(const std::vector<W>& m,W index,int w){return index.x||index.z||index.v>=m.size()?unknown(w):m[size_t(index.v)];}
 inline void write(std::vector<W>& m,W index,W value,int w){if(!(index.x|index.z)&&index.v<m.size())m[size_t(index.v)]=resize(value,w);}
+// Dynamic storage starts empty. Allocation samples its count once and publishes
+// only after all validation/allocation succeeds; model snapshots own the vector.
+inline void dynamic_allocate(std::vector<W>& memory,W count,int width,bool is_two_state,bool preserve,bool is_signed){
+ if(width<1||width>256||count.w<1||count.w>256)throw std::invalid_argument("dynamic array element/count width");
+ if(count.x||count.z||(is_signed&&bool(count.v&(Bits(1)<<(count.w-1)))))throw std::invalid_argument("dynamic array count must be known and nonnegative");
+ if(count.v>256)throw std::length_error("dynamic array capacity exceeds256");
+ std::vector<W> next(size_t(count.v),is_two_state?word(0,0,0,width):unknown(width));
+ if(preserve)for(size_t i=0;i<std::min(next.size(),memory.size());++i)next[i]=memory[i];
+ memory.swap(next);
+}
+inline W dynamic_read(const std::vector<W>& memory,W index,int width,bool is_two_state){
+ if(index.x||index.z||index.v>=memory.size())return is_two_state?word(0,0,0,width):unknown(width);
+ return memory[size_t(index.v)];
+}
 }
 namespace vsrtl {
 inline W deposit_indexed(W before,W base,int width,bool descending,W value){
