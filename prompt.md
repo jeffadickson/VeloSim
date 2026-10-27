@@ -1,3 +1,5 @@
+Follow-up handoff (2026-10-26): Include examples/dynamic_array.sv alongside the published dynamic-array documentation. Icarus compilation and Surelog/UHDM export produced example.json in the native example-validation directory. Keep fuzz-related user updates limited to actual test results. Remote clean-machine installation and a complete 12-hour campaign remain unverified.
+
 # VeloSim continuation prompt
 
 ## Current checkpoint: dynamic-array HDL and standalone remote campaigns
