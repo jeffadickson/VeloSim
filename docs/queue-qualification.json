@@ -1,0 +1,172 @@
+{
+  "schema": "velosim.queue.qualification.v1",
+  "baseCommit": "6bf87b58447e4a76e9bdad40e63f0597996ecb5f",
+  "requirement": "VS-RTL-QUEUE-001",
+  "requirementStatus": "Draft",
+  "sourceHashEncoding": "SHA256 hex, UTF8 normalized to LF",
+  "sourceHashes": {
+    "CMakeLists.txt": "f130500448781e234f7e197a2a11f1badd9dd5645d3accf0c8cfe114dfde6c9e",
+    "Makefile": "18453dcc295b4f5f8ffcc8e7d31b9c28ca29b3685bc7f145065dd048bdf013f5",
+    "src/VeloSim.Core/RtlArrays.cs": "28ee5a5de85265b7d6408ea676f732cdcb4b9d53e9d2493f46f5f755cda2ec33",
+    "src/VeloSim.Core/RtlDesign.cs": "2a02fdcc6f4b681185982d339cb04d76a0758da51655d6fdb4726fa86172cc4a",
+    "src/VeloSim.Core/RtlInitialization.cs": "336203e23bd6678fa3b6451a6a5b9904fa1cfd87ac307c9e545005e1642c08b6",
+    "src/VeloSim.Core/RtlQueues.cs": "81ed9c4b2586658e71c19d9591151f54564e372855398f91adf5d987a93b0b4b",
+    "native/rtl/runtime.h": "7f0474a54af34edea7cff0dba96655d67518b33d64bf9d346ebcb3917bdb29da",
+    "native/uhdm/rtl.cpp": "fa294edb16f7d611e6e6965744a720a109a913f41e3bf746c7546f364cae01c7",
+    "native/uhdm/rtl_flatten.h": "0b78f57c701b9782060e2675a0e2338d0cddbb633a2c82228891c5def3c729ad",
+    "tests/VeloSim.Tests/RtlQueueTests.cs": "4555f17a1d8bd6b05d76ed23d39a6010118857a86c9f53c9828fd3bc91d750fe",
+    "tests/native/rtl_queue_tests.cpp": "d38d9af1473f9de28d26cd5e78d4a757827da6a91b594320d7c5ea9e3eb0c1ca",
+    "tools/ContainerEventMutationProbe.cs": "aa3465e05da1596da994fe8d4acbe2e2c381971f20532cc0206a65d78d1737f5",
+    "examples/queue_demo.sv": "2d5d8ae11fc5b50006e9717b2099135458cc432daa67d6daf379fed0df9c08db"
+  },
+  "verification": {
+    "asanUbsanQueuePassed": 1,
+    "acceptedDistinctCases": 30,
+    "nativeQueuePassed": 1,
+    "incrementalHelperNoRebuildDryRunPassed": true,
+    "hdlRowsPerModel": 22,
+    "focusedFirstRun": {
+      "passed": 29,
+      "executed": 30,
+      "skipped": 0,
+      "failed": 1,
+      "failure": "Independent oracle exposed Icarus empty bit-queue pop returning X"
+    },
+    "compiledFaultControlPassed": true,
+    "compiledQueueFaultsDetected": 4,
+    "correctedCaseRun": {
+      "passed": 1,
+      "skipped": 0,
+      "change": "Reference comparison HDL explicitly guards empty two-state pops; production unchanged",
+      "failed": 0
+    },
+    "exampleIcarusCompileAndUhdmExportPassed": true,
+    "unsupportedHdlRejections": 4,
+    "fullSuiteRun": false,
+    "nativeAotHelperBuiltAndExecuted": true,
+    "hdlModels": 3
+  },
+  "coverage": {
+    "exporter": {
+      "files": [
+        "native/uhdm/rtl.cpp",
+        "native/uhdm/rtl_flatten.h"
+      ],
+      "scope": "Entire two files under focused queue inputs; not full frontend",
+      "coveredBranches": 436,
+      "totalLines": 228,
+      "profiles": 8,
+      "totalBranches": 1124,
+      "coveredLines": 197
+    },
+    "nativeQueueAdapters": {
+      "coveredLines": 17,
+      "scope": "Direct native test, generated SDK instruction coverage unmeasured",
+      "coveredBranches": 25,
+      "functions": [
+        "queue_push",
+        "queue_pop",
+        "queue_write",
+        "queue_delete"
+      ],
+      "totalBranches": 30,
+      "totalLines": 18
+    },
+    "managed": {
+      "coveredLines": 16,
+      "scope": "New emitter file and iterator mapping, initial focused run; not whole Core",
+      "file": "src/VeloSim.Core/RtlQueues.cs",
+      "coveredBranches": 12,
+      "totalBranches": 12,
+      "totalLines": 16
+    }
+  },
+  "properties": {
+    "seed": [
+      20261102,
+      864013
+    ],
+    "cases": 100,
+    "tool": "FsCheck 3.3.2"
+  },
+  "toolVersions": {
+    "ninja": "1.11.1",
+    "clang": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "dotnet": "10.0.402",
+    "llvm": "Ubuntu LLVM version 18.1.3"
+  },
+  "binaryHashes": {
+    "queueTest": "BFEB99A3323B30FC405CBF348543914C73B2B6D2CE53151B4EB425EDB5524174",
+    "nativeMutationHelper": "4712CAE2DD67C664141D641E7F62516C111A5E2A47058FA9F49666EA4B72B148",
+    "exporter": "734610A734F4F4315231594F66FA8E959CCE127C03546F989B6D38F7325FA1D0"
+  },
+  "frontendReports": [
+    {
+      "sha256": "87BC27293863F3FBBA4DCDE8E55319E912F962030B3194E175496C8460DF1466",
+      "status": null,
+      "exitCode": 1,
+      "name": "queue-reject-2-3f7fbd9b3bcf49a08a54156948411287"
+    },
+    {
+      "sha256": "E8EFC09AA3E60BE73156E4150883F8AFD8161C936ECF05E164DC1CE109C77AC8",
+      "status": "pass",
+      "exitCode": null,
+      "name": "rtl-indexed-queue-True-8-False-923310da6edd4fdba1dc01a145c858e8"
+    },
+    {
+      "sha256": "42C6FA9C50862BDF8C1A3EE48801F5C8EDEF6248A7508151DB08259BD1610B4C",
+      "status": null,
+      "exitCode": 1,
+      "name": "queue-reject-3-68951a94454c4598b04bf0acdd2459c6"
+    },
+    {
+      "sha256": "90178D2221CB957DBE1E6755CD795CCD42F55E2209F3B989F39DA3E52BF37CBF",
+      "status": "pass",
+      "exitCode": null,
+      "name": "rtl-indexed-queue-False-8-False-dfcbe8cca7e147d384e38875d380d770"
+    },
+    {
+      "sha256": "81D0F9AC566B4E720FBE62C9BB76A6EF21C8C33E694A915DEDF1A12F8DAD5CE9",
+      "status": null,
+      "exitCode": 1,
+      "name": "queue-reject-0-074206e61eb4437389cfbff61483d9ee"
+    },
+    {
+      "sha256": "89DFCFC3796A4DB743653A4B9058FDB6383F239C5AECE0AE5C9612667AAAE099",
+      "status": null,
+      "exitCode": 1,
+      "name": "queue-reject-1-c236902e1c3841c9971ca2e0e900324f"
+    },
+    {
+      "sha256": "5E1991E9BDAC5F555FFA5AF2DBA77D9BFC30E251745ACFB6ABB57FF9825BF7B5",
+      "status": "pass",
+      "exitCode": null,
+      "name": "rtl-indexed-queue-False-128-True-ba1bff7e7fc24bdd8b4c95f6ae9f8246"
+    }
+  ],
+  "commands": {
+    "nativeConfigure": "cmake -S <snapshot> -B <native-build> -G Ninja -DVELOSIM_BUILD_UHDM=ON -DVELOSIM_COVERAGE=ON -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_PREFIX_PATH=/opt/velosim -DCMAKE_BUILD_TYPE=Debug",
+    "nativeBuild": "cmake --build <native-build> --target velosim-uhdm-rtl velosim_queue_tests --parallel 4",
+    "focusedTestFilter": "FullyQualifiedName~RtlQueueTests|FullyQualifiedName~RtlArrayMutationRegressionTests.LegacyLowerBoundIsAppliedOnlyWhenNonzero|FullyQualifiedName~RtlDynamicArrayTests.AllocationIsOwnedTypedAndInitiallyEmpty|FullyQualifiedName~RtlDynamicArrayTests.DynamicElementsCannotMixNbaWithLifetimeChanges",
+    "strictdoc": "uv tool run --from strictdoc==0.30.4 strictdoc export requirements --config strictdoc_config.py --output-dir artifacts/queue-feature/strictdoc-final --no-parallelization",
+    "mutation": "make queue-mutation-probe JOBS=4",
+    "focused": "dotnet test tests/VeloSim.Tests -c Release --filter <focusedTestFilter> --collect:XPlat Code Coverage --settings coverage.runsettings --results-directory <evidence>/managed --logger trx;LogFileName=focused.trx",
+    "nativeTest": "ctest --test-dir <native-build> -R '^rtl_queue$' --output-on-failure",
+    "correctedFilter": "FullyQualifiedName~QueueMethodsMatchOriginalHdlAndIndependentHistory&Name~True,8,False"
+  },
+  "limitations": [
+    "Full managed/native/HDL regressions and Stryker not run by user request for limited checks",
+    "One comparison case uses an explicit HDL guard for the Icarus empty bit-queue pop limitation; direct native default-zero checks remain unguarded",
+    "Four compiled faults are not a general mutation score",
+    "Mutation helper instruction coverage and sanitized generated SDK coverage are unmeasured",
+    "Other mutation modes not rerun; dynamic default-read target made unique",
+    "Queue requirement remains Draft; no broad closure claim",
+    "Nightly frozen campaign source predates this queue adapter; no additional campaign run or schedule change",
+    "Source/evidence self-review only; no external expert participated"
+  ],
+  "strictdoc": {
+    "version": "0.30.4",
+    "logSha256": "8718f86485213b5446e072333e1b78bb2d09ed215859802c954fa6916b1b5626",
+    "passed": true
+  }
+}

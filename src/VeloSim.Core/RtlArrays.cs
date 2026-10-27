@@ -5,14 +5,15 @@ public sealed partial class RtlDesign
 {
     private static RtlMemory ParseMemory(JsonElement e)
     {
-        JsonShape.Fields(e,["name","width","depth"],["signed","lower","dimensions","two_state","dynamic"]);
+        JsonShape.Fields(e,["name","width","depth"],["signed","lower","dimensions","two_state","dynamic","queue"]);
         RtlDimension[]? dimensions=null;
         if(e.TryGetProperty("dimensions",out var shape))dimensions=shape.EnumerateArray().Select(d=>{JsonShape.Fields(d,["left","right"]);return new RtlDimension(d.GetProperty("left").GetInt32(),d.GetProperty("right").GetInt32());}).ToArray();
-        return new(Name(e),e.GetProperty("width").GetInt32(),e.GetProperty("depth").GetInt32(),e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("lower",out var lower)?lower.GetInt32():0,dimensions,e.TryGetProperty("two_state",out var two)&&two.GetBoolean(),e.TryGetProperty("dynamic",out var dynamic)&&dynamic.GetBoolean());
+        return new(Name(e),e.GetProperty("width").GetInt32(),e.GetProperty("depth").GetInt32(),e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("lower",out var lower)?lower.GetInt32():0,dimensions,e.TryGetProperty("two_state",out var two)&&two.GetBoolean(),e.TryGetProperty("dynamic",out var dynamic)&&dynamic.GetBoolean(),e.TryGetProperty("queue",out var queue)&&queue.GetBoolean());
     }
 
     private static void ValidateMemoryShape(RtlMemory memory)
     {
+        if(memory.Queue&&(memory.Dynamic||memory.Depth!=1||memory.LowerBound!=0||memory.Dimensions is not null))throw new IrValidationException("Queues use initially empty depth1 metadata without dynamic or fixed bounds.");
         if(memory.Dynamic&&(memory.Depth!=1||memory.LowerBound!=0||memory.Dimensions is not null))throw new IrValidationException("Dynamic arrays use depth1 metadata, no fixed bounds or dimensions, and initially empty storage.");
         if(memory.Dimensions is not {} shape)return;
         if(shape.Count is <1 or >4||memory.LowerBound!=0)throw new IrValidationException("Memory shape requires 1..4 dimensions and no legacy lower bound.");
@@ -24,6 +25,32 @@ public sealed partial class RtlDesign
     private void RequireDynamic(string name)
     {
         if(!Memories[MemoryId(name)].Dynamic)throw new IrValidationException("Container lifetime operations require a dynamic array.");
+    }
+
+    private void RequireContainer(string name)
+    {
+        var memory=Memories[MemoryId(name)];
+        if(!memory.Dynamic&&!memory.Queue)throw new IrValidationException("Container lifetime operations require a dynamic array or queue.");
+    }
+
+    private void RequireQueue(string name)
+    {
+        if(!Memories[MemoryId(name)].Queue)throw new IrValidationException("Queue operations require a queue declaration.");
+    }
+
+    // Pop is an ordered statement, never a side effect hidden inside an expression.
+    // This keeps operand evaluation order explicit and preserves process ownership.
+    private void ValidateQueueOperation(JsonElement e,HashSet<string> writers,int depth)
+    {
+        bool push=Kind(e)=="queue_push";
+        JsonShape.Fields(e,push?["kind","name","front","value"]:["kind","name","front"],push?null:["target"]);
+        RequireQueue(Name(e));_=e.GetProperty("front").GetBoolean();writers.Add(Name(e));
+        if(push)ValidateExpression(e.GetProperty("value"),depth+1);
+        else if(e.TryGetProperty("target",out var target)){
+            ValidateExpression(target,depth+1);
+            if(Kind(target)!="ref"||Signals[SignalId(Name(target))].Direction=="input"||Name(target)==Clock)throw new IrValidationException("Queue pop requires a writable whole-word destination.");
+            writers.Add(Name(target));
+        }
     }
 
     private static IEnumerable<JsonElement> MemoryIndices(JsonElement access)=>access.TryGetProperty("index",out var index)?[index]:access.GetProperty("indices").EnumerateArray().ToArray();

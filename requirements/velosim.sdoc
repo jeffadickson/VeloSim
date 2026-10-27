@@ -478,6 +478,32 @@ RELATIONS:
   VALUE: examples/dynamic_array.sv
 
 [REQUIREMENT]
+UID: VS-RTL-QUEUE-001
+STATUS: Draft
+TITLE: Bounded HDL queue lifetimes
+STATEMENT: >>>
+The simulator shall lower module-scope one-dimensional integral queues into initially empty owning storage and support push_front, push_back, pop_front, pop_back, size, whole or indexed delete, and blocking indexed access. A write at the current size shall append. Empty pops and invalid reads shall return the declared element default. Unknown or invalid deletion indices and farther out-of-range writes shall leave storage unchanged. A 256-cell resource limit shall reject overflow before the failing operation changes storage. Pops shall be explicit ordered statements with discarded results or blocking whole-word destinations. Mutating queues shall be isolated from other processes and combinational readers. SDK evaluation failure shall restore queue contents, outputs and edge history. Bounded queue declarations, nested/aggregate queues, queue ports, nested side-effect expressions and general timed scheduling are outside this slice.
+<<<
+COMMENT: Implemented bounded slice under focused qualification only, as requested by the user. Broad regression acceptance has not been rerun; retain Draft. See docs/queues.md and the current handoff for actual scoped verification evidence.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlArrays.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlQueues.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlQueueTests.cs
+- TYPE: File
+  VALUE: tests/native/rtl_queue_tests.cpp
+- TYPE: File
+  VALUE: examples/queue_demo.sv
+
+[REQUIREMENT]
 UID: VS-VERIFY-NATIVE-FUZZ-001
 STATUS: Active
 TITLE: Reproducible bounded native fuzz campaigns

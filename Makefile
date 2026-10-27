@@ -36,6 +36,12 @@ function-mutation-probe:
 .PHONY: surelog-tagfix
 .PHONY: runtime-fuzz-tool runtime-fuzz-smoke
 .PHONY: remote-script-tests
+.PHONY: queue-mutation-probe
+CONTAINER_MUTATION_TOOL := artifacts/publish/ContainerEventMutationProbe/ContainerEventMutationProbe
+$(CONTAINER_MUTATION_TOOL): tools/ContainerEventMutationProbe.cs tools/ContainerEventMutationProbe.packages.lock.json Directory.Build.props Directory.Build.targets global.json
+	$(DOTNET) publish tools/ContainerEventMutationProbe.cs -c Release -r linux-x64 -p:PublishAot=true -p:VeloSimNativeJobs=$(JOBS) -o artifacts/publish/ContainerEventMutationProbe
+queue-mutation-probe: $(CONTAINER_MUTATION_TOOL)
+	"$(CONTAINER_MUTATION_TOOL)" "$(CURDIR)" queue
 remote-script-tests:
 	pwsh -NoProfile -File tools/remote/Test-RemoteScripts.ps1
 FUZZ_TOOL := artifacts/publish/RuntimeFuzzCampaign/RuntimeFuzzCampaign

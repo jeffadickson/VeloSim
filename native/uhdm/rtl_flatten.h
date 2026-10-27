@@ -1,6 +1,6 @@
 // Included inside rtl.cpp's private namespace, after expression/statement lowering.
 struct FlatSignal{int width,direction;std::string path;bool is_signed;bool two_state;};
-struct FlatMemory{int width,depth;bool is_signed;int lower;std::vector<std::pair<int,int>> dimensions;bool two_state;bool dynamic=false;};
+struct FlatMemory{int width,depth;bool is_signed;int lower;std::vector<std::pair<int,int>> dimensions;bool two_state;bool dynamic=false;bool queue=false;};
 struct FlatScope{H handle,module;int parent;std::string path;std::map<std::string,std::string> names;};
 struct FlatBinding{int parent,child,direction;H high,low;std::string target;};
 std::vector<FlatScope> flat_scopes;
@@ -31,12 +31,14 @@ int collect_scope(H scope,H module,int parent,const std::string& path,int depth=
   else{flat=path.empty()?local:"vs_h"+std::to_string(id)+"_"+local;auto base=flat;int suffix=0;while(used_flat_names.count(flat))flat=base+"_"+std::to_string(suffix++);used_flat_names.insert(flat);flat_scopes[id].names[local]=flat;}
   flat_symbols[identity(h)]=flat;
   if(type(h)==vpiArrayVar){
-   need(vpi_get(vpiArrayType,h)==vpiStaticArray||dynamic_array(h),"associative and queue arrays require separate container-lifetime lowering");
+   if(queue_array(h))need(!directions.count(local),"queue ports unsupported; use module-scope storage");
+   need(vpi_get(vpiArrayType,h)==vpiStaticArray||lifetime_array(h),"associative arrays require separate container-lifetime lowering");
    auto ranges=many(h,vpiRange),elements=many(h,vpiReg);if(elements.empty())elements=many(h,vpiVariables);
-   if(dynamic_array(h)){
+   if(lifetime_array(h)){
+    if(queue_array(h)&&elements.size()==1)need(!aggregate_spec(word_spec(elements[0])),"queue aggregate elements unsupported");
     need(ranges.empty()&&elements.size()==1&&!one(h,vpiExpr),"dynamic arrays require one unpacked dimension and procedural allocation");
     need(!one(elements[0],vpiExpr),"dynamic element declaration initializers unsupported");logic_word(elements[0]);
-    flat_memories[flat]={width(elements[0]),1,declared_signed(elements[0]),0,{},two_state_word(elements[0]),true};continue;
+    flat_memories[flat]={width(elements[0]),1,declared_signed(elements[0]),0,{},two_state_word(elements[0]),dynamic_array(h),queue_array(h)};continue;
    }
    need(!ranges.empty()&&ranges.size()<=4&&elements.size()==1,"fixed arrays require 1..4 dimensions and one element declaration");
    need(!one(elements[0],vpiExpr),"initialized memory element declarations unsupported");logic_word(elements[0]);
@@ -81,7 +83,7 @@ std::string flatten_design(H top){
  // An absent clock is explicit; combinational-only models never invent an event port.
  std::string out="{\"format\":\"velosim.rtl.v1\",\"signals\":[";bool first=true;
  for(auto& [flat,signal]:flat_signals){if(clock_aliases.count(flat))continue;if(!first)out+=",";first=false;out+="{\"name\":"+q(flat)+",\"width\":"+std::to_string(signal.width)+",\"direction\":"+q(signal.direction==vpiInput?"input":signal.direction==vpiOutput?"output":"internal");if(signal.is_signed)out+=",\"signed\":true";if(signal.two_state)out+=",\"two_state\":true";if(!signal.path.empty())out+=",\"path\":"+q(signal.path);out+="}";}
- out+="],\"memories\":[";first=true;for(auto& [flat,memory]:flat_memories){if(!first)out+=",";first=false;out+="{\"name\":"+q(flat)+",\"width\":"+std::to_string(memory.width)+",\"depth\":"+std::to_string(memory.depth)+(memory.lower?",\"lower\":"+std::to_string(memory.lower):"")+(memory.is_signed?",\"signed\":true":"")+(memory.two_state?",\"two_state\":true":"")+(memory.dynamic?",\"dynamic\":true":"");if(!memory.dimensions.empty()){out+=",\"dimensions\":[";bool firstDimension=true;for(auto [left,right]:memory.dimensions){if(!firstDimension)out+=",";firstDimension=false;out+="{\"left\":"+std::to_string(left)+",\"right\":"+std::to_string(right)+"}";}out+="]";}out+="}";}
+ out+="],\"memories\":[";first=true;for(auto& [flat,memory]:flat_memories){if(!first)out+=",";first=false;out+="{\"name\":"+q(flat)+",\"width\":"+std::to_string(memory.width)+",\"depth\":"+std::to_string(memory.depth)+(memory.lower?",\"lower\":"+std::to_string(memory.lower):"")+(memory.is_signed?",\"signed\":true":"")+(memory.two_state?",\"two_state\":true":"")+(memory.dynamic?",\"dynamic\":true":"")+(memory.queue?",\"queue\":true":"");if(!memory.dimensions.empty()){out+=",\"dimensions\":[";bool firstDimension=true;for(auto [left,right]:memory.dimensions){if(!firstDimension)out+=",";firstDimension=false;out+="{\"left\":"+std::to_string(left)+",\"right\":"+std::to_string(right)+"}";}out+="]";}out+="}";}
  out+="],\"initialization\":{\"kind\":\"block\",\"items\":[";first=true;
  for(auto& init:flat_initializers){in_scope(init.scope);std::function<void(H,int)> constant=[&](H h,int depth){need(h&&depth<64,"initializer expression depth exceeded");if(auto original=original_expression(h)){constant(original,depth+1);return;}if(type(h)==vpiConstant||is_parameter_reference(h))return;need(type(h)==vpiOperation,"declaration initializer requires constant expression");for(auto child:many(h,vpiOperand))constant(child,depth+1);};constant(init.value,0);if(!first)out+=",";first=false;out+="{\"kind\":\"blocking\",\"target\":{\"kind\":\"ref\",\"name\":"+q(signal_name(init.declaration))+"},\"value\":"+expr(init.value)+"}";}
  for(auto& [scope,body]:initial){in_scope(scope);if(!first)out+=",";first=false;out+=stmt(body);}out+="]},\"continuous\":[";first=true;auto append=[&](const std::string& target,const std::string& value){if(!first)out+=",";first=false;out+="{\"target\":"+target+",\"value\":"+value+"}";};

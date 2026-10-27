@@ -144,6 +144,27 @@ inline W dynamic_read(const std::vector<W>& memory,W index,int width,bool is_two
  if(index.x||index.z||index.v>=memory.size())return is_two_state?word(0,0,0,width):unknown(width);
  return memory[size_t(index.v)];
 }
+// HDL queues share owning vector snapshots with fixed/dynamic memories. The
+// 256-cell ceiling is a resource guard, not SystemVerilog [$:N] truncation.
+inline void queue_push(std::vector<W>& memory,W value,int width,bool is_two_state,bool front){
+ if(memory.size()>=256)throw std::length_error("queue capacity exceeds256");
+ value=resize(value,width);if(is_two_state)value=two_state(value);
+ if(front)memory.insert(memory.begin(),value);else memory.push_back(value);
+}
+inline W queue_pop(std::vector<W>& memory,int width,bool is_two_state,bool front){
+ if(memory.empty())return is_two_state?word(0,0,0,width):unknown(width);
+ W value=front?memory.front():memory.back();
+ if(front)memory.erase(memory.begin());else memory.pop_back();return value;
+}
+inline void queue_delete(std::vector<W>& memory,W index){
+ if(!index.x&&!index.z&&index.v<memory.size())memory.erase(memory.begin()+size_t(index.v));
+}
+inline void queue_write(std::vector<W>& memory,W index,W value,int width,bool is_two_state){
+ if(index.x||index.z||index.v>memory.size())return;
+ // Queue writes exactly one past the last cell append; farther writes do not.
+ if(index.v==memory.size())queue_push(memory,value,width,is_two_state,false);
+ else{value=resize(value,width);memory[size_t(index.v)]=is_two_state?two_state(value):value;}
+}
 }
 namespace vsrtl {
 inline W deposit_indexed(W before,W base,int width,bool descending,W value){

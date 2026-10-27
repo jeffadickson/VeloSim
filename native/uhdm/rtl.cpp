@@ -51,6 +51,8 @@ struct PackedField{std::string root;int offset,width;bool sign,two_state;};
 PackedField packed_field(H);std::string packed_field_expression(H,bool);
 // Recognize a method only through its typed receiver, never its dotted spelling.
 bool dynamic_array(H h){return type(h)==vpiArrayVar&&vpi_get(vpiArrayType,h)==vpiDynamicArray;}
+bool queue_array(H h){return type(h)==vpiArrayVar&&vpi_get(vpiArrayType,h)==vpiQueueArray;}
+bool lifetime_array(H h){return dynamic_array(h)||queue_array(h);}
 bool dynamic_size(H h);
 std::string dynamic_size_expression(H h);
 bool two_state_word(H declaration){auto spec=word_spec(declaration);int t=type(spec);if(aggregate_spec(spec))return aggregate_state(spec,0);return type(declaration)==vpiBitVar||t==vpiBitTypespec||t==vpiByteTypespec||t==vpiShortIntTypespec||t==vpiIntTypespec||t==vpiLongIntTypespec;}
@@ -86,7 +88,7 @@ bool dynamic_size(H h){
  if(type(h)!=vpiHierPath)return false;
  auto path=static_cast<const UHDM::hier_path*>(identity(h));auto elements=path->Path_elems();
  if(!elements||elements->empty())return false;
- LoopHandles owned;auto receiver=owned.add(elements->front());if(!dynamic_array(one(receiver,vpiActual)))return false;
+ LoopHandles owned;auto receiver=owned.add(elements->front());if(!lifetime_array(one(receiver,vpiActual)))return false;
  need(!inside_call&&elements->size()==2,"dynamic array methods require a whole module-scope receiver");
  auto method=owned.add(elements->back());need(type(method)==vpiMethodFuncCall&&name(method)=="size"&&many(method,vpiArgument).empty(),"only zero-argument dynamic size supported in expressions");
  need(flat_symbols.count(identity(one(receiver,vpiActual))),"dynamic method receiver must bind a collected declaration");return true;
@@ -135,7 +137,18 @@ void target_shape(H h,int depth=0){
 }
 std::string stmt(H h,int depth=0,bool control=false){
  need(h&&depth<64&&++nodes<=20000,"statement missing or resource limit exceeded");
- if(type(h)==vpiMethodFuncCall||type(h)==vpiMethodTaskCall){auto receiver=one(h,vpiPrefix),actual=one(receiver,vpiActual);need(!inside_call&&dynamic_array(actual)&&flat_symbols.count(identity(actual))&&name(h)=="delete"&&many(h,vpiArgument).empty(),"only zero-argument dynamic delete supported as a method statement");return "{\"kind\":\"delete\",\"name\":"+q(signal_name(receiver))+"}";}
+ if(type(h)==vpiMethodFuncCall||type(h)==vpiMethodTaskCall){
+  auto receiver=one(h,vpiPrefix),actual=one(receiver,vpiActual);auto args=many(h,vpiArgument);auto method=name(h);
+  need(!inside_call&&lifetime_array(actual)&&flat_symbols.count(identity(actual)),"container methods require a collected module-scope receiver");
+  if(method=="delete"){
+   need(args.empty()||(queue_array(actual)&&args.size()==1),"delete accepts an optional index only for queues");
+   return "{\"kind\":\"delete\",\"name\":"+q(signal_name(receiver))+(args.empty()?"":",\"index\":"+expr(args[0]))+"}";
+  }
+  need(queue_array(actual),"method requires a queue");
+  bool push=method=="push_front"||method=="push_back",pop=method=="pop_front"||method=="pop_back";
+  need((push&&args.size()==1)||(pop&&args.empty()),"unsupported queue method or argument count");
+  return "{\"kind\":"+q(push?"queue_push":"queue_pop")+",\"name\":"+q(signal_name(receiver))+",\"front\":"+((method=="push_front"||method=="pop_front")?"true":"false")+(push?",\"value\":"+expr(args[0]):"")+"}";
+ }
  if(type(h)==vpiTaskCall)return lower_task(h,depth+1);
  if(type(h)==vpiRepeat){auto count=one(h,vpiCondition);if(type(count)==vpiConstant){auto n=selected_constant(count);need(n<=256,"repeat count exceeds256");return "{\"kind\":\"repeat\",\"count\":"+std::to_string(n)+",\"body\":"+stmt(one(h,vpiStmt),depth+1)+"}";}return "{\"kind\":\"runtime_repeat\",\"count\":"+expr(count)+",\"body\":"+stmt(one(h,vpiStmt),depth+1)+"}";}
  if(type(h)==vpiWhile||type(h)==vpiDoWhile)return "{\"kind\":"+q(type(h)==vpiWhile?"while":"do")+",\"condition\":"+expr(one(h,vpiCondition))+",\"body\":"+stmt(one(h,vpiStmt),depth+1)+"}";
@@ -153,6 +166,15 @@ std::string stmt(H h,int depth=0,bool control=false){
  if(type(h)==vpiBegin){std::string s="{\"kind\":\"block\",\"items\":[";bool first=true;for(auto a:many(h,vpiStmt)){if(!first)s+=",";first=false;s+=stmt(a,depth+1);}return s+"]}";}
  if(type(h)==vpiAssignment){need(!one(h,vpiDelayControl)&&!one(h,vpiEventControl),"assignment timing unsupported");
   auto lhs=one(h,vpiLhs),rhs=one(h,vpiRhs),array=one(lhs,vpiActual);
+  if(type(rhs)==vpiHierPath){
+   auto path=static_cast<const UHDM::hier_path*>(identity(rhs));auto elements=path->Path_elems();LoopHandles owned;
+   if(elements&&elements->size()==2){auto receiver=owned.add(elements->front()),method=owned.add(elements->back()),actual=one(receiver,vpiActual);auto method_name=name(method);
+    if(queue_array(actual)&&(method_name=="pop_front"||method_name=="pop_back")){
+     need(!inside_call&&vpi_get(vpiBlocking,h)&&type(lhs)==vpiRefObj&&flat_symbols.count(identity(actual))&&type(method)==vpiMethodFuncCall&&many(method,vpiArgument).empty(),"queue pop requires a blocking whole-word assignment and no arguments");
+     return "{\"kind\":\"queue_pop\",\"name\":"+q(signal_name(receiver))+",\"front\":"+(method_name=="pop_front"?"true":"false")+",\"target\":"+expr(lhs)+"}";
+    }
+   }
+  }
   if(type(rhs)==vpiMethodFuncCall&&name(rhs)=="new"){
    need(!inside_call&&vpi_get(vpiBlocking,h)&&type(lhs)==vpiRefObj&&dynamic_array(array)&&flat_symbols.count(identity(array)),"dynamic allocation requires a blocking whole-array destination");
    auto args=many(rhs,vpiArgument);need(args.size()==1||args.size()==2,"dynamic new requires count and optional self initializer");
