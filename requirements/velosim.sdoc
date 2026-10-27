@@ -499,6 +499,8 @@ RELATIONS:
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlQueueTests.cs
 - TYPE: File
+  VALUE: tests/VeloSim.Tests/VerilatorQueueConformanceTests.cs
+- TYPE: File
   VALUE: tests/native/rtl_queue_tests.cpp
 - TYPE: File
   VALUE: examples/queue_demo.sv

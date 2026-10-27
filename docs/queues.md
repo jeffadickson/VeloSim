@@ -48,6 +48,58 @@ it preserves the simulator's single memory inventory and rollback snapshots.
 With at most 256 cells, front insertion/removal has bounded linear work; no
 performance improvement is claimed.
 
+The 256-element ceiling is a conservative VeloSim resource budget inherited from
+the existing memory/container limits. SystemVerilog's `[$]` queue syntax has no
+256-element language limit. The ceiling bounds allocation and snapshot-copy work;
+it can be increased or made configurable with corresponding validation and
+resource tests. It is separate from the maximum element word width of 256 bits.
+
+A queue is an ordered, resizable data container declared in the HDL, for example
+`bit [7:0] pending[$]`. Each element here is an eight-bit value. `push_back` adds
+at the end and `pop_front` removes the oldest element, providing FIFO behavior;
+using the other end permits stack/deque behavior. Such containers are useful in
+testbenches and behavioral models. The simulator's timed-event scheduler has a
+separate role: deciding when processes execute.
+
+## Verilator empty-bit-queue equivalence
+
+`VerilatorQueueConformanceTests.EmptyBitQueuePopsMatchVerilatorWithoutGuards`
+uses the existing `VerilatorReference` CMake/Ninja integration. Surelog/VeloSim
+and Verilator receive the same unchanged `design.sv`. There are no empty guards
+or replacement values in that design. Nine directed steps check front/back empty
+pops, nonempty data ordering and empty pops after deletion; a separate fixed
+expected history checks both engines. The output is binary and this is not
+four-state conformance evidence.
+
+The focused test passed with installed Verilator 5.020 (Debian 5.020-1), using
+four build jobs. Both empty pop methods return zero for `bit [7:0]` elements.
+Only this new integration test was run; the full suite remains unrun. Source
+hashes, commands, tool fingerprints, version and traces are retained in its
+`verilator-empty-bit-queue-*` evidence directory. The test is opt-in under
+`VELOSIM_REAL_VERILATOR=1` so an absent external tool is not silently counted as
+a comparison pass.
+
+The [qualification record](verilator-queue-qualification.json) binds this result.
+Coverlet measured the existing `VerilatorReference.cs` adapter at 26/26 lines and
+36/60 branches in this run. The test assembly itself is excluded by the collector;
+these are adapter metrics, not test-harness or whole-simulator coverage.
+
+To run in a configured Linux checkout with the current exporter:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$repo = $PWD.Path
+if (-not (Test-Path -LiteralPath $repo -PathType Container)) { throw 'Checkout missing' }
+if (-not (Test-Path -LiteralPath (Join-Path $repo 'global.json') -PathType Leaf)) { throw 'Run from checkout root' }
+foreach ($tool in @('dotnet','verilator','cmake','ninja','c++')) { Get-Command $tool -ErrorAction Stop | Out-Null }
+if ([string]::IsNullOrWhiteSpace($env:VELOSIM_UHDM_RTL) -or -not (Test-Path -LiteralPath $env:VELOSIM_UHDM_RTL -PathType Leaf)) { throw 'Set VELOSIM_UHDM_RTL to the current exporter executable' }
+if ([string]::IsNullOrWhiteSpace($env:VELOSIM_SURELOG) -or -not (Test-Path -LiteralPath $env:VELOSIM_SURELOG -PathType Leaf)) { throw 'Set VELOSIM_SURELOG to the pinned frontend executable' }
+if ([string]::IsNullOrWhiteSpace($env:VELOSIM_RTL_EVIDENCE_ROOT) -or -not (Test-Path -LiteralPath $env:VELOSIM_RTL_EVIDENCE_ROOT -PathType Container)) { throw 'Set VELOSIM_RTL_EVIDENCE_ROOT to an existing native Linux directory' }
+$env:VELOSIM_REAL_VERILATOR = '1'
+dotnet test tests/VeloSim.Tests -c Release --filter 'FullyQualifiedName~VerilatorQueueConformanceTests' --collect:'XPlat Code Coverage' --settings coverage.runsettings
+if ($LASTEXITCODE) { throw 'Queue equivalence test failed' }
+```
+
 ## Focused qualification
 
 This change intentionally runs only queue checks and a few directly affected
