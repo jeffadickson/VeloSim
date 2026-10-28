@@ -1,0 +1,11 @@
+{
+  "stryker-config": {
+    "project": "VeloSim.csproj",
+    "mutate": ["**/CliOptions.cs"],
+    "test-case-filter": "FullyQualifiedName~CliLibraryTests|FullyQualifiedName~BenchmarkCliTests",
+    "configuration": "Release",
+    "concurrency": 2,
+    "reporters": ["json", "html", "progress"],
+    "thresholds": { "high": 80, "low": 60, "break": 0 }
+  }
+}

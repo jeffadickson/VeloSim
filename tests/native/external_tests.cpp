@@ -35,7 +35,9 @@ void clocklessInterfaceTests(){
   void evaluate() override{if(s.size()==1)s[0]=word(165,0,0,8);else s[1]=bit_not(s[0],4);}
  };
  Probe model({{"clk",4,vpiInput},{"q",4,vpiOutput}},-1);check(text(model.get(0))=="xxxx");model.put(0,word(5,0,0,4));model.eval();check(text(model.get(1))=="1010");model.eval();check(text(model.get(1))=="1010");model.timeInc(2);model.eval();check(text(model.get(1))=="1010");model.final();
- Probe constant({{"q",8,vpiOutput}},-1);constant.eval();check(text(constant.get(0))=="10100101");constant.final();
+ Probe constant({{"q",8,vpiOutput}},-1);constant.eval();check(text(constant.get(0))=="10100101");
+ Model& base=constant;check(!base.evalNeeded());base.timeInc(0);check(!base.evalNeeded());
+ base.timeInc(1);check(base.evalNeeded());base.eval();check(!base.evalNeeded());constant.final();
  for(int clock:{-2,2,0,1}){bool rejected=false;try{Probe invalid({{"a",4,vpiInput},{"q",4,vpiOutput}},clock);}catch(const std::invalid_argument&){rejected=true;}check(rejected);}
  bool rejected=false;try{Probe invalid({{nullptr,1,vpiInput}},-1);}catch(const std::invalid_argument&){rejected=true;}check(rejected);
 }

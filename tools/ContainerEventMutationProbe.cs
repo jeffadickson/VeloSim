@@ -13,18 +13,18 @@ string output=Path.Combine(root,queueMode?"artifacts/queue-feature/mutations":dy
 Directory.CreateDirectory(output);
 var mutations=queueMode?new (string Name,string File,string Before,string After)[]{
  ("queue-pop-direction","runtime.h","W value=front?memory.front():memory.back();","W value=front?memory.back():memory.front();"),
- ("queue-capacity-off-by-one","runtime.h","if(memory.size()>=256)throw","if(memory.size()>256)throw"),
+ ("queue-capacity-off-by-one","runtime.h","if(memory.size()>=container_capacity)throw std::length_error(\"queue capacity exceeds256\");","if(memory.size()>container_capacity)throw std::length_error(\"queue capacity exceeds256\");"),
  ("queue-append-lost","runtime.h","if(index.v==memory.size())queue_push(memory,value,width,is_two_state,false);","if(index.v==memory.size())return;"),
- ("queue-two-state-push","runtime.h","value=resize(value,width);if(is_two_state)value=two_state(value);","value=resize(value,width);")
+ ("queue-two-state-push","runtime.h","value=ElementType(width,is_two_state).convert(value);","value=resize(value,width);")
 }:dynamicMode?new (string Name,string File,string Before,string After)[]{
  ("lost-resize-prefix","runtime.h","if(preserve)for(size_t i=0;","if(false)for(size_t i=0;"),
- ("capacity-off-by-one","runtime.h","if(count.v>256)throw","if(count.v>257)throw"),
+ ("capacity-off-by-one","runtime.h","if(count.v>container_capacity)throw","if(count.v>container_capacity+1)throw"),
  ("allocation-not-published","runtime.h","memory.swap(next);","/* missing allocation publication */"),
- ("two-state-invalid-read","runtime.h","if(index.x||index.z||index.v>=memory.size())return is_two_state?word(0,0,0,width):unknown(width);","if(index.x||index.z||index.v>=memory.size())return unknown(width);")
+ ("two-state-invalid-read","runtime.h","if(index.x||index.z||index.v>=memory.size())return ElementType(width,is_two_state).initial();","if(index.x||index.z||index.v>=memory.size())return unknown(width);")
 }:new (string Name,string File,string Before,string After)[]{
- ("dynamic-prefix","containers.h","if(preserve)std::copy_n","if(false)std::copy_n"),
- ("queue-direction","containers.h","W value=front?cells_.front():cells_.back();","W value=front?cells_.back():cells_.front();"),
- ("associative-key","containers.h","cells_.insert_or_assign(key,copy.read(0));","cells_.insert_or_assign(Bits(0),copy.read(0));"),
+ ("dynamic-prefix","runtime.h","if(preserve)for(size_t i=0;","if(false)for(size_t i=0;"),
+ ("queue-direction","runtime.h","W value=front?memory.front():memory.back();","W value=front?memory.back():memory.front();"),
+ ("associative-key","runtime.h","memory.emplace(encoded,converted);","memory.emplace(Bits(0),converted);"),
  ("event-order","timed_events.h","Key{time_+delay,delta,region,serial_}","Key{time_+delay,delta,region,UINT64_MAX-serial_}"),
  ("event-budget","timed_events.h","if(!remaining_)throw","if(false)throw")
 };

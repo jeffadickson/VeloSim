@@ -8,7 +8,55 @@ std::string expr(H,int);
 std::string lower_function(H,int);
 std::string lower_task(H,int);
 H callee(H call,bool function){auto h=one(call,function?vpiFunction:vpiTask);need(h,"unresolved subroutine call");return h;}
-H formal_word(H h){auto binding=one(h,vpiExpr);return binding?binding:h;}
+std::vector<H> call_arguments(H call,LoopHandles& owned){
+ bool qualified=false;for(auto attribute:many(mod,vpiAttribute))qualified|=name(attribute)=="velosim frontend argument slots v4";
+ need(qualified,"subroutine calls require preserved argument slots; re-elaborate with the argument-slot frontend overlay");
+ need(type(call)==vpiFuncCall||type(call)==vpiTaskCall,"typed subroutine call required");
+ const auto args=type(call)==vpiFuncCall?static_cast<const UHDM::func_call*>(identity(call))->Tf_call_args():static_cast<const UHDM::task_call*>(identity(call))->Tf_call_args();
+ std::vector<H> result;if(!args)return result;
+ need(args->size()<=32,"subroutine argument budget exceeded");
+ for(auto argument:*args){
+  H h=argument?owned.add(argument):nullptr;
+  if(type(h)==vpiConstant&&vpi_get(vpiConstType,h)==vpiIntConst){const char* text=vpi_get_str(vpiDecompile,h);std::string marker=text?text:"";
+   need(marker!="$velosim_invalid_actual_v4","invalid named or positional subroutine arguments");
+   if(marker=="$velosim_omitted_actual_v4")h=nullptr;
+  }
+  result.push_back(h);
+ }
+ return result;
+}
+H formal_word(H h){
+ auto binding=one(h,vpiExpr);int kind=type(binding);
+ // Expr can be either a cloned storage declaration or a default expression.
+ // Constants/references/operations are defaults, never formal declarations.
+ bool declaration=kind==vpiReg||kind==vpiLogicVar||kind==vpiBitVar||kind==vpiIntVar||kind==vpiIntegerVar||kind==vpiLongIntVar||kind==vpiShortIntVar||kind==vpiByteVar||kind==vpiTimeVar||kind==vpiEnumVar||kind==vpiStructVar||kind==vpiUnionVar||kind==vpiPackedArrayVar;
+ return binding&&declaration?binding:h;
+}
+H formal_default(H h){auto binding=one(h,vpiExpr);return binding&&identity(binding)==identity(formal_word(h))?one(binding,vpiExpr):binding;}
+std::string default_argument(H value){
+ // IEEE 1800-2017 13.5.3: defaults use the enclosing declaration scope,
+ // not a caller's or callee's same-named automatic locals. Typed bindings and
+ // normal module-symbol recovery remain authoritative; no name substitution.
+ std::set<const void*> checked;
+ std::function<void(H,unsigned)> validate=[&](H node,unsigned depth){
+  need(node&&depth<64,"default argument expression depth exceeded");
+  if(!checked.insert(identity(node)).second)return;
+  need(checked.size()<=20000,"default argument expression budget exceeded");
+  if(type(node)==vpiRefObj||type(node)==vpiRefVar||type(node)==vpiBitSelect||type(node)==vpiPartSelect||type(node)==vpiIndexedPartSelect||type(node)==vpiVarSelect){
+   auto declaration=one(node,vpiActual);std::set<const void*> seen;
+   for(unsigned i=0;declaration&&i<64;++i){need(seen.insert(identity(declaration)).second,"cyclic default argument binding");auto owner=one(declaration,vpiParent);
+    for(unsigned j=0;owner&&j<64;++j){need(type(owner)!=vpiFunction&&type(owner)!=vpiTask,"default argument cannot capture automatic subroutine storage");if(type(owner)==vpiModule||type(owner)==vpiGenScope)break;owner=one(owner,vpiParent);}
+    auto next=one(declaration,vpiActual);if(!next||identity(next)==identity(declaration))break;declaration=next;
+   }
+  }
+  // Follow expression operands only, never a called function's declarations.
+  for(int relation:{vpiOperand,vpiArgument,vpiIndex})for(auto child:many(node,relation))validate(child,depth+1);
+  if(auto index=one(node,vpiIndex))validate(index,depth+1);
+ };
+ validate(value,0);
+ struct Scope{bool previous=inside_call;Scope(){inside_call=false;}~Scope(){inside_call=previous;}} scope;
+ return expr(value,0);
+}
 // UHDM may clone the declaration referenced by an elaborated begin block.
 // Accept that alias only with exact scope AND lexical declaration coordinates.
 bool same_local(H a,H b){
@@ -37,7 +85,7 @@ bool owned_parameter(H declaration,H scope){auto owner=parameter_owner(declarati
 std::string lexical_key(H h){auto key=expression_location(h);for(int i=0;i<2&&!key.empty();i++)key=key.substr(0,key.rfind(':'));return key;}
 std::string owner_definition(H scope){std::set<const void*> seen;for(unsigned i=0;scope&&i<64;i++){need(seen.insert(identity(scope)).second,"cyclic definition scope");if(type(scope)==vpiModule){const char* value=vpi_get_str(vpiDefName,scope);return value?value:"";}scope=one(scope,vpiParent);}return "";}
 std::string canonical_key(H declaration){auto owner=parameter_owner(declaration);return lexical_key(declaration)+"|"+std::to_string(type(owner))+"|"+(type(owner)==vpiModule?owner_definition(owner):lexical_key(owner)+"|"+owner_definition(owner));}
-std::map<std::string,H> syntax_parameters,syntax_assignments,syntax_references,syntax_parameter_values;
+std::map<std::string,H> syntax_parameters,syntax_assignments,syntax_references,syntax_parameter_values,syntax_variable_references;
 std::set<const void*> syntax_visited;
 void syntax_binding(std::map<std::string,H>& entries,H syntax,H declaration){auto key=lexical_key(syntax);if(key.empty())return;auto [it,added]=entries.emplace(key,declaration);if(!added&&(!it->second||canonical_key(it->second)!=canonical_key(declaration)))it->second=nullptr;}
 std::set<std::string> syntax_nonparameters,syntax_parameter_selections;
@@ -64,11 +112,12 @@ void collect_parameter_syntax(H h,int depth=0){
   auto base=one(h,vpiActual);auto declaration=type(base)==vpiParameter?base:original_lexical_declaration(name(h).empty()?base:h);
   if(type(declaration)==vpiParameter)syntax_parameter_selections.insert(lexical_key(h));
  }
+ if(type(h)==vpiHierPath){auto path=static_cast<const UHDM::hier_path*>(identity(h));LoopHandles owned;if(auto elements=path->Path_elems())for(auto element:*elements)collect_parameter_syntax(owned.add(element),depth+1);}
  if(type(h)==vpiParameter)syntax_binding(syntax_parameters,h,h);
  if(type(h)==vpiParamAssign&&type(one(h,vpiLhs))==vpiParameter){syntax_binding(syntax_assignments,h,one(h,vpiLhs));auto key=lexical_key(h);auto rhs=one(h,vpiRhs);auto [entry,added]=syntax_parameter_values.emplace(key,rhs);if(!added&&expression_location(entry->second)!=expression_location(rhs))entry->second=nullptr;}
- if(type(h)==vpiRefObj||type(h)==vpiRefVar){auto declaration=original_lexical_declaration(h);if(type(declaration)==vpiParameter)syntax_binding(syntax_references,h,declaration);else if(declaration)syntax_nonparameters.insert(lexical_key(h));}
+ if(type(h)==vpiRefObj||type(h)==vpiRefVar){auto declaration=original_lexical_declaration(h);if(type(declaration)==vpiParameter)syntax_binding(syntax_references,h,declaration);else if(declaration){syntax_nonparameters.insert(lexical_key(h));syntax_binding(syntax_variable_references,h,declaration);}}
  for(int relation:{vpiStmt,vpiCondition,vpiElseStmt,vpiLhs,vpiRhs,vpiReturn,vpiForInitStmt,vpiForIncStmt,vpiHighConn,vpiLowConn,vpiExpr})collect_parameter_syntax(one(h,relation),depth+1);
- for(int relation:{vpiModule,vpiTaskFunc,vpiPort,vpiVariables,vpiReg,vpiNet,vpiParameter,vpiParamAssign,vpiProcess,vpiContAssign,vpiStmt,vpiOperand,vpiArgument,vpiGenScopeArray,vpiGenScope})for(auto child:many(h,relation))collect_parameter_syntax(child,depth+1);
+ for(int relation:{vpiModule,vpiTaskFunc,vpiPort,vpiVariables,vpiReg,vpiNet,vpiParameter,vpiParamAssign,vpiProcess,vpiContAssign,vpiStmt,vpiOperand,vpiArgument,vpiExpr,vpiCaseItem,vpiGenScopeArray,vpiGenScope})for(auto child:many(h,relation))collect_parameter_syntax(child,depth+1);
 }
 H canonical_parameter(H declaration){auto found=syntax_parameters.find(lexical_key(declaration));if(found==syntax_parameters.end())return declaration;need(found->second,"ambiguous original parameter declaration");return found->second;}
 H parameter_context=nullptr;
@@ -172,12 +221,13 @@ void assign_local(H h,int depth){
  control_values.erase(key);int w=width(word.declaration);if(constant&&w<=32){KnownControl known{control_resize(*constant,w,true),w,declared_signed(word.declaration)};control_values[key]=known;std::string b;for(int bit=w-1;bit>=0;bit--)b+=(known.bits&(uint64_t(1)<<bit))?'1':'0';word.value=convert_word(word.declaration,"{\"kind\":\"const\",\"bits\":"+q(b)+(known.sign?",\"signed\":true":"")+"}");}
  output_budget(word.value);
 }
-void add_local(H,std::string);
+void add_local(H,std::string,bool=false);
 // Bound expressions may read only the counter and immutable elaborated constants.
 // Body writes therefore cannot invalidate the static trip-count proof.
 void counter_dependencies(H h,const std::string& counter,int depth=0){need(h&&depth<64,"for control expression depth exceeded");if(type(h)==vpiOperation){for(auto child:many(h,vpiOperand))counter_dependencies(child,counter,depth+1);return;}if(type(h)==vpiConstant||is_parameter_reference(h))return;need(local_key(h)==counter,"for bounds/increment may only read the counter and constants");}
-struct LoopHandles{std::vector<H> items;~LoopHandles(){for(auto h:items)vpi_release_handle(h);}H add(const UHDM::BaseClass* object){auto h=::NewVpiHandle(object);items.push_back(h);return h;}};
+
 void symbolic_sequence(std::vector<H> sequence,int depth);
+void symbolic_task_call(H call,int depth);
 void symbolic_stmt(H h,int depth){symbolic_sequence({h},depth);}
 // Continuations are interpreted per branch, so a return skips all later statements,
 // including enclosing loop increments. Merge only final path results, never a live
@@ -188,7 +238,8 @@ void symbolic_sequence(std::vector<H> sequence,int depth){
   H h=sequence.front();sequence.erase(sequence.begin());need(h&&++nodes<=20000,"subroutine statement budget exceeded");
   if(type(h)==vpiBegin){auto items=many(h,vpiStmt);items.insert(items.end(),sequence.begin(),sequence.end());sequence=std::move(items);continue;}
   if(type(h)==vpiAssignment||(type(h)==vpiOperation&&loop_controls.count(identity(h)))){assign_local(h,depth);continue;}
-  if(type(h)==vpiReturn){need(call_locals.count("$return"),"task return unsupported");auto value=one(h,vpiCondition);if(value){auto expression=expr(value,depth+1);auto& word=call_locals.at("$return");word.value=convert_word(word.declaration,expression);word.assigned=true;}need(call_locals.at("$return").assigned,"function return requires assigned result or expression");return;}
+  if(type(h)==vpiTaskCall){symbolic_task_call(h,depth+1);continue;}
+  if(type(h)==vpiReturn){auto value=one(h,vpiCondition);if(current_function&&type(current_function)==vpiTask){need(!value,"task return cannot carry a value");return;}need(call_locals.count("$return"),"function return declaration required");if(value){auto expression=expr(value,depth+1);auto& word=call_locals.at("$return");word.value=convert_word(word.declaration,expression);word.assigned=true;}need(call_locals.at("$return").assigned,"function return requires assigned result or expression");return;}
   if(type(h)==vpiRepeat){auto count=control_value(one(h,vpiCondition));need(count&&count->bits<=256&&!(count->sign&&(count->bits&(uint64_t(1)<<(count->width-1)))),"subroutine repeat requires known count0..256");std::vector<H> expanded(size_t(count->bits),one(h,vpiStmt));expanded.insert(expanded.end(),sequence.begin(),sequence.end());sequence=std::move(expanded);continue;}
   if(type(h)==vpiFor){
    auto object=static_cast<const UHDM::for_stmt*>(identity(h));
@@ -203,6 +254,7 @@ void symbolic_sequence(std::vector<H> sequence,int depth){
    while(!visit.empty()){
     auto item=visit.back();visit.pop_back();if(!item||!body_seen.insert(identity(item)).second)continue;need(body_seen.size()<=20000,"for body traversal budget exceeded");
     if(type(item)==vpiAssignment)need(local_key(one(item,vpiLhs))!=key,"for body cannot mutate its counter");
+    if(type(item)==vpiTaskCall){auto arguments=call_arguments(item,owned),ports=many(callee(item,false),vpiIODecl);need(arguments.size()<=ports.size(),"nested task arity mismatch");for(size_t i=0;i<ports.size();++i)if(vpi_get(vpiDirection,ports[i])!=vpiInput){need(i<arguments.size()&&arguments[i],"missing nested task output argument");need(local_key(arguments[i])!=key,"nested task cannot mutate a proven loop counter");}}
     if(type(item)==vpiOperation){int op=vpi_get(vpiOpType,item);if(op==vpiPostIncOp||op==vpiPreIncOp||op==vpiPostDecOp||op==vpiPreDecOp)need(local_key(control_target(item))!=key,"for body cannot mutate its counter");}
     // Nested loop controls execute in the outer body and can mutate its counter.
     // Traverse both UHDM representations, with identity deduplication and a bound.
@@ -231,37 +283,72 @@ struct CallFrame{
  CallFrame(H function):saved(call_locals),controls(control_values),was_inside(inside_call),id(identity(function)),previous_function(current_function){need(active_calls.size()<16&&active_calls.insert(id).second,"recursive or excessive subroutine calls");call_locals.clear();control_values.clear();inside_call=true;current_function=function;}
  ~CallFrame(){call_locals=std::move(saved);control_values=std::move(controls);inside_call=was_inside;current_function=previous_function;active_calls.erase(id);}
 };
-void add_local(H h,std::string key=""){if(key.empty())key=name(h);need(h&&!key.empty()&&!one(h,vpiExpr),"initialized or unnamed subroutine local unsupported");if(type(word_spec(h))!=vpiIntTypespec)logic_word(h);need(call_locals.size()<64,"subroutine local budget exceeded");auto [it,added]=call_locals.emplace(key,LocalWord{h,"",false});need(added||identity(it->second.declaration)==identity(h),"duplicate subroutine local name");}
+void add_local(H h,std::string key="",bool initialized){if(key.empty())key=name(h);need(h&&!key.empty()&&(initialized||!one(h,vpiExpr)),"initialized or unnamed subroutine local unsupported");if(type(word_spec(h))!=vpiIntTypespec)logic_word(h);need(call_locals.size()<64,"subroutine local budget exceeded");auto [it,added]=call_locals.emplace(key,LocalWord{h,"",false});need(added||identity(it->second.declaration)==identity(h),"duplicate subroutine local name");}
 std::vector<H> prepare_call(H function,const std::vector<std::string>& values,bool task){
  need(vpi_get(vpiAutomatic,function),"only automatic subroutines supported");bind_parameters(function);
- auto formals=many(function,vpiIODecl);need(formals.size()==values.size()&&formals.size()<=32,"subroutine arity mismatch or budget exceeded");
- for(int relation:{vpiReg,vpiVariables})for(auto local:many(function,relation))add_local(local,"");
+ auto formals=many(function,vpiIODecl);need(values.size()<=formals.size()&&formals.size()<=32,"subroutine arity mismatch or budget exceeded");
+ std::vector<H> initializers;
+ for(int relation:{vpiReg,vpiVariables})for(auto local:many(function,relation)){add_local(local,"",true);if(one(local,vpiExpr)&&std::none_of(formals.begin(),formals.end(),[&](H formal){return same_local(local,formal_word(formal));}))initializers.push_back(local);}
  for(size_t i=0;i<formals.size();i++){
-  int direction=vpi_get(vpiDirection,formals[i]);need(direction==vpiInput||(task&&direction==vpiOutput),"subroutine supports input formals and task outputs only");
-  auto declaration=formal_word(formals[i]);auto key=name(declaration);if(!call_locals.count(key))add_local(declaration);
-  auto& word=call_locals.at(key);if(direction==vpiInput){word.value=convert_word(word.declaration,values[i]);word.assigned=true;}
+  int direction=vpi_get(vpiDirection,formals[i]);need(direction==vpiInput||(task&&(direction==vpiOutput||direction==vpiInout)),"subroutine supports value inputs and task value-result formals only");
+  auto declaration=formal_word(formals[i]);auto key=name(declaration);if(!call_locals.count(key))add_local(declaration,"",true);
+  if(direction==vpiInput||direction==vpiInout){
+   bool supplied=i<values.size()&&!values[i].empty();
+   auto fallback=formal_default(formals[i]);
+   need(supplied||(direction==vpiInput&&fallback),"missing subroutine input requires an explicit default");
+   auto converted=convert_word(declaration,supplied?values[i]:default_argument(fallback));
+   // A nested function temporarily replaces the global symbolic map. Acquire
+   // its element only after expression lowering has restored this frame.
+   auto& word=call_locals.at(key);word.value=std::move(converted);word.assigned=true;
+  }else need(i<values.size(),"missing task output argument");
  }
+ // Automatic local initializers execute on every invocation, after value
+ // inputs are bound. Keep declaration order and each declared sizing barrier.
+ std::stable_sort(initializers.begin(),initializers.end(),[](H a,H b){auto left=static_cast<const UHDM::BaseClass*>(identity(a)),right=static_cast<const UHDM::BaseClass*>(identity(b));return std::make_pair(left->VpiLineNo(),left->VpiColumnNo())<std::make_pair(right->VpiLineNo(),right->VpiColumnNo());});
+ for(auto local:initializers){auto converted=convert_word(local,expr(one(local,vpiExpr),0));auto& word=call_locals.at(name(local));word.value=std::move(converted);word.assigned=true;}
  return formals;
 }
 std::string lower_function(H call,int depth){
- auto function=callee(call,true);std::vector<std::string> values;for(auto actual:many(call,vpiArgument))values.push_back(expr(actual,depth+1));
+ auto function=callee(call,true);LoopHandles owned;std::vector<std::string> values;for(auto actual:call_arguments(call,owned))values.push_back(actual?expr(actual,depth+1):"");
  CallFrame frame(function);prepare_call(function,values,false);auto result=one(function,vpiReturn);need(result,"function return declaration required");add_local(result,"$return");
  symbolic_stmt(one(function,vpiStmt),depth+1);auto word=call_locals.at("$return");need(word.assigned,"function return must be assigned on every path");output_budget(word.value);return word.value;
 }
 std::string lower_task(H call,int depth){
- need(!inside_call,"nested task calls unsupported");auto function=callee(call,false);auto actuals=many(call,vpiArgument),formals=many(function,vpiIODecl);need(actuals.size()==formals.size(),"task arity mismatch");
+ need(!inside_call,"nested task calls unsupported");auto function=callee(call,false);LoopHandles owned;auto actuals=call_arguments(call,owned),formals=many(function,vpiIODecl);need(actuals.size()<=formals.size(),"task arity mismatch");
  std::vector<std::string> values,targets;std::set<std::string> outputs;
  for(size_t i=0;i<actuals.size();i++){
-  if(vpi_get(vpiDirection,formals[i])==vpiOutput){need(type(actuals[i])==vpiRefObj||type(actuals[i])==vpiReg||type(actuals[i])==vpiLogicVar,"task outputs require whole words");auto target=signal_name(actuals[i]);need(outputs.insert(target).second,"aliased task outputs unsupported");targets.push_back(expr(actuals[i],depth+1));values.push_back("");}
+  int direction=vpi_get(vpiDirection,formals[i]);
+  if(!actuals[i]){need(direction==vpiInput&&formal_default(formals[i]),"missing task input requires a default");values.push_back("");targets.push_back("");continue;}
+  if(direction==vpiOutput||direction==vpiInout){need(type(actuals[i])==vpiRefObj||type(actuals[i])==vpiReg||type(actuals[i])==vpiLogicVar,"task outputs require whole words");auto target=signal_name(actuals[i]);need(outputs.insert(target).second,"aliased task outputs unsupported");targets.push_back(expr(actuals[i],depth+1));values.push_back(direction==vpiInout?expr(actuals[i],depth+1):"");}
   else{values.push_back(expr(actuals[i],depth+1));targets.push_back("");}
  }
  CallFrame frame(function);prepare_call(function,values,true);symbolic_stmt(one(function,vpiStmt),depth+1);
  std::vector<std::string> destinations,results;int total=0;
- for(size_t i=0;i<formals.size();i++)if(vpi_get(vpiDirection,formals[i])==vpiOutput){
+ for(size_t i=0;i<formals.size();i++)if(vpi_get(vpiDirection,formals[i])==vpiOutput||vpi_get(vpiDirection,formals[i])==vpiInout){
   auto word=call_locals.at(name(formal_word(formals[i])));need(word.assigned,"task outputs require assignment on every path");
-  destinations.push_back(targets[i]);results.push_back(convert_word(actuals[i],word.value));total+=width(actuals[i]);need(total<=128,"task combined outputs exceed128bits");
+  destinations.push_back(targets[i]);results.push_back(convert_word(actuals[i],word.value));total+=width(actuals[i]);need(total<=256,"task combined outputs exceed256bits");
  }
  if(destinations.empty())return "{\"kind\":\"block\",\"items\":[]}";
  // One concatenated write snapshots every result before any aliased input can be changed by copy-out.
  return "{\"kind\":\"blocking\",\"target\":"+concat_tree(destinations,0,destinations.size())+",\"value\":"+concat_tree(results,0,results.size())+"}";
+}
+
+// A nested zero-time value-result call uses a fresh symbolic frame. Snapshot all
+// input actuals before entering, then commit all output locals together after
+// restoring the caller. No target expression is mistaken for an lvalue.
+void symbolic_task_call(H call,int depth){
+ need(current_function&&type(current_function)==vpiTask,"nested task calls currently require a task caller");
+ auto function=callee(call,false);LoopHandles owned;auto arguments=call_arguments(call,owned),ports=many(function,vpiIODecl);
+ need(arguments.size()<=ports.size(),"nested task arity mismatch");
+ std::vector<std::string> values,keys;std::vector<H> destinations;std::set<std::string> outputs;
+ for(size_t i=0;i<ports.size();++i){int direction=vpi_get(vpiDirection,ports[i]);
+  if(i>=arguments.size()||!arguments[i]){need(direction==vpiInput&&formal_default(ports[i]),"missing nested task input requires a default");values.push_back("");keys.push_back("");destinations.push_back(nullptr);continue;}
+  if(direction==vpiOutput||direction==vpiInout){need(type(arguments[i])==vpiRefObj||type(arguments[i])==vpiRefVar||type(arguments[i])==vpiReg||type(arguments[i])==vpiLogicVar,"nested task outputs require whole local words");auto key=local_key(arguments[i]);need(!key.empty()&&outputs.insert(key).second,"nested task requires distinct whole local outputs");keys.push_back(key);destinations.push_back(call_locals.at(key).declaration);}
+  else{keys.push_back("");destinations.push_back(nullptr);}
+  values.push_back(direction==vpiOutput?"":expr(arguments[i],depth+1));
+ }
+ std::vector<std::string> results(ports.size());
+ {CallFrame frame(function);auto formals=prepare_call(function,values,true);symbolic_stmt(one(function,vpiStmt),depth+1);
+  for(size_t i=0;i<formals.size();++i)if(!keys[i].empty()){const auto& word=call_locals.at(name(formal_word(formals[i])));need(word.assigned,"nested task output must be assigned on every path");results[i]=convert_word(destinations[i],word.value);output_budget(results[i]);}}
+ for(size_t i=0;i<keys.size();++i)if(!keys[i].empty()){auto& word=call_locals.at(keys[i]);word.value=std::move(results[i]);word.assigned=true;control_values.erase(keys[i]);}
 }

@@ -3,6 +3,8 @@
 #include <string>
 #include <stdexcept>
 #include <vector>
+#include <map>
+#include <iterator>
 #include <bit>
 #include <utility>
 #include <array>
@@ -50,6 +52,21 @@ inline W word(Bits v,Bits x,Bits z,int w){auto m=mask(w);return {v&~(x|z)&m,x&~z
 inline W resize(W a,int w){return word(a.v,a.x,a.z,w);}
 inline W unknown(int w){return {0,mask(w),0,w};}
 inline W two_state(W value){return word(value.v,0,0,value.w);}
+// One element policy is shared by generated HDL adapters and owning primitive
+// containers. Storage remains in STL containers; HDL default/coercion is domain
+// policy and must be identical on both paths.
+class ElementType {
+ int width_;bool two_state_;
+public:
+ ElementType(int width,bool two_state):width_(width),two_state_(two_state){
+  if(width<1||width>256)throw std::invalid_argument("container element width");
+ }
+ int width()const{return width_;}
+ bool is_two_state()const{return two_state_;}
+ W initial()const{return two_state_?word(0,0,0,width_):unknown(width_);}
+ W convert(W value)const{value=resize(value,width_);return two_state_?two_state(value):value;}
+};
+inline constexpr size_t container_capacity=256;
 inline W memory_index(W index,int lower){
  if(lower<0)throw std::invalid_argument("negative memory lower bound");
  if(index.x||index.z||index.v<Bits(lower))return unknown(1);
@@ -133,26 +150,27 @@ inline void write(std::vector<W>& m,W index,W value,int w){if(!(index.x|index.z)
 // Dynamic storage starts empty. Allocation samples its count once and publishes
 // only after all validation/allocation succeeds; model snapshots own the vector.
 inline void dynamic_allocate(std::vector<W>& memory,W count,int width,bool is_two_state,bool preserve,bool is_signed){
- if(width<1||width>256||count.w<1||count.w>256)throw std::invalid_argument("dynamic array element/count width");
+ ElementType element(width,is_two_state);
+ if(count.w<1||count.w>256)throw std::invalid_argument("dynamic array count width");
  if(count.x||count.z||(is_signed&&bool(count.v&(Bits(1)<<(count.w-1)))))throw std::invalid_argument("dynamic array count must be known and nonnegative");
- if(count.v>256)throw std::length_error("dynamic array capacity exceeds256");
- std::vector<W> next(size_t(count.v),is_two_state?word(0,0,0,width):unknown(width));
+ if(count.v>container_capacity)throw std::length_error("dynamic array capacity exceeds256");
+ std::vector<W> next(size_t(count.v),element.initial());
  if(preserve)for(size_t i=0;i<std::min(next.size(),memory.size());++i)next[i]=memory[i];
  memory.swap(next);
 }
 inline W dynamic_read(const std::vector<W>& memory,W index,int width,bool is_two_state){
- if(index.x||index.z||index.v>=memory.size())return is_two_state?word(0,0,0,width):unknown(width);
+ if(index.x||index.z||index.v>=memory.size())return ElementType(width,is_two_state).initial();
  return memory[size_t(index.v)];
 }
 // HDL queues share owning vector snapshots with fixed/dynamic memories. The
 // 256-cell ceiling is a resource guard, not SystemVerilog [$:N] truncation.
-inline void queue_push(std::vector<W>& memory,W value,int width,bool is_two_state,bool front){
- if(memory.size()>=256)throw std::length_error("queue capacity exceeds256");
- value=resize(value,width);if(is_two_state)value=two_state(value);
+template<class Cells> inline void queue_push(Cells& memory,W value,int width,bool is_two_state,bool front){
+ if(memory.size()>=container_capacity)throw std::length_error("queue capacity exceeds256");
+ value=ElementType(width,is_two_state).convert(value);
  if(front)memory.insert(memory.begin(),value);else memory.push_back(value);
 }
-inline W queue_pop(std::vector<W>& memory,int width,bool is_two_state,bool front){
- if(memory.empty())return is_two_state?word(0,0,0,width):unknown(width);
+template<class Cells> inline W queue_pop(Cells& memory,int width,bool is_two_state,bool front){
+ if(memory.empty())return ElementType(width,is_two_state).initial();
  W value=front?memory.front():memory.back();
  if(front)memory.erase(memory.begin());else memory.pop_back();return value;
 }
@@ -163,7 +181,43 @@ inline void queue_write(std::vector<W>& memory,W index,W value,int width,bool is
  if(index.x||index.z||index.v>memory.size())return;
  // Queue writes exactly one past the last cell append; farther writes do not.
  if(index.v==memory.size())queue_push(memory,value,width,is_two_state,false);
- else{value=resize(value,width);memory[size_t(index.v)]=is_two_state?two_state(value):value;}
+ else memory[size_t(index.v)]=ElementType(width,is_two_state).convert(value);
+}
+// Standard-library ordered storage owns its values and copies with snapshots.
+// Flipping the sign bit maps a signed key's ordering onto unsigned Bits ordering.
+using AssociativeStorage=std::map<Bits,W>;
+inline Bits assoc_key(W key,int key_width,bool key_signed){return resize(key,key_width).v^(key_signed?(Bits(1)<<(key_width-1)):Bits(0));}
+inline AssociativeStorage::const_iterator assoc_find(const AssociativeStorage& memory,W key,int key_width,bool key_signed){
+ key=resize(key,key_width);return key.x||key.z?memory.end():memory.find(assoc_key(key,key_width,key_signed));
+}
+inline W assoc_read(const AssociativeStorage& memory,W key,int key_width,bool key_signed,int width,bool is_two_state){
+ auto i=assoc_find(memory,key,key_width,key_signed);return i!=memory.end()?i->second:ElementType(width,is_two_state).initial();
+}
+inline W assoc_exists(const AssociativeStorage& memory,W key,int key_width,bool key_signed){return word(assoc_find(memory,key,key_width,key_signed)!=memory.end(),0,0,32);}
+inline void assoc_write(AssociativeStorage& memory,W key,W value,int key_width,bool key_signed,int width,bool is_two_state){
+ key=resize(key,key_width);if(key.x||key.z)return;auto converted=ElementType(width,is_two_state).convert(value);
+ auto encoded=assoc_key(key,key_width,key_signed);auto i=memory.find(encoded);
+ if(i!=memory.end()){i->second=converted;return;}
+ if(memory.size()>=container_capacity)throw std::length_error("associative array capacity exceeds256");
+ memory.emplace(encoded,converted);
+}
+inline void assoc_delete(AssociativeStorage& memory,W key,int key_width,bool key_signed){
+ key=resize(key,key_width);if(!key.x&&!key.z)memory.erase(assoc_key(key,key_width,key_signed));
+}
+// Failed traversal preserves the caller's index. Ordered bounds also handle an
+// absent starting key without requiring insertion or a custom search algorithm.
+inline W assoc_traverse(const AssociativeStorage& memory,W& key,int key_width,bool key_signed,int operation){
+ if(operation<0||operation>3)throw std::invalid_argument("associative traversal operation");
+ if(memory.empty())return word(0,0,0,32);
+ auto it=memory.cbegin();
+ if(operation==1)it=std::prev(memory.cend());
+ else if(operation>=2){
+  auto current=resize(key,key_width);if(current.x||current.z)return word(0,0,0,32);
+  auto encoded=assoc_key(current,key_width,key_signed);
+  if(operation==2){it=memory.upper_bound(encoded);if(it==memory.end())return word(0,0,0,32);}
+  else{it=memory.lower_bound(encoded);if(it==memory.begin())return word(0,0,0,32);--it;}
+ }
+ key=word(it->first^(key_signed?(Bits(1)<<(key_width-1)):Bits(0)),0,0,key_width);return word(1,0,0,32);
 }
 }
 namespace vsrtl {

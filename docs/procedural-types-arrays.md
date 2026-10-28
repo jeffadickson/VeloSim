@@ -10,7 +10,7 @@ Fixed arrays support ranks 1–4 and a total of at most 256 elements. Every coor
 
 ## Frontend correction
 
-The pinned Surelog revision `6db44ea2048c8ab9c702e389c2897f7e2318ccc5` preserves the tagged-union AST keyword but fails to write its UHDM flag. `tools/surelog-tagfix` recompiles two source translation units against the installed matching native SDK. SHA-256 checks reject different input sources. The correction preserves the flag and appends a root-level capability marker after elaboration, before serialization. VeloSim rejects union models without this marker, avoiding acceptance based on missing tag information.
+The pinned Surelog revision `6db44ea2048c8ab9c702e389c2897f7e2318ccc5` preserves the tagged-union AST keyword but fails to write its UHDM flag. `tools/surelog-tagfix` recompiles six pinned source translation units against the installed matching native SDK. In addition to tag preservation, the overlay retains time scales, nonblocking named triggers, typed intra-assignment delays and subroutine argument slots; it supplies supported constant input defaults before width evaluation. SHA-256 checks reject different input sources. The correction preserves the flag and appends a root-level capability marker after elaboration, before serialization. VeloSim rejects union models without this marker, avoiding acceptance based on missing tag information.
 
 Build a private frontend without replacing the installed compiler:
 
@@ -62,3 +62,9 @@ The final rerun used a private ccache4.9.1 compiler launcher with Ninja jobs4. I
 
 Earlier logs are investigation evidence: attempt1 was interrupted to fix resource/metadata/harness issues; attempt2 passed 1,023 cases and failed one obsolete 129-bit rejection assertion. That assertion now tests 257-bit rejection and 256-bit acceptance, and the fresh complete rerun passed. Old rejection cases were moved to adjacent unsupported forms as initialization, packed types and fixed arrays gained support.
 Final retention verified 460 passing fixture reports and 11,990 referenced files in "frontend-evidence-final". Tool fingerprints and the current-source/binary coverage gate passed after restoring only compiler-specific NuGet lock churn. Final evidence review accepted the bounded result with the LLVM limitation retained. The root "prompt.md" is updated immediately before the local commit; Git and local final-evidence.json establish the later push state.
+
+### Input defaults and frontend compatibility
+
+Automatic input defaults and omitted positional/named slots have focused qualification against explicit expected vectors and independent simulators; see the [source-bound report](../verification/wp05-arguments-20261028.json). Defaults use the scope containing the declaration and are evaluated only when omitted ([IEEE 1800-2017, 13.5.3](https://fpga.mit.edu/6205/_static/F25/documentation/1800-2017.pdf)). Output/inout/ref defaults remain unsupported.
+
+Re-elaborate original SystemVerilog with the current overlay before importing subroutines. Argument protocol v4 also covers calls folded into packed widths. Intermediate v1/v2/v3 databases can contain a zero in place of a default or a shifted leading omission, and are rejected for scopes declaring subroutines. This changes frontend provenance, not external word ABI 2. Runtime defaults support the importer's expression subset; constant-context defaults currently accept constant/parameter integral expressions, and reject broader shapes explicitly. The new argument source is qualified by its own report; the older checkpoint retains its historical hashes and test scopes. Task-hidden sensitivity and broader subroutine semantics remain open.

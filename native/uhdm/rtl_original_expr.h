@@ -1,3 +1,6 @@
+// Missing optional UHDM relations have no VPI handle. NewVpiHandle dereferences
+// its argument, so callers must receive nullptr rather than crash on absence.
+struct LoopHandles{std::vector<H> items;~LoopHandles(){for(auto h:items)vpi_release_handle(h);}H add(const UHDM::BaseClass* object){if(!object)return nullptr;auto h=::NewVpiHandle(object);items.push_back(h);return h;}};
 // Elaboration may fold literal expressions using UHDM's 64-bit arithmetic.
 // Recover their original syntax by exact source span, then lower with RTL sizing.
 std::map<std::string,H> original_expressions;
@@ -10,6 +13,7 @@ std::string expression_location(H h){
 void collect_original_expressions(H h,int depth=0){
  if(!h||!original_visited.insert(identity(h)).second)return;
  need(depth<128&&original_visited.size()<=100000,"original syntax traversal budget exceeded");
+ if(type(h)==vpiHierPath){auto path=static_cast<const UHDM::hier_path*>(identity(h));LoopHandles owned;if(auto elements=path->Path_elems())for(auto element:*elements)collect_original_expressions(owned.add(element),depth+1);}
  if(type(h)==vpiOperation||type(h)==vpiRefObj||type(h)==vpiSysFuncCall||type(h)==vpiConstant){auto key=expression_location(h);if(!key.empty()){auto [entry,inserted]=original_expressions.emplace(key,h);if(!inserted&&identity(entry->second)!=identity(h)){bool same=false;if(type(h)==vpiConstant&&type(entry->second)==vpiConstant){auto a=static_cast<const UHDM::constant*>(identity(h)),b=static_cast<const UHDM::constant*>(identity(entry->second));same=a->VpiSize()==b->VpiSize()&&a->VpiValue()==b->VpiValue()&&a->VpiConstType()==b->VpiConstType()&&a->VpiDecompile()==b->VpiDecompile()&&vpi_get(vpiSigned,h)==vpi_get(vpiSigned,entry->second);}if(!same)entry->second=nullptr;}}}
  for(int relation:{vpiStmt,vpiCondition,vpiElseStmt,vpiLhs,vpiRhs,vpiIndex,vpiBaseExpr,vpiWidthExpr,vpiLeftRange,vpiRightRange,vpiHighConn,vpiLowConn,vpiExpr})collect_original_expressions(one(h,relation),depth+1);
  for(int relation:{vpiModule,vpiTaskFunc,vpiPort,vpiVariables,vpiReg,vpiNet,vpiProcess,vpiContAssign,vpiParamAssign,vpiStmt,vpiOperand,vpiArgument,vpiExpr,vpiCaseItem,vpiGenScopeArray,vpiGenScope,vpiGenStmt})for(auto child:many(h,relation))collect_original_expressions(child,depth+1);

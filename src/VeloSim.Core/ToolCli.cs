@@ -8,20 +8,16 @@ public static class ToolCli
     {
         var structured = args.Length > 0 && args[0] == "--json-errors"; if (structured) args = args[1..];
         using var capture = new ErrorCapture(); int result;
-        try { cancellationToken.ThrowIfCancellationRequested(); result = await RunCoreAsync(args, output, capture, runner, cancellationToken).ConfigureAwait(false); }
+        try { cancellationToken.ThrowIfCancellationRequested(); if (CliOptions.TryHelp(args, output)) return 0; result = await RunCoreAsync(args, output, capture, runner, cancellationToken).ConfigureAwait(false); }
         catch (OperationCanceledException ex) { WriteError(capture, ex); result = 130; }
         catch (Exception ex) when (ex is ArgumentException or FormatException or OverflowException or IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
         { WriteError(capture, ex); result = 1; }
         if (result == 0) return 0;
         var message = capture.ToString().Trim(); if (message.Length == 0) message = result == 130 ? "Command canceled." : "Command completed with failing results.";
         if (!structured) { error.WriteLine(message); return result; }
-        using var stream = new MemoryStream();
-        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
-        {
-            writer.WriteStartObject(); writer.WriteString("schema", "velosim.cli.error.v1"); writer.WriteString("command", args.FirstOrDefault() ?? ""); writer.WriteNumber("exit_code", result);
-            writer.WriteString("category", result == 130 ? "Canceled" : capture.Cause is null ? "CommandFailure" : RegressionSuiteReport.Classify(capture.Cause).ToString()); writer.WriteString("message", message); writer.WriteEndObject();
-        }
-        error.WriteLine(System.Text.Encoding.UTF8.GetString(stream.ToArray())); return result;
+        var contract = new CliErrorContract("velosim.cli.error.v1", args.FirstOrDefault() ?? "", result,
+            result == 130 ? "Canceled" : capture.Cause is null ? "CommandFailure" : RegressionSuiteReport.Classify(capture.Cause).ToString(), message);
+        error.WriteLine(System.Text.Json.JsonSerializer.Serialize(contract, CliJsonContext.Default.CliErrorContract)); return result;
     }
     private sealed class ErrorCapture : StringWriter { public Exception? Cause { get; set; } }
     private static void WriteError(TextWriter writer, Exception exception) { if (writer is ErrorCapture capture) capture.Cause = exception; writer.WriteLine(exception.Message); }
@@ -35,36 +31,19 @@ public static class ToolCli
         if (args.Length > 0 && args[0] == "fifo-differential")
         {
             if (args.Length < 2) throw new ArgumentException("FIFO source required.");
-            string top = "surelog_fifo"; string? directory = null, exporter = null, surelog = null; int jobs = 4, cycles = 1000; uint seed = 42; int[] workers = [1, 4, 8]; var seen = new HashSet<string>();
-            for (int i = 2; i < args.Length; i += 2)
-            {
-                if (i + 1 == args.Length || !seen.Add(args[i])) throw new ArgumentException("Incomplete or duplicate FIFO option.");
-                switch (args[i])
-                {
-                    case "--top": top = args[i + 1]; break; case "--output-dir": directory = args[i + 1]; break; case "--exporter": exporter = args[i + 1]; break; case "--surelog": surelog = args[i + 1]; break;
-                    case "--build-jobs": jobs = int.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break; case "--cycles": cycles = int.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break; case "--seed": seed = uint.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break;
-                    case "--workers": workers = args[i + 1].Split(',').Select(s => int.Parse(s, NumberStyles.None, CultureInfo.InvariantCulture)).ToArray(); break; default: throw new ArgumentException("Unknown FIFO option: " + args[i]);
-                }
-            }
+            string top = "surelog_fifo"; string? directory = null, exporter = null, surelog = null; int jobs = 4, cycles = 1000; uint seed = 42; int[] workers = [1, 4, 8];
+var options = CliOptions.Parse(args, 2);
+            top = options.String("--top") ?? top; directory = options.String("--output-dir"); exporter = options.String("--exporter"); surelog = options.String("--surelog");
+            jobs = options.Int("--build-jobs", jobs); cycles = options.Int("--cycles", cycles); seed = options.UInt("--seed", seed); workers = options.Workers(workers);
             if (directory is null) throw new ArgumentException("FIFO output directory required.");
             var result = await new FifoDifferential(runner).RunAsync(args[1], top, directory, workers, jobs, seed, cycles, exporter, surelog, cancellationToken).ConfigureAwait(false); output.WriteLine($"{result.Status} width={result.Width} depth={result.Depth} cycles={result.Cycles} {result.ReportPath}"); return result.Status == "pass" ? 0 : 1;
         }
         if (args.Length > 0 && args[0] == "word-seeded-conformance")
         {
-            string? destination = null, compiler = null, runtime = null; uint seed = 1; int steps = 128, repetitions = 2; int[] workers = [1, 4]; var seen = new HashSet<string>();
-            for (int i = 1; i < args.Length; i += 2)
-            {
-                if (i + 1 == args.Length || !seen.Add(args[i])) throw new ArgumentException("Incomplete or duplicate seeded word option.");
-                switch (args[i])
-                {
-                    case "--output-dir": destination = args[i + 1]; break; case "--iverilog": compiler = args[i + 1]; break; case "--vvp": runtime = args[i + 1]; break;
-                    case "--seed": seed = uint.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break;
-                    case "--steps": steps = int.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break;
-                    case "--repetitions": repetitions = int.Parse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture); break;
-                    case "--workers": workers = args[i + 1].Split(',').Select(s => int.Parse(s, NumberStyles.None, CultureInfo.InvariantCulture)).ToArray(); break;
-                    default: throw new ArgumentException("Unknown seeded word option: " + args[i]);
-                }
-            }
+            string? destination = null, compiler = null, runtime = null; uint seed = 1; int steps = 128, repetitions = 2; int[] workers = [1, 4];
+var options = CliOptions.Parse(args, 1);
+            destination = options.String("--output-dir"); compiler = options.String("--iverilog"); runtime = options.String("--vvp");
+            seed = options.UInt("--seed", seed); steps = options.Int("--steps", steps); repetitions = options.Int("--repetitions", repetitions); workers = options.Workers(workers);
             if (destination is null) throw new ArgumentException("Seeded word output directory required.");
             var status = await WordSeededConformance.RunAsync(destination, seed, steps, workers, repetitions, runner, compiler, runtime, cancellationToken).ConfigureAwait(false); output.WriteLine(status + " " + Path.Combine(Path.GetFullPath(destination), "word-seeded-conformance-report.json")); return status == "pass" ? 0 : 1;
         }
@@ -81,16 +60,9 @@ public static class ToolCli
         {
             bool differential = args[0] == "word-differential"; if (differential && args.Length < 2) throw new ArgumentException("Word fixture path required.");
             string? destination = null, compiler = null, runtime = null; int[] workers = [1, 4, 8];
-            for (int i = differential ? 2 : 1; i < args.Length; i += 2)
-            {
-                if (i + 1 == args.Length) throw new ArgumentException("Incomplete word HDL workflow option.");
-                switch (args[i])
-                {
-                    case "--output-dir": destination = args[i + 1]; break; case "--iverilog": compiler = args[i + 1]; break; case "--vvp": runtime = args[i + 1]; break;
-                    case "--workers" when !differential: workers = args[i + 1].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid worker count.")).ToArray(); break;
-                    default: throw new ArgumentException("Unknown word HDL workflow option: " + args[i]);
-                }
-            }
+var options = CliOptions.Parse(args, differential ? 2 : 1);
+            destination = options.String("--output-dir"); compiler = options.String("--iverilog"); runtime = options.String("--vvp");
+            if (!differential) workers = options.Workers(workers);
             if (destination is null) throw new ArgumentException("Word HDL output directory required.");
             if (differential)
             {
@@ -103,13 +75,8 @@ public static class ToolCli
         {
             bool boundaries = args[0] == "word-boundaries"; if (boundaries && args.Length < 2) throw new ArgumentException("IR path required.");
             string? destination = null; int[] workers = [1, 4];
-            for (int i = boundaries ? 2 : 1; i < args.Length; i += 2)
-            {
-                if (i + 1 == args.Length) throw new ArgumentException("Incomplete word operation option.");
-                if (args[i] == (boundaries ? "--output" : "--output-dir")) destination = args[i + 1];
-                else if (args[i] == "--workers") workers = args[i + 1].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid worker count.")).ToArray();
-                else throw new ArgumentException("Unknown word operation option: " + args[i]);
-            }
+var options = CliOptions.Parse(args, boundaries ? 2 : 1);
+            destination = options.String(boundaries ? "--output" : "--output-dir"); workers = options.Workers(workers);
             if (destination is null) throw new ArgumentException("Output path required.");
             if (boundaries)
             {
@@ -133,19 +100,10 @@ public static class ToolCli
             bool differential = args[0] == "scheduler-differential", generate = args[0] == "scheduler-generate";
             if (differential && args.Length < 2) throw new ArgumentException("Scheduler fixture path required.");
             string? destination = null, compiler = null, runtime = null; int[] workers = [1, 2, 4, 8]; int steps = 500; uint seed = 42;
-            for (int i = differential ? 2 : 1; i < args.Length; i += 2)
-            {
-                if (i + 1 == args.Length) throw new ArgumentException("Incomplete scheduler workflow option.");
-                switch (args[i])
-                {
-                    case "--output-dir" when !generate: destination = args[i + 1]; break; case "--output" when generate: destination = args[i + 1]; break;
-                    case "--iverilog" when !generate: compiler = args[i + 1]; break; case "--vvp" when !generate: runtime = args[i + 1]; break;
-                    case "--workers" when !generate: workers = args[i + 1].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid worker count.")).ToArray(); break;
-                    case "--steps" when generate: if (!int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out steps)) throw new ArgumentException("Invalid step count."); break;
-                    case "--seed" when generate: if (!uint.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out seed)) throw new ArgumentException("Invalid seed."); break;
-                    default: throw new ArgumentException("Unknown scheduler workflow option: " + args[i]);
-                }
-            }
+var options = CliOptions.Parse(args, differential ? 2 : 1);
+            destination = options.String(generate ? "--output" : "--output-dir");
+            if (generate) { steps = options.Int("--steps", steps); seed = options.UInt("--seed", seed); }
+            else { compiler = options.String("--iverilog"); runtime = options.String("--vvp"); workers = options.Workers(workers); }
             if (destination is null) throw new ArgumentException("Scheduler workflow output path required.");
             if (generate) { await WriteNewAsync(destination, SchedulerStimulus.Generate(seed, steps).ToJson(), cancellationToken).ConfigureAwait(false); output.WriteLine(Path.GetFullPath(destination)); return 0; }
             if (differential)
@@ -164,16 +122,11 @@ public static class ToolCli
         if (args.Length > 0 && args[0] == "elaboration-matrix")
         {
             string? config = null, root = null, directory = null, surelog = null; int[]? workers = null;
-            for (int i = 1; i < args.Length; i += 2)
-            {
-                if (i + 1 == args.Length) throw new ArgumentException("Incomplete matrix option.");
-                switch (args[i])
-                {
-                    case "--config": config = Path.GetFullPath(args[i + 1]); break; case "--root": root = Path.GetFullPath(args[i + 1]); break; case "--output-dir": directory = args[i + 1]; break; case "--surelog": surelog = args[i + 1]; break;
-                    case "--workers": workers = args[i + 1].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid matrix worker count.")).ToArray(); break;
-                    default: throw new ArgumentException("Unknown matrix option: " + args[i]);
-                }
-            }
+var options = CliOptions.Parse(args, 1);
+            if (options.String("--config") is { } configPath) config = Path.GetFullPath(configPath);
+            if (options.String("--root") is { } rootPath) root = Path.GetFullPath(rootPath);
+            directory = options.String("--output-dir"); surelog = options.String("--surelog");
+            if (options.String("--workers") is not null) workers = options.Workers([]);
             if (directory is null || config is not null && root is not null) throw new ArgumentException("Matrix requires --output-dir and either --config or --root.");
             var plan = config is null ? ElaborationMatrixPlan.Default(root ?? Environment.CurrentDirectory, workers) : ElaborationMatrixPlan.Parse(await File.ReadAllTextAsync(config, cancellationToken).ConfigureAwait(false), Path.GetDirectoryName(config)!);
             if (config is not null && workers is not null) plan = new(plan.Name, plan.Cases, workers);
@@ -196,19 +149,9 @@ public static class ToolCli
                 return results.All(r => r.Failure is null) ? 0 : 1;
             }
             string? destination = null; int steps = 100; uint seed = 42; bool fourState = false; int[] workers = [1];
-            for (int i = 2; i < args.Length; i++)
-            {
-                if (args[i] == "--four-state") { fourState = true; continue; }
-                var option = args[i]; if (++i == args.Length) throw new ArgumentException("Incomplete generation option.");
-                switch (option)
-                {
-                    case "--output": destination = args[i]; break;
-                    case "--steps": if (!int.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out steps)) throw new ArgumentException("Invalid step count."); break;
-                    case "--seed": if (!uint.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out seed)) throw new ArgumentException("Invalid seed."); break;
-                    case "--workers": workers = args[i].Split(',').Select(s => int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : throw new ArgumentException("Invalid worker count.")).ToArray(); break;
-                    default: throw new ArgumentException("Unknown generation option: " + option);
-                }
-            }
+var options = CliOptions.Parse(args, 2);
+            destination = options.String("--output"); steps = options.Int("--steps", steps); seed = options.UInt("--seed", seed);
+            workers = options.Workers(workers); fourState = options.Flag("--four-state");
             if (destination is null) throw new ArgumentException("Output fixture path required.");
             var design = IrDesign.Parse(await File.ReadAllTextAsync(args[1], cancellationToken).ConfigureAwait(false));
             var generated = IrStimulus.Generate(design, steps, seed, fourState, workers, cancellationToken);
@@ -239,18 +182,9 @@ public static class ToolCli
             {
                 if (args.Length < 4) throw new ArgumentException("Usage: regression|suite <manifest.json> --output-dir <directory> [--surelog PATH] [--normalizer PATH]");
                 string? directory = null, surelog = null, normalizer = null; string[]? include = null, exclude = null; int shardIndex = 0, shardCount = 1;
-                for (int i = 2; i < args.Length; i += 2)
-                {
-                    if (i + 1 == args.Length) throw new ArgumentException("Incomplete option.");
-                    switch (args[i])
-                    {
-                        case "--output-dir": directory = args[i + 1]; break; case "--surelog": surelog = args[i + 1]; break; case "--normalizer": normalizer = args[i + 1]; break;
-                        case "--include" when args[0] == "suite": include = args[i + 1].Split(','); break; case "--exclude" when args[0] == "suite": exclude = args[i + 1].Split(','); break;
-                        case "--shard-index" when args[0] == "suite": if (!int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out shardIndex)) throw new ArgumentException("Invalid shard index."); break;
-                        case "--shard-count" when args[0] == "suite": if (!int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out shardCount)) throw new ArgumentException("Invalid shard count."); break;
-                        default: throw new ArgumentException("Unknown option: " + args[i]);
-                    }
-                }
+var options = CliOptions.Parse(args, 2);
+                directory = options.String("--output-dir"); surelog = options.String("--surelog"); normalizer = options.String("--normalizer");
+                if (args[0] == "suite") { include = options.String("--include")?.Split(','); exclude = options.String("--exclude")?.Split(','); shardIndex = options.Int("--shard-index", shardIndex); shardCount = options.Int("--shard-count", shardCount); }
                 if (directory is null) throw new ArgumentException("Output directory required.");
                 var manifestPath = Path.GetFullPath(args[1]); var json = await File.ReadAllTextAsync(manifestPath, cancellationToken).ConfigureAwait(false);
                 if (args[0] == "regression")
@@ -284,24 +218,10 @@ public static class ToolCli
             {
                 string? top = null, directory = null, surelog = null, normalizer = null; uint seed = 42; int cycles = 100, workers = 1, jobs = 1;
                 string[] engines = ["velosim", "icarus", "verilator"]; var sources = new List<string>();
-                for (int i = 1; i < args.Length; i++)
-                {
-                    if (args[i] == "--") { sources.AddRange(args.Skip(i + 1)); break; }
-                    if (!args[i].StartsWith("--", StringComparison.Ordinal)) { sources.Add(args[i]); continue; }
-                    var option = args[i];
-                    if (option is not ("--top" or "--output-dir" or "--surelog" or "--normalizer" or "--seed" or "--cycles" or "--threads" or "--build-jobs" or "--engines") || ++i == args.Length) throw new ArgumentException("Unknown or incomplete differential option: " + option);
-                    switch (option)
-                    {
-                        case "--top": top = args[i]; break; case "--output-dir": directory = args[i]; break;
-                        case "--surelog": surelog = args[i]; break; case "--normalizer": normalizer = args[i]; break;
-                        case "--engines": engines = args[i].Split(','); break;
-                        case "--seed": if (!uint.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out seed)) throw new ArgumentException("Invalid seed."); break;
-                        default:
-                            if (!int.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out var n)) throw new ArgumentException("Invalid integer for " + option);
-                            if (option == "--cycles") cycles = n; else if (option == "--threads") workers = n; else jobs = n;
-                            break;
-                    }
-                }
+var options = CliOptions.Parse(args, 1);
+                top = options.String("--top"); directory = options.String("--output-dir"); surelog = options.String("--surelog"); normalizer = options.String("--normalizer");
+                seed = options.UInt("--seed", seed); cycles = options.Int("--cycles", cycles); workers = options.Int("--threads", workers); jobs = options.Int("--build-jobs", jobs);
+                if (options.String("--engines") is { } engineList) engines = engineList.Split(','); sources.AddRange(options.Sources);
                 if (top is null || directory is null) throw new ArgumentException("Differential requires --top and --output-dir.");
                 var report = await new CounterDifferential(runner).RunAsync(sources, top, directory, seed, cycles, workers, jobs, engines, surelog, normalizer, cancellationToken).ConfigureAwait(false);
                 output.WriteLine(report.Status + " " + Path.Combine(Path.GetFullPath(directory), "report.json"));
@@ -338,21 +258,9 @@ public static class ToolCli
         {
             string? top = null, directory = null, surelog = null, normalizer = null; int workers = 1;
             var sources = new List<string>();
-            for (int i = 1; i < args.Length; i++)
-            {
-                if (args[i] == "--") { sources.AddRange(args.Skip(i + 1)); break; }
-                if (!args[i].StartsWith("--", StringComparison.Ordinal)) { sources.Add(args[i]); continue; }
-                var option = args[i];
-                if (option is not ("--top" or "--output-dir" or "--surelog" or "--normalizer" or "--threads") || ++i == args.Length) throw new ArgumentException("Unknown or incomplete compile option: " + option);
-                switch (option)
-                {
-                    case "--top": top = args[i]; break;
-                    case "--output-dir": directory = args[i]; break;
-                    case "--surelog": surelog = args[i]; break;
-                    case "--normalizer": normalizer = args[i]; break;
-                    case "--threads": if (!int.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out workers)) throw new ArgumentException("Invalid thread count."); break;
-                }
-            }
+var options = CliOptions.Parse(args, 1);
+            top = options.String("--top"); directory = options.String("--output-dir"); surelog = options.String("--surelog"); normalizer = options.String("--normalizer");
+            workers = options.Int("--threads", workers); sources.AddRange(options.Sources);
             if (top is null || directory is null) throw new ArgumentException("Compile requires --top and --output-dir.");
             output.WriteLine(await new DesignPipeline(runner).CompileAsync(sources, top, directory, surelog, normalizer, workers, cancellationToken: cancellationToken).ConfigureAwait(false));
             return 0;
@@ -371,13 +279,8 @@ public static class ToolCli
         {
             if (args.Length < 2 || args[0] != "simulate") throw new ArgumentException("Usage: velosim simulate <ir.json> [--cycles N] [--threads N] [--release-reset]");
             int cycles = 5, workers = 1; bool release = false;
-            for (int i = 2; i < args.Length; i++)
-            {
-                if (args[i] == "--release-reset") { release = true; continue; }
-                if (args[i] is not ("--cycles" or "--threads") || i + 1 == args.Length) throw new ArgumentException("Unknown or incomplete option: " + args[i]);
-                var option = args[i++]; if (!int.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out var n)) throw new ArgumentException("Expected positive integer.");
-                if (option == "--cycles") cycles = n; else workers = n;
-            }
+var options = CliOptions.Parse(args, 2);
+            cycles = options.Int("--cycles", cycles); workers = options.Int("--threads", workers); release = options.Flag("--release-reset");
             if (cycles is < 1 or > 10_000_000 || workers is < 1 or > 256) throw new ArgumentException("Cycles must be 1..10000000 and threads 1..256.");
             var design = IrDesign.Parse(File.ReadAllText(args[1]));
             if (!design.Signals.Any(s => s.Name == "clk" && s.Initial.Width == 1)) throw new ArgumentException("Simulation command requires scalar clk.");

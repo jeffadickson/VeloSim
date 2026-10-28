@@ -20,7 +20,10 @@ public static class RtlExternalSdk
         Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(Path.Combine(directory, "V" + top + ".h"), header, token).ConfigureAwait(false);
         foreach (string file in new[] { "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
+        if (design.Timed) File.Copy(Path.Combine(runtime, "hdl_scheduler.h"), Path.Combine(directory, "hdl_scheduler.h"));
         await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory,"timing-diagnostics.txt"),
+            "Conservative timed-process analysis; warnings do not prove races, and absence does not prove race freedom.\n"+string.Join('\n',design.TimingDiagnostics)+"\n",token).ConfigureAwait(false);
         string cmake = """
             cmake_minimum_required(VERSION 3.20)
             project(VeloSimExternal LANGUAGES C CXX)
@@ -56,7 +59,19 @@ public static class RtlExternalSdk
             vlog_startup_routines table before the first eval().
             The VPI subset supports signal lookup, metadata, identity, immediate
             input deposits, radix/vector/scalar values, and start/end/value/read-only
-            callbacks. There is no HDL delay scheduler or Verilator/DPI ABI.
+            callbacks. There is no Verilator/DPI ABI.
+            Models whose manifest says explicit-time include hdl_scheduler.h.
+            Their timeInc()/eval() host sequence executes queued older events
+            before applying new input values at the host tick. Query eventsPending()
+            and nextTimeSlot() on that generated model; advance by nextTimeSlot()-time().
+            design.rtl.json time_precision, when present, is the decimal seconds
+            exponent of a host tick. The bounded scheduler supports active/inactive/NBA,
+            integer/runtime-integer and quantized decimal literal delays, signal waits
+            and explicit/implicit sensitivity. Other SV regions, named fork scopes,
+            timed calls, time-suffixed/runtime-real delays and general net resolution
+            still require separate implementation/qualification.
+            timing-diagnostics.txt records conservative process hazards. Warnings
+            do not prove races; absence does not prove race freedom.
             Models and handles belong to their creating thread.
             Concatenation NBA targets require distinct destination words and at
             most 256 total assigned bits.
@@ -70,19 +85,17 @@ public static class RtlExternalSdk
             SHA-256 hashes cover the generated/copied input files, excluding the
             manifest itself and any files you add later.
             """, token).ConfigureAwait(false);
-        var inputs = new[] { "V" + top + ".h", "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" }.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
+        var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
+        if (design.Timed) inputPaths.Add("hdl_scheduler.h");
+        inputPaths.Add("timing-diagnostics.txt");
+        var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
         string manifest = Path.Combine(directory, "external-model.json");
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
-        {
-            writer.WriteStartObject(); writer.WriteString("schema", "velosim.external.model.v2"); writer.WriteNumber("word_abi",2);writer.WriteNumber("max_word_bits",256);writer.WriteString("top", top); writer.WriteString("model_class", "V" + top); writer.WriteString("execution_scope", design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
-            writer.WriteStartArray("ports"); var names = design.ExternalPortNames();
-            foreach (var signal in design.Signals.Where(s => s.Direction != "internal")) { writer.WriteStartObject(); writer.WriteString("name", signal.Name); writer.WriteNumber("width", signal.Width);writer.WriteBoolean("signed",signal.Signed);writer.WriteBoolean("two_state",signal.TwoState); writer.WriteString("direction", signal.Direction); writer.WriteString("member", names[signal.Name]); writer.WriteEndObject(); }
-            writer.WriteEndArray(); writer.WriteStartArray("inputs");
-            foreach (var input in inputs) { writer.WriteStartObject(); writer.WriteString("path", Path.GetFileName(input.Path)); writer.WriteString("sha256", input.Sha256); writer.WriteEndObject(); }
-            writer.WriteEndArray(); writer.WriteEndObject();
-        }
-        await File.WriteAllBytesAsync(manifest, stream.ToArray(), token).ConfigureAwait(false);
+        var names = design.ExternalPortNames();
+        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 256, top, "V" + top,
+            design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval",
+            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, s.TwoState, s.Direction, names[s.Name])).ToArray(),
+            inputs.Select(input => new ExternalInputContract(Path.GetFileName(input.Path), input.Sha256)).ToArray());
+        await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
         return manifest;
     }
 }

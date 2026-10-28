@@ -1,6 +1,6 @@
 // Included inside rtl.cpp's private namespace, after expression/statement lowering.
 struct FlatSignal{int width,direction;std::string path;bool is_signed;bool two_state;};
-struct FlatMemory{int width,depth;bool is_signed;int lower;std::vector<std::pair<int,int>> dimensions;bool two_state;bool dynamic=false;bool queue=false;};
+struct FlatMemory{int width,depth;bool is_signed;int lower;std::vector<std::pair<int,int>> dimensions;bool two_state;bool dynamic=false;bool queue=false;bool associative=false;int key_width=0;bool key_signed=false;};
 struct FlatScope{H handle,module;int parent;std::string path;std::map<std::string,std::string> names;};
 struct FlatBinding{int parent,child,direction;H high,low;std::string target;};
 std::vector<FlatScope> flat_scopes;
@@ -20,25 +20,40 @@ void in_scope(int id){mod=flat_scopes.at(id).module;active_symbols=flat_scopes.a
 int collect_scope(H scope,H module,int parent,const std::string& path,int depth=0){
  need(depth<32&&flat_scopes.size()<256,"hierarchy depth/scope budget exceeded");
  auto seen=visited_scopes.insert(identity(scope));need(seen.second,"duplicate elaborated scope");
+ // Constant calls can disappear into packed widths before runtime lowering.
+ // Check provenance even when no surviving call reaches call_arguments().
+ if(!many(scope,vpiTaskFunc).empty()){
+  bool qualified=false;for(auto attribute:many(module,vpiAttribute))qualified|=name(attribute)=="velosim frontend argument slots v4";
+  need(qualified,"subroutine declarations require constant-safe argument provenance; re-elaborate with the argument-slot frontend overlay");
+ }
  int id=int(flat_scopes.size());flat_scopes.push_back({scope,module,parent,path,{}});mod=module;bind_parameters(scope);
  for(int relation:{vpiPrimitive,vpiPrimitiveArray,vpiModuleArray})need(many(scope,relation).empty(),"primitives and module arrays unsupported");
  std::map<std::string,int> directions;
  if(parent<0)for(auto port:many(scope,vpiPort)){int direction=vpi_get(vpiDirection,port);need(direction==vpiInput||direction==vpiOutput,"inout unsupported");directions[name(port)]=direction;}
- for(int relation:{vpiNet,vpiReg,vpiVariables})for(auto h:many(scope,relation)){
+ for(int relation:{vpiNet,vpiReg,vpiVariables,vpiNamedEvent})for(auto h:many(scope,relation)){
   auto local=name(h);need(!local.empty(),"unnamed declaration");if(auto value=one(h,vpiExpr)){need(relation!=vpiNet,"net declaration expressions require continuous assignment lowering");if(initialized_declarations.insert(identity(h)).second)flat_initializers.push_back({id,h,value});}
   auto found=flat_scopes[id].names.find(local);std::string flat;
   if(found!=flat_scopes[id].names.end())flat=found->second;
   else{flat=path.empty()?local:"vs_h"+std::to_string(id)+"_"+local;auto base=flat;int suffix=0;while(used_flat_names.count(flat))flat=base+"_"+std::to_string(suffix++);used_flat_names.insert(flat);flat_scopes[id].names[local]=flat;}
   flat_symbols[identity(h)]=flat;
+  flat_declarations[flat]=h;
+  if(type(h)==vpiNamedEvent){flat_named_events.insert(flat);need(flat_named_events.size()<=256,"named event budget exceeded");continue;}
   if(type(h)==vpiArrayVar){
-   if(queue_array(h))need(!directions.count(local),"queue ports unsupported; use module-scope storage");
+   if(queue_array(h)||associative_array(h))need(!directions.count(local),"container ports unsupported; use module-scope storage");
    need(vpi_get(vpiArrayType,h)==vpiStaticArray||lifetime_array(h),"associative arrays require separate container-lifetime lowering");
    auto ranges=many(h,vpiRange),elements=many(h,vpiReg);if(elements.empty())elements=many(h,vpiVariables);
    if(lifetime_array(h)){
     if(queue_array(h)&&elements.size()==1)need(!aggregate_spec(word_spec(elements[0])),"queue aggregate elements unsupported");
     need(ranges.empty()&&elements.size()==1&&!one(h,vpiExpr),"dynamic arrays require one unpacked dimension and procedural allocation");
     need(!one(elements[0],vpiExpr),"dynamic element declaration initializers unsupported");logic_word(elements[0]);
-    flat_memories[flat]={width(elements[0]),1,declared_signed(elements[0]),0,{},two_state_word(elements[0]),dynamic_array(h),queue_array(h)};continue;
+    int key_width=0;bool key_signed=false;
+    if(associative_array(h)){
+     auto array_spec=word_spec(h);need(type(array_spec)==vpiArrayTypespec,"associative array typespec required");
+     auto key=base_spec(one(one(array_spec,vpiIndexTypespec),vpiActual));
+     key_width=atom_width(key);key_signed=vpi_get(vpiSigned,key);
+     if(!key_width){need(type(key)==vpiLogicTypespec||type(key)==vpiBitTypespec,"associative keys require an explicit integral type");auto key_ranges=many(key,vpiRange);need(key_ranges.size()<=1,"multidimensional packed keys unsupported");key_width=1;if(!key_ranges.empty()){auto left=integer(one(key_ranges[0],vpiLeftRange)),right=integer(one(key_ranges[0],vpiRightRange));need(right==0&&left<256,"associative key range must be descending [width-1:0] through256bits");key_width=int(left+1);}}
+    }
+    flat_memories[flat]={width(elements[0]),1,declared_signed(elements[0]),0,{},two_state_word(elements[0]),dynamic_array(h),queue_array(h),associative_array(h),key_width,key_signed};continue;
    }
    need(!ranges.empty()&&ranges.size()<=4&&elements.size()==1,"fixed arrays require 1..4 dimensions and one element declaration");
    need(!one(elements[0],vpiExpr),"initialized memory element declarations unsupported");logic_word(elements[0]);
@@ -68,14 +83,28 @@ void input_events(H edge,int scope,const std::map<std::string,std::string>& link
 }
 std::string flatten_design(H top){
  collect_scope(top,top,-1,"");std::vector<FlatBinding> bindings;std::map<std::string,std::string> input_links;
+ size_t initial_count=0;for(const auto& scope:flat_scopes){if(type(scope.handle)==vpiModule)timed_precision=std::min(timed_precision,static_cast<const UHDM::module_inst*>(identity(scope.handle))->VpiTimePrecision());for(auto process:many(scope.handle,vpiProcess))initial_count+=type(process)==vpiInitial;}
+ timed_lowering|=initial_count>1;
+ for(const auto& scope:flat_scopes)for(auto process:many(scope.handle,vpiProcess))if(type(process)==vpiAlways){auto event=one(process,vpiStmt);if(type(event)==vpiEventControl&&!one(event,vpiCondition))timed_lowering=true;}
+ if(timed_lowering)for(const auto& scope:flat_scopes)if(type(scope.handle)==vpiModule){
+  bool qualified=false;for(auto attribute:many(scope.handle,vpiAttribute))qualified|=name(attribute)=="velosim frontend time scale v1";
+  need(qualified,"timed lowering requires preserved explicit timeunit/timeprecision metadata; use the time-scale frontend overlay");
+  auto module=static_cast<const UHDM::module_inst*>(identity(scope.handle));
+  need(module->VpiTimeUnit()>=-15&&module->VpiTimeUnit()<=0&&module->VpiTimePrecision()>=-15&&module->VpiTimePrecision()<=module->VpiTimeUnit(),"unsupported HDL time scale");
+ }
  // UHDM stores a top output-variable declaration initializer as High_conn,
  // not VpiExpr on the cloned logic_net. Input defaults are connection defaults.
  for(size_t index=0;index<flat_scopes.size();++index){auto scope=flat_scopes[index];if(type(scope.handle)!=vpiModule)continue;auto expected=expected_port_initializers[owner_definition(scope.handle)];for(auto port:many(scope.handle,vpiPort)){if(vpi_get(vpiDirection,port)!=vpiOutput)continue;auto key=initializer_key(port,scope.handle);auto found=original_port_initializers.find(key);if(found==original_port_initializers.end())continue;auto declaration=one(one(port,vpiLowConn),vpiActual);need(declaration&&flat_symbols.count(identity(declaration)),"output initializer requires a bound declaration");need(expected.erase(key)==1,"duplicate output initializer binding");need(initialized_declarations.insert(identity(declaration)).second,"conflicting output declaration initializers");flat_initializers.push_back({int(index),declaration,found->second});}need(expected.empty(),"unresolved output initializer binding");}
  for(size_t index=1;index<flat_scopes.size();++index){auto scope=flat_scopes[index];if(type(scope.handle)!=vpiModule)continue;
   for(auto port:many(scope.handle,vpiPort)){auto high=one(port,vpiHighConn),low=one(port,vpiLowConn);int direction=vpi_get(vpiDirection,port);need(high&&low,"open/unresolved instance ports unsupported");need(direction==vpiInput||direction==vpiOutput,"inout instance ports unsupported");need(declared_reference(low),"instance low connection must be a declared word");in_scope(int(index));auto child=signal_name(low);need(flat_signals.count(child),"memory instance ports unsupported");int childWidth=flat_signals.at(child).width;in_scope(scope.parent);need(width(high)>=1&&childWidth>=1,"instance connections require word widths");if(direction==vpiOutput)need(declared_reference(high),"instance output requires a whole declared destination word");bindings.push_back({scope.parent,int(index),direction,high,low,child});if(direction==vpiInput&&declared_reference(high))input_links[child]=signal_name(high);}
  }
- std::vector<std::pair<int,H>> combinational,initial;std::vector<FlatProcess> processes;std::string clock;bool explicit_events=false;
+ std::vector<std::pair<int,H>> combinational,initial;std::vector<FlatProcess> processes;std::vector<std::tuple<int,H,bool>> timed_processes;std::string clock;bool explicit_events=false;
  for(size_t index=0;index<flat_scopes.size();++index)for(auto process:many(flat_scopes[index].handle,vpiProcess)){
+  if(timed_lowering){
+   need(type(process)==vpiInitial||type(process)==vpiAlways,"unsupported timed process kind");
+   if(type(process)==vpiAlways&&(vpi_get(vpiAlwaysType,process)==vpiAlwaysComb||vpi_get(vpiAlwaysType,process)==vpiAlwaysLatch))combinational.push_back({int(index),one(process,vpiStmt)});
+   else timed_processes.push_back({int(index),one(process,vpiStmt),type(process)==vpiAlways});continue;
+  }
   if(type(process)==vpiInitial){need(initial.empty(),"multiple initial blocks require time-zero scheduling");initial.push_back({int(index),one(process,vpiStmt)});continue;}
   if(type(process)==vpiAlways&&vpi_get(vpiAlwaysType,process)==vpiAlwaysComb){need(combinational.size()<256,"combinational process budget exceeded");combinational.push_back({int(index),one(process,vpiStmt)});continue;}
   need(processes.size()<256,"process budget exceeded");need(type(process)==vpiAlways&&vpi_get(vpiAlwaysType,process)!=vpiAlwaysComb&&vpi_get(vpiAlwaysType,process)!=vpiAlwaysLatch,"only explicitly edge-controlled always processes supported");auto event=one(process,vpiStmt);need(type(event)==vpiEventControl,"event control required");FlatProcess lowered{int(index),one(event,vpiStmt),{}};input_events(one(event,vpiCondition),int(index),input_links,lowered.events);need(!lowered.events.empty(),"empty event list");auto primary=lowered.events.front().first;if(clock.empty())clock=primary;explicit_events|=lowered.events.size()!=1||!lowered.events.front().second||primary!=clock;processes.push_back(std::move(lowered));
@@ -83,12 +112,14 @@ std::string flatten_design(H top){
  // An absent clock is explicit; combinational-only models never invent an event port.
  std::string out="{\"format\":\"velosim.rtl.v1\",\"signals\":[";bool first=true;
  for(auto& [flat,signal]:flat_signals){if(clock_aliases.count(flat))continue;if(!first)out+=",";first=false;out+="{\"name\":"+q(flat)+",\"width\":"+std::to_string(signal.width)+",\"direction\":"+q(signal.direction==vpiInput?"input":signal.direction==vpiOutput?"output":"internal");if(signal.is_signed)out+=",\"signed\":true";if(signal.two_state)out+=",\"two_state\":true";if(!signal.path.empty())out+=",\"path\":"+q(signal.path);out+="}";}
- out+="],\"memories\":[";first=true;for(auto& [flat,memory]:flat_memories){if(!first)out+=",";first=false;out+="{\"name\":"+q(flat)+",\"width\":"+std::to_string(memory.width)+",\"depth\":"+std::to_string(memory.depth)+(memory.lower?",\"lower\":"+std::to_string(memory.lower):"")+(memory.is_signed?",\"signed\":true":"")+(memory.two_state?",\"two_state\":true":"")+(memory.dynamic?",\"dynamic\":true":"")+(memory.queue?",\"queue\":true":"");if(!memory.dimensions.empty()){out+=",\"dimensions\":[";bool firstDimension=true;for(auto [left,right]:memory.dimensions){if(!firstDimension)out+=",";firstDimension=false;out+="{\"left\":"+std::to_string(left)+",\"right\":"+std::to_string(right)+"}";}out+="]";}out+="}";}
+ out+="],\"memories\":[";first=true;for(auto& [flat,memory]:flat_memories){if(!first)out+=",";first=false;out+="{\"name\":"+q(flat)+",\"width\":"+std::to_string(memory.width)+",\"depth\":"+std::to_string(memory.depth)+(memory.lower?",\"lower\":"+std::to_string(memory.lower):"")+(memory.is_signed?",\"signed\":true":"")+(memory.two_state?",\"two_state\":true":"")+(memory.dynamic?",\"dynamic\":true":"")+(memory.queue?",\"queue\":true":"")+(memory.associative?",\"associative\":true,\"key_width\":"+std::to_string(memory.key_width)+(memory.key_signed?",\"key_signed\":true":""):"");if(!memory.dimensions.empty()){out+=",\"dimensions\":[";bool firstDimension=true;for(auto [left,right]:memory.dimensions){if(!firstDimension)out+=",";firstDimension=false;out+="{\"left\":"+std::to_string(left)+",\"right\":"+std::to_string(right)+"}";}out+="]";}out+="}";}
  out+="],\"initialization\":{\"kind\":\"block\",\"items\":[";first=true;
  for(auto& init:flat_initializers){in_scope(init.scope);std::function<void(H,int)> constant=[&](H h,int depth){need(h&&depth<64,"initializer expression depth exceeded");if(auto original=original_expression(h)){constant(original,depth+1);return;}if(type(h)==vpiConstant||is_parameter_reference(h))return;need(type(h)==vpiOperation,"declaration initializer requires constant expression");for(auto child:many(h,vpiOperand))constant(child,depth+1);};constant(init.value,0);if(!first)out+=",";first=false;out+="{\"kind\":\"blocking\",\"target\":{\"kind\":\"ref\",\"name\":"+q(signal_name(init.declaration))+"},\"value\":"+expr(init.value)+"}";}
  for(auto& [scope,body]:initial){in_scope(scope);if(!first)out+=",";first=false;out+=stmt(body);}out+="]},\"continuous\":[";first=true;auto append=[&](const std::string& target,const std::string& value){if(!first)out+=",";first=false;out+="{\"target\":"+target+",\"value\":"+value+"}";};
  for(auto& binding:bindings){if(clock_aliases.count(binding.target))continue;in_scope(binding.parent);auto high=expr(binding.high);in_scope(binding.child);auto low=expr(binding.low);if(binding.direction==vpiInput)append(low,high);else append(high,low);}
  for(size_t index=0;index<flat_scopes.size();++index){in_scope(int(index));for(auto assignment:many(flat_scopes[index].handle,vpiContAssign)){auto object=static_cast<const UHDM::cont_assign*>(identity(assignment));need(!object->Delay()&&!object->VpiStrength0()&&!object->VpiStrength1(),"continuous delays and strengths unsupported");append(expr(one(assignment,vpiLhs)),expr(one(assignment,vpiRhs)));}}
  out+="],\"combinational\":[";first=true;for(auto& [scope,body]:combinational){in_scope(scope);if(!first)out+=",";first=false;out+=stmt(body);}out+="],\"clock\":"+(processes.empty()?"null":q(clock))+",\"body\":";if(processes.size()>1)out+="{\"kind\":\"parallel\",\"items\":[";first=true;
- for(auto& process:processes){in_scope(process.scope);if(!first)out+=",";first=false;if(explicit_events){out+="{\"kind\":\"process\",\"events\":[";bool first_event=true;for(auto& [signal,positive]:process.events){if(!first_event)out+=",";first_event=false;out+="{\"signal\":"+q(signal)+",\"edge\":"+q(positive?"posedge":"negedge")+"}";}out+="],\"body\":";}out+=stmt(process.body);if(explicit_events)out+="}";}if(processes.empty())out+="{\"kind\":\"block\",\"items\":[]}";if(processes.size()>1)out+="]}";return out+"}\n";
+ for(auto& process:processes){in_scope(process.scope);if(!first)out+=",";first=false;if(explicit_events){out+="{\"kind\":\"process\",\"events\":[";bool first_event=true;for(auto& [signal,positive]:process.events){if(!first_event)out+=",";first_event=false;out+="{\"signal\":"+q(signal)+",\"edge\":"+q(positive?"posedge":"negedge")+"}";}out+="],\"body\":";}out+=stmt(process.body);if(explicit_events)out+="}";}if(processes.empty())out+="{\"kind\":\"block\",\"items\":[]}";if(processes.size()>1)out+="]}";
+ if(timed_lowering){out+=",\"named_events\":[";bool first_named=true;for(const auto& event:flat_named_events){if(!first_named)out+=",";first_named=false;out+=q(event);}out+="],\"time_precision\":"+std::to_string(timed_precision)+",\"timed\":[";bool first_timed=true;for(auto [scope,body,repeat]:timed_processes){in_scope(scope);if(!first_timed)out+=",";first_timed=false;bool implicit=repeat&&type(body)==vpiEventControl&&!one(body,vpiCondition);if(implicit)out+="{\"kind\":\"always_star\",\"body\":";else if(repeat)out+="{\"kind\":\"while\",\"condition\":{\"kind\":\"const\",\"bits\":\"1\"},\"body\":";out+=stmt(implicit?one(body,vpiStmt):body);if(repeat)out+="}";}out+="]";}
+ return out+"}\n";
 }

@@ -1,0 +1,405 @@
+{
+  "schema": "velosim.wp-progress.v1",
+  "generated_utc": "2026-10-28T02:15:10.3990335+00:00",
+  "status": "qualified-partial-implementation",
+  "git": {
+    "worktree_only": true,
+    "push_performed": false,
+    "commit_created": false,
+    "head": "fa7cd2fbd962dde1f95ffb29e6b3e46a01a5cae1"
+  },
+  "work_packages": {
+    "broad_closure_asserted": false,
+    "scope": [
+      "WP-01",
+      "WP-02",
+      "WP-03",
+      "WP-04",
+      "WP-05"
+    ]
+  },
+  "features": {
+    "diagnostics": "conservative WW and blocking RW warnings including fork fragments; SDK timing-diagnostics.txt hashed; bounded/truncation-labelled",
+    "timing": "typed identifier intra-assignment delays; sampled RHS and delay; preserved existing runtime/quantized-decimal behavior",
+    "always_star": "wait-first implicit reads/address sensitivity; no startup replay; empty sensitivity never executes",
+    "subroutines": "automatic whole-word local initializers after input binding; declaration order; zero-time task early return"
+  },
+  "requirements": [
+    "VS-RTL-IMPLICIT-EVENT-001",
+    "VS-RTL-RUNTIME-DELAY-001",
+    "VS-RTL-RACE-DIAGNOSTICS-001",
+    "VS-RTL-AUTO-LOCAL-001",
+    "VS-RTL-TASK-RETURN-001"
+  ],
+  "changed_source_hashes": [
+    {
+      "file": "src/VeloSim.Core/RtlTimed.cs",
+      "sha256": "4D640172F8D34BFD4C944FD34CE744261488203CCFCC11D0B7542908DA19AA46"
+    },
+    {
+      "file": "src/VeloSim.Core/RtlExternalSdk.cs",
+      "sha256": "B83766291FEE3652C5F8F5C618CC50A30EDDCA3AE20C76FF3538ED5CB1EBF43E"
+    },
+    {
+      "file": "native/uhdm/rtl.cpp",
+      "sha256": "3646C8C78C63EE46372F4CD8FCE56EECED402923150E72D84C6FD186E9B2C3C0"
+    },
+    {
+      "file": "native/uhdm/rtl_flatten.h",
+      "sha256": "62FCA4F9416DA968C0AAC10FEE2C806D04BEB51D8284BA29EB151CF4A7B07C61"
+    },
+    {
+      "file": "native/uhdm/rtl_subroutines.h",
+      "sha256": "107B70774C01C0AEC4DDC1012F9B4DB76CEF536B340A42795BA174251C464918"
+    },
+    {
+      "file": "native/rtl/hdl_scheduler.h",
+      "sha256": "585642685E2F4DECA99252EE0DC9C19775028F622CD9BCE7128538716069D4A2"
+    },
+    {
+      "file": "tests/native/hdl_scheduler_tests.cpp",
+      "sha256": "9E1420DE2186B8CD3CB2451821618F3EAFC2E11D7F40D373972AFBE4AFECD0F6"
+    },
+    {
+      "file": "tests/VeloSim.Tests/RtlTimedTests.cs",
+      "sha256": "613AD858EBC5055E91A29D304682319FB75638024DD65B86E21E5254FED50CE8"
+    },
+    {
+      "file": "tests/VeloSim.Tests/RtlTaskValueResultTests.cs",
+      "sha256": "70E828CFE94A7826F6C8D37A84EC9C4DA58D8F3AD4D02B25A9840ACD89A0B8DE"
+    },
+    {
+      "file": "tests/VeloSim.Tests/ExternalInterfaceTests.cs",
+      "sha256": "419A7A9FBE8E7667AA75A6AF4D5AF088AAC5144484EBF00F4785D085FCC7EFA1"
+    },
+    {
+      "file": "tools/surelog-tagfix/CMakeLists.txt",
+      "sha256": "46F7FB03AAFBADF59C3A7A6E9C0FD1F377E863727CAC88991025D21001FE4948"
+    },
+    {
+      "file": "requirements/velosim.sdoc",
+      "sha256": "7256DD04D2B305E5B12429EB2642D4E7E7F4ECD12C325D223003EA77477E3E07"
+    }
+  ],
+  "source_manifest_scope": "changed files only; full raw builds and per-case binary/input fingerprints retained locally",
+  "tools": {
+    "dotnet": "10.0.402",
+    "clang": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "gcc": "g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "cmake": "cmake version 3.28.3",
+    "ninja": "1.11.1",
+    "verilator": " rev v5.052"
+  },
+  "tool_hashes": [
+    {
+      "Algorithm": "SHA256",
+      "Hash": "00E061FE33D8A722EE0F90E6D5A62EE3013C0C3008F9115D0AE256892B18B542",
+      "Path": "/home/jeffd/.local/share/VeloSim/assoc-timing-build/bin/velosim-uhdm-rtl"
+    },
+    {
+      "Algorithm": "SHA256",
+      "Hash": "C7B5A1A4736FC60D8CE3BF8D483AAE744698562ECCDF6D23CF2BD70B235E7C88",
+      "Path": "/home/jeffd/.local/share/VeloSim/wp01-05-timing-frontend-build/surelog"
+    },
+    {
+      "Algorithm": "SHA256",
+      "Hash": "6F1928411BD72D33B9643E7EAB8DBE7BE3143723188C0DC640CD1822349D43F0",
+      "Path": "/home/jeffd/.local/share/VeloSim/wp01-05-cli-aot03/VeloSim.Tools"
+    }
+  ],
+  "verification": [
+    {
+      "id": "current-implicit04",
+      "passed": 52,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "timed HDL and task suite before final early-return guard; source hashes retained separately"
+    },
+    {
+      "id": "current-final01",
+      "passed": 21,
+      "failed": 1,
+      "status": "failed-reference-unsupported",
+      "reason": "Icarus rejects task return; superseded by pinned Verilator task comparison in current-final02; initial orchestration preference assignment typo recorded separately"
+    },
+    {
+      "id": "current-final02",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "final automatic task/function slice; early return uses Verilator 5.052 plus independent expected vectors"
+    },
+    {
+      "id": "wp01-05-windows-managed01",
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "scope": "managed sensitivity/hazard/metadata checks; Windows .NET10.0.403"
+    },
+    {
+      "id": "current-example04",
+      "passed_rows": 9,
+      "scope": "NativeAOT03 CLI to compiled SDK, independent trace and original-source Icarus; its own tool hashes preserved"
+    },
+    {
+      "id": "current-native09",
+      "status": "pass",
+      "scope": "ASan/UBSan kernel checks"
+    },
+    {
+      "id": "current-strictdoc03",
+      "status": "pass",
+      "scope": "real StrictDoc 0.30.4 export"
+    },
+    {
+      "id": "current-incremental01",
+      "status": "pass",
+      "scope": "two Ninja no-work overlay builds; no speedup claim"
+    },
+    {
+      "id": "current-default04",
+      "status": "pass",
+      "scope": "default suite with VELOSIM_REAL_FIFO=0",
+      "passed": 635,
+      "skipped": 548,
+      "failed": 0,
+      "total": 1183
+    }
+  ],
+  "counts_note": "Overlapping scopes and source revisions are not summed into a unique test total.",
+  "coverage": {
+    "timed_managed_classes": {
+      "evidence": "current-implicit04 Coverlet",
+      "classes": [
+        {
+          "class": "VeloSim.RtlDesign",
+          "file": "src/VeloSim.Core/RtlTimed.cs",
+          "line_rate": 0.9632999999999999,
+          "branch_rate": 0.8039000000000001
+        },
+        {
+          "class": "VeloSim.RtlDesign/TimedInstructions",
+          "file": "src/VeloSim.Core/RtlTimed.cs",
+          "line_rate": 1.0,
+          "branch_rate": 0.75
+        },
+        {
+          "class": "VeloSim.RtlDesign/<<TimedImplicit>g__Read|112_0>d",
+          "file": "src/VeloSim.Core/RtlTimed.cs",
+          "line_rate": 1.0,
+          "branch_rate": 0.44439999999999996
+        },
+        {
+          "class": "VeloSim.RtlDesign/<>c__DisplayClass109_0",
+          "file": "src/VeloSim.Core/RtlTimed.cs",
+          "line_rate": 1.0,
+          "branch_rate": 0.9722
+        },
+        {
+          "class": "VeloSim.RtlDesign/<>c__DisplayClass122_0",
+          "file": "src/VeloSim.Core/RtlTimed.cs",
+          "line_rate": 1.0,
+          "branch_rate": 1.0
+        },
+        {
+          "class": "VeloSim.RtlDesign/<TimedStatementReads>d__110",
+          "file": "src/VeloSim.Core/RtlTimed.cs",
+          "line_rate": 1.0,
+          "branch_rate": 1.0
+        }
+      ],
+      "note": "Class/file groupings including generated helpers; no invented whole-project or whole-file combined rate."
+    },
+    "exporter_before_final_return_guard": {
+      "evidence": "current-implicit04",
+      "files": [
+        {
+          "filename": "/home/jeffd/.local/share/VeloSim/assoc-timing-source/native/uhdm/rtl.cpp",
+          "summary": {
+            "branches": {
+              "count": 1050,
+              "covered": 466,
+              "notcovered": 584,
+              "percent": 44.38095238095238
+            },
+            "functions": {
+              "count": 41,
+              "covered": 37,
+              "percent": 90.2439024390244
+            },
+            "instantiations": {
+              "count": 41,
+              "covered": 37,
+              "percent": 90.2439024390244
+            },
+            "lines": {
+              "count": 263,
+              "covered": 190,
+              "percent": 72.24334600760456
+            },
+            "mcdc": {
+              "count": 0,
+              "covered": 0,
+              "notcovered": 0,
+              "percent": 0
+            },
+            "regions": {
+              "count": 1060,
+              "covered": 668,
+              "notcovered": 392,
+              "percent": 63.0188679245283
+            }
+          }
+        },
+        {
+          "filename": "/home/jeffd/.local/share/VeloSim/assoc-timing-source/native/uhdm/rtl_flatten.h",
+          "summary": {
+            "branches": {
+              "count": 444,
+              "covered": 195,
+              "notcovered": 249,
+              "percent": 43.91891891891892
+            },
+            "functions": {
+              "count": 10,
+              "covered": 8,
+              "percent": 80
+            },
+            "instantiations": {
+              "count": 10,
+              "covered": 8,
+              "percent": 80
+            },
+            "lines": {
+              "count": 102,
+              "covered": 78,
+              "percent": 76.47058823529412
+            },
+            "mcdc": {
+              "count": 0,
+              "covered": 0,
+              "notcovered": 0,
+              "percent": 0
+            },
+            "regions": {
+              "count": 402,
+              "covered": 228,
+              "notcovered": 174,
+              "percent": 56.71641791044776
+            }
+          }
+        },
+        {
+          "filename": "/home/jeffd/.local/share/VeloSim/assoc-timing-source/native/uhdm/rtl_subroutines.h",
+          "summary": {
+            "branches": {
+              "count": 768,
+              "covered": 287,
+              "notcovered": 481,
+              "percent": 37.36979166666667
+            },
+            "functions": {
+              "count": 49,
+              "covered": 30,
+              "percent": 61.224489795918366
+            },
+            "instantiations": {
+              "count": 49,
+              "covered": 30,
+              "percent": 61.224489795918366
+            },
+            "lines": {
+              "count": 253,
+              "covered": 161,
+              "percent": 63.63636363636363
+            },
+            "mcdc": {
+              "count": 0,
+              "covered": 0,
+              "notcovered": 0,
+              "percent": 0
+            },
+            "regions": {
+              "count": 824,
+              "covered": 427,
+              "notcovered": 397,
+              "percent": 51.820388349514566
+            }
+          }
+        }
+      ]
+    },
+    "kernel": {
+      "evidence": "current-native09",
+      "summary": {
+        "branches": {
+          "count": 254,
+          "covered": 212,
+          "notcovered": 42,
+          "percent": 83.46456692913385
+        },
+        "functions": {
+          "count": 48,
+          "covered": 46,
+          "percent": 95.83333333333334
+        },
+        "instantiations": {
+          "count": 284,
+          "covered": 282,
+          "percent": 99.29577464788733
+        },
+        "lines": {
+          "count": 275,
+          "covered": 265,
+          "percent": 96.36363636363636
+        },
+        "mcdc": {
+          "count": 0,
+          "covered": 0,
+          "notcovered": 0,
+          "percent": 0
+        },
+        "regions": {
+          "count": 353,
+          "covered": 327,
+          "notcovered": 26,
+          "percent": 92.63456090651559
+        }
+      }
+    }
+  },
+  "mutation": {
+    "history": [
+      "stryker-implicit01:6Killed7Survived1NoCoverage; control/address tests added",
+      "stryker-implicit02: failing unmutated test assertion; not acceptance evidence; corrected in03"
+    ],
+    "managed": {
+      "killed": 14,
+      "unmutated_control_passed": 9,
+      "evidence": "stryker-implicit03",
+      "excluded": "Whole-file/project compile-error and ignored entries outside the selected helper are not accepted mutants.",
+      "scope": "TimedStatementReads character span",
+      "no_coverage": 0,
+      "survived": 0,
+      "tool": "Stryker.NET5.0.0"
+    },
+    "native": {
+      "killed": 85,
+      "note": "Killed can include crashing mutants; timeout is separate.",
+      "survived": 0,
+      "tool": "Mull 0.35.0 LLVM18",
+      "evidence": "current-mull06",
+      "scope": "owned scheduler header only",
+      "timeout": 1
+    }
+  },
+  "remaining": [
+    "Broad work packages remain open; baseline legacy-reference qualification not completed by these focused runs.",
+    "General timing/event expressions and suffixed/runtime-real delays; full region semantics.",
+    "Dynamic race detection and race-freedom proof.",
+    "Runtime function loops, ref/const-ref/default/named arguments, static storage, recursion and suspended task bodies.",
+    "Windows native simulator qualification and frontend sanitizer qualification are not claimed; configured sanitizer build has no UHDM target.",
+    "No new long-running campaign, full-frontend randomized qualification or frontend mutation coverage is claimed."
+  ],
+  "raw_evidence": "Ubuntu-24.04: derive HOME, then ~/.local/share/VeloSim/wp01-06-evidence; Windows focused evidence in artifacts/wp01-05-windows-managed01."
+}

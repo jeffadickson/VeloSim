@@ -17,6 +17,7 @@ def create_config() -> ProjectConfig:
             "REQUIREMENT_TO_SOURCE_TRACEABILITY",
         ],
         include_source_paths=[
+            "/docs/**", "/cmake/**", "/native/numeric/**",
             "/src/VeloSim.Core/**", "/native/rtl/**", "/native/uhdm/**",
             "/tests/VeloSim.Tests/**", "/tests/native/**", "/tests/remote/**", "/examples/**", "/tools/**", "/.github/workflows/**",
         ],

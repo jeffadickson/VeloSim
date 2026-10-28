@@ -1,0 +1,541 @@
+{
+  "verilator_version": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+  "cases": [
+    {
+      "diagnostic": null,
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/baseline_comb/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/baseline_comb/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/baseline_comb/design.sv"
+      ],
+      "id": "baseline_comb",
+      "source_sha256": "3E663529670565CF64DB22795F0EA61270187EB7F22F1336904C8C90C08D049F",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/baseline_comb/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/baseline_comb/design.sv"
+      ],
+      "velosim_lower_exit": 0,
+      "source": "module dut(input logic[7:0]a,output logic[7:0]q);always_comb q=a+1;endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: multiple initial blocks require time-zero scheduling\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/multiple_initial/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/multiple_initial/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/multiple_initial/design.sv"
+      ],
+      "id": "multiple_initial",
+      "source_sha256": "EB93694C911C84557AA94A24DADFD44DDBF83489A4FB0C4F0D8BA68A65D3381A",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/multiple_initial/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/multiple_initial/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(output logic a,b);initial a=0;initial b=1;endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: unsupported statement type 11\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/procedural_delay/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/procedural_delay/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/procedural_delay/design.sv"
+      ],
+      "id": "procedural_delay",
+      "source_sha256": "0103E322D5025FDAB86549AF140E631602C985B9FFF6D4F059C8FE70649D81BC",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/procedural_delay/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/procedural_delay/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(output logic q);initial begin q=0;#1 q=1;end endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: event control required\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/internal_clock/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/internal_clock/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/internal_clock/design.sv"
+      ],
+      "id": "internal_clock",
+      "source_sha256": "99A1C6FB9846A3FC18BCCBA990FB96C4D21D6ADC05EB390757112C3FBEE74873",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/internal_clock/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/internal_clock/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(output logic q);logic c=0;always #1 c=~c;always @(posedge c)q<=1;endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: unsupported statement type 69\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wait_statement/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wait_statement/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wait_statement/design.sv"
+      ],
+      "id": "wait_statement",
+      "source_sha256": "2D32087F577C4763FEE5B22E52684E1DBB1212C63A5E5C17F43A155A55258B15",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wait_statement/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wait_statement/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(input logic a,output logic q);initial begin q=0;wait(a)q=1;end endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: only explicitly edge-controlled always processes supported\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/latch/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/latch/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/latch/design.sv"
+      ],
+      "id": "latch",
+      "source_sha256": "D6FC497BFC42F559801F697941857E55B2AB04E3FE2FC97E2A934A73CA0374F6",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/latch/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/latch/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(input logic en,a,output logic q);always_latch if(en)q=a;endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: word width must be1..256\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wide_512/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wide_512/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wide_512/design.sv"
+      ],
+      "id": "wide_512",
+      "source_sha256": "F4A7CE962E9D61BDA5FF7096F31B89920ED8904D8CAC69DBC1B970CD872B0D9D",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wide_512/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/wide_512/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(input logic[511:0]a,output logic[511:0]q);assign q=a;endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: unsupported reference type 114\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/unpacked_port/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/unpacked_port/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/unpacked_port/design.sv"
+      ],
+      "id": "unpacked_port",
+      "source_sha256": "E718487EE5E841E5CC556F37913BAC6CDE578518BE4A1FC91A7715BE748D9381",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/unpacked_port/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/unpacked_port/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(input logic[7:0]a[2],output logic[7:0]q);assign q=a[0];endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: associative keys require an explicit integral type\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/string_assoc/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/string_assoc/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/string_assoc/design.sv"
+      ],
+      "id": "string_assoc",
+      "source_sha256": "BDBA15A694F4931E3E306B2CF90AD2A7326DD914746FF9AD9540637AA8B4FAF5",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/string_assoc/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/string_assoc/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(output int q);int m[string];initial begin m[\"hello\"]=7;q=m[\"hello\"];end endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: subroutine supports input formals and task outputs only\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/ref_task/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/ref_task/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/ref_task/design.sv"
+      ],
+      "id": "ref_task",
+      "source_sha256": "83D3D5EE00A09EA0A9807832DEB12BFEEE3E552FBF9101A7B5A7F4ACB99B3017",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/ref_task/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/ref_task/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(input logic clk,a,output logic q);task automatic t(ref logic x,input logic y);x=y;endtask always @(posedge clk)t(q,a);endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: unsupported statement type 56\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/readmemh/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/readmemh/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/readmemh/design.sv"
+      ],
+      "id": "readmemh",
+      "source_sha256": "73CBFA3F2F5E9104DAFD263E48C6E5010B4BC23DA6E94ED52B46DF008FFE35B4",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/readmemh/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/readmemh/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(output logic[7:0]q);logic[7:0]m[0:3];initial begin $readmemh(\"data.hex\",m);q=m[0];end endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: only automatic subroutines supported\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/dpi/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/dpi/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/dpi/design.sv"
+      ],
+      "id": "dpi",
+      "source_sha256": "0F5F33C6A011B11A6F152077E99B11763325F5CBC1CCA061FA272486C0A23B9E",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/dpi/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/dpi/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(input logic[7:0]a,output logic[7:0]q);import \"DPI-C\" function byte f(input byte a);always_comb q=f(a);endmodule"
+    },
+    {
+      "diagnostic": null,
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/assertion/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/assertion/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/assertion/design.sv"
+      ],
+      "id": "assertion",
+      "source_sha256": "E730F9403E27AE2F2BA9A72CD775292561645F344A2F85802F294663BD146A48",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/assertion/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/assertion/design.sv"
+      ],
+      "velosim_lower_exit": 0,
+      "source": "module dut(input logic clk,a,output logic q);assign q=a;assert property (@(posedge clk) a);endmodule"
+    },
+    {
+      "diagnostic": "RTL lowering rejected: inout unsupported\n",
+      "surelog_exit": 0,
+      "velosim_arguments": [
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/inout/surelog/slpp_all/surelog.uhdm",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/inout/design.json",
+        "dut"
+      ],
+      "verilator_lint_exit": 0,
+      "verilator_arguments": [
+        "--lint-only",
+        "--timing",
+        "-Wno-fatal",
+        "--top-module",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/inout/design.sv"
+      ],
+      "id": "inout",
+      "source_sha256": "7A1CF1D0600FA74C45A519111350775D0CA47633A144113D37A4B95796501AA2",
+      "surelog_arguments": [
+        "-parse",
+        "-elabuhdm",
+        "-sverilog",
+        "-mt",
+        "2",
+        "-odir",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/inout/surelog",
+        "-top",
+        "dut",
+        "/home/jeffd/.local/share/VeloSim/gap-analysis-20261026-200103/inout/design.sv"
+      ],
+      "velosim_lower_exit": 1,
+      "source": "module dut(input logic en,a,inout wire b,output wire q);assign b=en?a:1'bz;assign q=b;endmodule"
+    }
+  ],
+  "exporter_build_log": "assoc-timing-evidence/binding-build04.log",
+  "source_hashes": [
+    {
+      "path": "native/uhdm/rtl.cpp",
+      "text_equal_after_crlf_normalization": true,
+      "worktree_sha256": "55D42DD85D582DDCB738F7A0BCE09B134313ACF556648060098892362DCACB4E",
+      "build_snapshot_sha256": "55D42DD85D582DDCB738F7A0BCE09B134313ACF556648060098892362DCACB4E"
+    },
+    {
+      "path": "native/uhdm/rtl_flatten.h",
+      "text_equal_after_crlf_normalization": true,
+      "worktree_sha256": "7CB83D220F639E94F185150A7614109645A0986287356EC589C6D425FCBD7085",
+      "build_snapshot_sha256": "7CB83D220F639E94F185150A7614109645A0986287356EC589C6D425FCBD7085"
+    },
+    {
+      "path": "native/uhdm/rtl_subroutines.h",
+      "text_equal_after_crlf_normalization": true,
+      "worktree_sha256": "CF1F6E2A59264D7F04DCF7B118912E92E00B0591D67F54053141A42E2F641FFA",
+      "build_snapshot_sha256": "CF1F6E2A59264D7F04DCF7B118912E92E00B0591D67F54053141A42E2F641FFA"
+    },
+    {
+      "path": "native/uhdm/rtl_original_expr.h",
+      "text_equal_after_crlf_normalization": true,
+      "worktree_sha256": "5286DE414EC0F189F1527B0C71506C9243AC66F0D42181D29A540FC5EDF9E6FC",
+      "build_snapshot_sha256": "5286DE414EC0F189F1527B0C71506C9243AC66F0D42181D29A540FC5EDF9E6FC"
+    },
+    {
+      "path": "native/uhdm/rtl_types.h",
+      "text_equal_after_crlf_normalization": true,
+      "worktree_sha256": "67E928ABB8CFFF2B51E12C4C6783A26164ED04C17D056686AC36B11F8EDE8FFA",
+      "build_snapshot_sha256": "1D7827AFF8CFC86BD23ECE99627DEC807E906B618CC3520DA2AC9943E78FB230"
+    },
+    {
+      "path": "native/rtl/runtime.h",
+      "text_equal_after_crlf_normalization": true,
+      "worktree_sha256": "572B71E368FC347A9A1A7C5EC4EA4BCD72B8F0F70640071E38878F5B9F69FF43",
+      "build_snapshot_sha256": "572B71E368FC347A9A1A7C5EC4EA4BCD72B8F0F70640071E38878F5B9F69FF43"
+    }
+  ],
+  "exporter_sha256": "4ECA62E565E2086662EBFCE65DF5E878BE81F9B801B9B99946539E6889222CBA",
+  "scope": "Frontend acceptance/lint only; no simulation or conformance claim",
+  "head": "fa7cd2fbd962dde1f95ffb29e6b3e46a01a5cae1",
+  "date_utc": "2026-10-27T03:01:08.893818Z",
+  "branch": "procedural-types-arrays",
+  "raw_evidence_directory": "~/.local/share/VeloSim/gap-analysis-20261026-200103",
+  "source_handoff_note": "14 frontend/lint probes only; normalized source matches do not certify binary reproducibility",
+  "assertion_omission_evidence": {
+    "command": "uhdm-dump <case>/surelog/slpp_all/surelog.uhdm",
+    "exit_code": 0,
+    "uhdm_contains_assertion": true,
+    "uhdm_nodes": [
+      "vpiAssertion",
+      "assert_stmt",
+      "property_spec"
+    ],
+    "source_span": "design.sv:1:57-1:92",
+    "normalized_ir_contains_assertion": false,
+    "normalized_ir_observation": "q=a continuous assignment, null clock, empty body",
+    "evidence_scope": "UHDM and normalized IR inspection, not runtime simulation"
+  }
+}

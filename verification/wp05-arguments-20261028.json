@@ -1,0 +1,403 @@
+{
+  "schema": "velosim.subroutine-arguments.v1",
+  "status": "qualified-partial-implementation",
+  "work_package": "WP-05",
+  "broad_closure_asserted": false,
+  "requirement": "VS-RTL-INPUT-DEFAULT-001",
+  "prior_checkpoint": "verification/wp01-05-progress-20261027.json",
+  "features": [
+    "Typed positional/named slots, including leading/interior/trailing omissions and mixed leading positional arguments",
+    "Automatic INPUT defaults evaluated only when omitted in declaration scope",
+    "Constant/parameter defaults normalized before UHDM constant evaluation, preserving widths and formal conversions",
+    "Invalid arguments fail closed; failed frontend databases withhold successful provenance",
+    "Protocol v4 required even for folded calls; re-elaboration required; word ABI2 unchanged"
+  ],
+  "counts_note": "19 and3 targeted tests are disjoint on unchanged production binaries. The41 older fixtures overlap those tests:35 positives have prior reference/native/SDK passes, one old scope fixture was unqualified, and5 negatives rejected. Exact IR replay is not a new behavioral-reference execution.",
+  "tools": {
+    "dotnet_sdk_linux": "10.0.402",
+    "clang": "18.1.3",
+    "gnu": "13.3.0",
+    "cmake": "3.28.3",
+    "ninja": "1.11.1",
+    "surelog_revision": "6db44ea2048c8ab9c702e389c2897f7e2318ccc5",
+    "verilator_revision": "ea338be98e1e838d3518809ce8899f85a009963c",
+    "strictdoc": "0.30.4"
+  },
+  "historical_failures": [
+    {
+      "run": "current-argument-slots02",
+      "passed": 40,
+      "failed": 1,
+      "disposition": "Declaration-scope fixture relied on task-hidden sensitivity; revised to explicit changing actual retaining lexical shadow; current19 passed."
+    },
+    {
+      "run": "current-constant-defaults01",
+      "passed": 11,
+      "failed": 1,
+      "disposition": "Trailing omission retained obsolete marker; centralized marker creation and re-elaborated with final protocol v4; current19 passed."
+    }
+  ],
+  "source_review": {
+    "kind": "single-agent source review",
+    "findings": [
+      "Recover optional leading parser expression from typed grammar",
+      "Never feed omission payload zero to constant evaluator",
+      "Unify omission marker creation to prevent version skew",
+      "Withhold capability after frontend errors",
+      "Bound constant-default graph traversal; acquire symbolic map references after nested lowering"
+    ]
+  },
+  "limitations": [
+    "WP01–WP05 remain open; this report qualifies the argument/default slice.",
+    "Output/inout/ref defaults, static storage, recursion, runtime function loops and suspended task bodies remain open.",
+    "Constant-context defaults accept integral constants/parameter expressions; function-call defaults in constant contexts reject. Runtime defaults use importer expression subset.",
+    "Task-hidden implicit sensitivity remains open; current scope fixture explicitly triggers each invocation.",
+    "Linked upstream SDK libraries are uninstrumented; gcov arcs include compiler exception/fallthrough edges.",
+    "Earlier mutation/property checks retain their own scope; no mutation score or new randomized qualification is claimed for this frontend extension.",
+    "Coverage extraction attempts01–03 had orchestration-only empty-log/scope-selection errors; accepted extraction04 uses retained profiles without rerunning tests.",
+    "New native frontend/importer execution qualified on Ubuntu-24.04 WSL; no new Windows native qualification is asserted."
+  ],
+  "evidence_base": "WSL Ubuntu-24.04: $HOME/.local/share/VeloSim/wp01-06-evidence",
+  "generated_utc": "2026-10-27T20:52:53.5619386-07:00",
+  "git": {
+    "head": "fa7cd2fbd962dde1f95ffb29e6b3e46a01a5cae1",
+    "commit_created": false,
+    "ci_dispatched": false,
+    "worktree_only": true,
+    "push_performed": false
+  },
+  "coverage": {
+    "generated_utc": "2026-10-27T20:51:17.0615186-07:00",
+    "llvm_profile_count": 83,
+    "exporter_sha256": "0580D1C46301F88AAA0169AFFB14085F470477703DD1548FAF1B01F10A84CFC9",
+    "native_uhdm": [
+      {
+        "file": "json_escape.h",
+        "lines": {
+          "count": 18,
+          "covered": 13,
+          "percent": 72.22222222222221
+        },
+        "branches": {
+          "count": 16,
+          "covered": 9,
+          "notcovered": 7,
+          "percent": 56.25
+        }
+      },
+      {
+        "file": "rtl.cpp",
+        "lines": {
+          "count": 263,
+          "covered": 118,
+          "percent": 44.866920152091254
+        },
+        "branches": {
+          "count": 1050,
+          "covered": 264,
+          "notcovered": 786,
+          "percent": 25.142857142857146
+        }
+      },
+      {
+        "file": "rtl_audit.h",
+        "lines": {
+          "count": 37,
+          "covered": 8,
+          "percent": 21.62162162162162
+        },
+        "branches": {
+          "count": 26,
+          "covered": 6,
+          "notcovered": 20,
+          "percent": 23.076923076923077
+        }
+      },
+      {
+        "file": "rtl_constants.h",
+        "lines": {
+          "count": 24,
+          "covered": 19,
+          "percent": 79.16666666666666
+        },
+        "branches": {
+          "count": 90,
+          "covered": 29,
+          "notcovered": 61,
+          "percent": 32.22222222222222
+        }
+      },
+      {
+        "file": "rtl_flatten.h",
+        "lines": {
+          "count": 106,
+          "covered": 58,
+          "percent": 54.71698113207547
+        },
+        "branches": {
+          "count": 448,
+          "covered": 111,
+          "notcovered": 337,
+          "percent": 24.776785714285715
+        }
+      },
+      {
+        "file": "rtl_original_expr.h",
+        "lines": {
+          "count": 19,
+          "covered": 19,
+          "percent": 100
+        },
+        "branches": {
+          "count": 78,
+          "covered": 41,
+          "notcovered": 37,
+          "percent": 52.56410256410257
+        }
+      },
+      {
+        "file": "rtl_subroutines.h",
+        "lines": {
+          "count": 320,
+          "covered": 265,
+          "percent": 82.8125
+        },
+        "branches": {
+          "count": 904,
+          "covered": 425,
+          "notcovered": 479,
+          "percent": 47.01327433628318
+        }
+      },
+      {
+        "file": "rtl_types.h",
+        "lines": {
+          "count": 28,
+          "covered": 0,
+          "percent": 0
+        },
+        "branches": {
+          "count": 70,
+          "covered": 0,
+          "notcovered": 70,
+          "percent": 0
+        }
+      }
+    ],
+    "gnu_overlays": [
+      {
+        "first": 4782,
+        "scope": "compileTfCallArguments including its marker helper",
+        "lines": {
+          "covered": 74,
+          "percent": 79.57,
+          "count": 93
+        },
+        "branch_arcs": {
+          "covered": 97,
+          "percent": 52.15,
+          "count": 186
+        },
+        "branch_note": "gcov arcs include compiler exception/fallthrough edges; not a semantic condition count",
+        "file": "CompileHelper.cpp",
+        "last": 4911
+      },
+      {
+        "first": 58,
+        "scope": "constant-argument normalization and bounded validation glue only",
+        "lines": {
+          "covered": 52,
+          "percent": 92.86,
+          "count": 56
+        },
+        "branch_arcs": {
+          "covered": 65,
+          "percent": 59.09,
+          "count": 110
+        },
+        "branch_note": "gcov arcs include compiler exception/fallthrough edges; not a semantic condition count",
+        "file": "EvalFunc.cpp",
+        "last": 127
+      }
+    ],
+    "scope_note": "Argument/default fixtures only. Installed Surelog/UHDM libraries are uninstrumented. No whole-simulator rate or conformance inference."
+  },
+  "equivalence": [
+    {
+      "run": "current-argument-equivalence01",
+      "result": {
+        "positive": 36,
+        "baseline_qualified_positives": 35,
+        "baseline_reference_fixture_unqualified": 1,
+        "negative": 5,
+        "frontend": "/home/jeffd/.local/share/VeloSim/wp01-05-constant-frontend-coverage-build/surelog",
+        "frontend_sha256": "367C1FE24BA2EC81A18403B4F0ABDE6CFA343CCFD98212CDD31B18E8FE1637D6",
+        "exporter": "/home/jeffd/.local/share/VeloSim/wp01-05-constant-check-build/bin/velosim-uhdm-rtl",
+        "exporter_sha256": "0580D1C46301F88AAA0169AFFB14085F470477703DD1548FAF1B01F10A84CFC9",
+        "coverage_scope": "GNU frontend overlays and LLVM importer only; SDK libraries uninstrumented",
+        "completed_utc": "2026-10-27T20:44:34.0297994-07:00"
+      },
+      "cases_sha256": "DB0DD4D256F584B37C8939E3C5101250CB439235E0982AC883D9F65AD932C105"
+    },
+    {
+      "run": "current-constant-equivalence01",
+      "result": {
+        "positive": 13,
+        "negative": 6,
+        "frontend": "/home/jeffd/.local/share/VeloSim/wp01-05-constant-frontend-coverage-build/surelog",
+        "frontend_sha256": "367C1FE24BA2EC81A18403B4F0ABDE6CFA343CCFD98212CDD31B18E8FE1637D6",
+        "exporter": "/home/jeffd/.local/share/VeloSim/wp01-05-constant-check-build/bin/velosim-uhdm-rtl",
+        "exporter_sha256": "0580D1C46301F88AAA0169AFFB14085F470477703DD1548FAF1B01F10A84CFC9",
+        "coverage_scope": "GNU frontend overlays and LLVM importer only; SDK libraries uninstrumented",
+        "completed_utc": "2026-10-27T20:48:44.6273107-07:00"
+      },
+      "cases_sha256": "F3C5E5D66E895C39C89D8FCF635C082B4227242D6CA6774278C51500AE8DC189"
+    },
+    {
+      "run": "current-formal-equivalence01",
+      "result": {
+        "positive": 3,
+        "negative": 0,
+        "frontend": "/home/jeffd/.local/share/VeloSim/wp01-05-constant-frontend-coverage-build/surelog",
+        "frontend_sha256": "367C1FE24BA2EC81A18403B4F0ABDE6CFA343CCFD98212CDD31B18E8FE1637D6",
+        "exporter": "/home/jeffd/.local/share/VeloSim/wp01-05-constant-check-build/bin/velosim-uhdm-rtl",
+        "exporter_sha256": "0580D1C46301F88AAA0169AFFB14085F470477703DD1548FAF1B01F10A84CFC9",
+        "coverage_scope": "GNU frontend overlays and LLVM importer only; SDK libraries uninstrumented",
+        "completed_utc": "2026-10-27T20:50:01.9711596-07:00"
+      },
+      "cases_sha256": "557E2E97BAAE864517B8669941CDF3D8D6C7BDD3186FECCF242C004E7CF9618B"
+    }
+  ],
+  "source_hashes": [
+    {
+      "sha256": "3646C8C78C63EE46372F4CD8FCE56EECED402923150E72D84C6FD186E9B2C3C0",
+      "file": "native/uhdm/rtl.cpp"
+    },
+    {
+      "sha256": "7F5C6A839B919E8CDCE48151736039AB998F1DB2D10AF30726451F380D747D20",
+      "file": "native/uhdm/rtl_flatten.h"
+    },
+    {
+      "sha256": "1F41ECDF5AE51060669DC17909B6E897404CD8E1AB9E4761B249072197538116",
+      "file": "native/uhdm/rtl_subroutines.h"
+    },
+    {
+      "sha256": "5A72EFA3D48EFC08AA68FE3A6C9AC7CCF9F76CA91A76D640F248BC02BB7287AC",
+      "file": "tools/surelog-tagfix/CMakeLists.txt"
+    },
+    {
+      "sha256": "908C527A6E6D5AC14B264D74E19ADF70710419DB6559630251577139ECF57799",
+      "file": "tools/surelog-tagfix/call_arguments.inc"
+    },
+    {
+      "sha256": "CA20BB4BC5B96A4BEABC76FFCE89BF6082F0A22AB9701B08BEE74DAA38A6DD71",
+      "file": "tools/surelog-tagfix/constant_arguments.inc"
+    },
+    {
+      "sha256": "FA3B41D523EF1462045A10910BEC620C429869C77112A4593A96C5FBB5FEA044",
+      "file": "tools/surelog-tagfix/time_scales.inc"
+    },
+    {
+      "sha256": "837E00E31E30E2EBBFC817E19AED14B20BAA8CD7090C218D654BEDE3A4885F93",
+      "file": "tests/VeloSim.Tests/RtlTaskValueResultTests.cs"
+    }
+  ],
+  "binary_hashes": [
+    {
+      "sha256": "9267D354089E70342F355EB3B816D9A88906856DEFE2D4D702658D7C3455AF9E",
+      "path_relative_to_linux_base": "wp01-05-constant-frontend-build/surelog"
+    },
+    {
+      "sha256": "367C1FE24BA2EC81A18403B4F0ABDE6CFA343CCFD98212CDD31B18E8FE1637D6",
+      "path_relative_to_linux_base": "wp01-05-constant-frontend-coverage-build/surelog"
+    },
+    {
+      "sha256": "0580D1C46301F88AAA0169AFFB14085F470477703DD1548FAF1B01F10A84CFC9",
+      "path_relative_to_linux_base": "wp01-05-constant-check-build/bin/velosim-uhdm-rtl"
+    },
+    {
+      "sha256": "0DC6223E7D6725B32B6C0642280B8954DF43DB54645B9916099FF7FB6D5CCA74",
+      "path_relative_to_linux_base": "assoc-timing-build/bin/velosim-uhdm-rtl"
+    }
+  ],
+  "tests": [
+    {
+      "managed_coverage": {
+        "line_rate": "0.217",
+        "packages": [
+          "VeloSim",
+          "VeloSim.Build"
+        ],
+        "note": "Collector scope for this run; excludes native importer; not a whole-simulator rate.",
+        "branch_rate": "0.077",
+        "file": "wp01-06-evidence\\current-constant-defaults02\\_Optiplex7090_2026-10-27_20_44_32\\In\\Optiplex7090\\coverage.cobertura.xml"
+      },
+      "total": 19,
+      "trx_sha256": "F0748E2EE3F6A9512FF5AE3B3CC5474EE8B193242754B7663B4E292915437E30",
+      "run": "current-constant-defaults02",
+      "passed": 19,
+      "failed": 0
+    },
+    {
+      "managed_coverage": {
+        "line_rate": "0.203",
+        "packages": [
+          "VeloSim",
+          "VeloSim.Build"
+        ],
+        "note": "Collector scope for this run; excludes native importer; not a whole-simulator rate.",
+        "branch_rate": "0.0524",
+        "file": "wp01-06-evidence\\current-constant-formal01\\_Optiplex7090_2026-10-27_20_49_14\\In\\Optiplex7090\\coverage.cobertura.xml"
+      },
+      "total": 3,
+      "trx_sha256": "A887F7579D2D2B443393F5590DC598DF5080B759249954771FAC423CB4B3FD4E",
+      "run": "current-constant-formal01",
+      "passed": 3,
+      "failed": 0
+    }
+  ],
+  "tested_source_19_sha256": "1C474A4D33A3BFE05841F2E81D73099CA2882474513EFA4FB0790A35153B084C",
+  "commands": [
+    {
+      "relative_to_evidence": "current-argument-equivalence01/replay-command.ps1",
+      "sha256": "504EFDA035F99021A8FC75CAE7EB83C951D43E8BD00290915102EEE98A517CED"
+    },
+    {
+      "relative_to_evidence": "current-constant-equivalence01/replay-command.ps1",
+      "sha256": "B1E88D9B4FCBF0E2A1728ADCCDDCDF28E7AA9F2F9187983B80EF1DB4BA02DDA6"
+    },
+    {
+      "relative_to_evidence": "current-formal-equivalence01/replay-command.ps1",
+      "sha256": "9A068BD8EBC770807482700E1F0C415C49F49AA23D5FAF3CFD593350E6195C53"
+    },
+    {
+      "relative_to_evidence": "current-arguments-coverage04/coverage-command.ps1",
+      "sha256": "107BC7495844C11EC4FDE44141872DDD5B9DAC2B44A50E8AE3224143A735F172"
+    },
+    {
+      "relative_to_evidence": "current-constant-defaults02/windows-command.txt",
+      "sha256": "D92EA8ECA1619D849EDF0371E2142734C7E520D542B122974B8B1D3989D5D44E"
+    },
+    {
+      "relative_to_evidence": "current-constant-formal01/windows-command.txt",
+      "sha256": "37CAD90E2646BE4CD6D06D9AF64B81D6C48AA26EB4FFDB3C5CAAC184C51720BF"
+    }
+  ],
+  "snapshot_hash_verification": "At qualification close Windows checkout, both Linux snapshots and actual separate frontend overlay source match listed source hashes; previously stale unused helper copies in isolated native tree synchronized after tests.",
+  "final_checks": {
+    "whitespace": "git diff --check passed",
+    "strictdoc": {
+      "run": "current-strictdoc05",
+      "result": "pass",
+      "command": "strictdoc export requirements --output-dir $HOME/.local/share/VeloSim/wp01-06-evidence/current-strictdoc05 --formats html"
+    },
+    "protocol_check": "No obsolete v1/v2/v3 production marker strings found in frontend overlay or native importer.",
+    "incremental_builds": {
+      "commands": [
+        "cmake --build $HOME/.local/share/VeloSim/wp01-05-constant-frontend-build --parallel 2",
+        "cmake --build $HOME/.local/share/VeloSim/assoc-timing-build --target velosim-uhdm-rtl --parallel 1"
+      ],
+      "result": "pass; both reported ninja: no work to do"
+    }
+  }
+}

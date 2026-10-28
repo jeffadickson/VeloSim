@@ -68,8 +68,16 @@
         "resolved": "13.0.3",
         "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
       },
+      "System.CommandLine": {
+        "type": "Transitive",
+        "resolved": "2.0.14",
+        "contentHash": "15fyVO4aG6poR6IKmhM74zf7PUzaU6FZAGm2d3SQSO9yIyGAeo44e6t9qeKjjaqyMEqYdqcb2G1B0gpLoDU2cA=="
+      },
       "velosim": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "System.CommandLine": "[2.0.14, )"
+        }
       },
       "velosim.build": {
         "type": "Project"

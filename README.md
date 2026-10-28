@@ -1,5 +1,11 @@
 # VeloSim
 
+New worktree slice: [explicit-time SDK execution](docs/timed-execution.md), including wait-first `always @*`, resumable delays/waits, runtime identifier intra-assignment delays, internal clocks, sampled assignments, conservative race diagnostics and bounded fork/named-event behavior. Pure automatic subroutines also support whole-word local initializers, task early return and [input defaults with preserved positional/named slots](docs/procedural-types-arrays.md#input-defaults-and-frontend-compatibility). Constant-default width evaluation requires re-elaboration with frontend argument protocol v4. The six broad work packages remain open. [Experimental SVInt AVX128 checks](docs/svint-simd-review.md) preserve unchanged SVInt and current-runtime comparisons; production arithmetic is unchanged.
+
+Library planning: [reuse review for existing code and remaining features](docs/library-opportunities.md), mapped into the existing GitHub work packages. Recommendations require compatibility and behavioral qualification before adoption.
+
+Current planning: [detailed Verilator gap analysis](docs/verilator-gap-analysis.md), [20 work packages](docs/verilator-work-packages.md), and [live GitHub task epic](https://github.com/jeffadickson/VeloSim/issues/1). The audit separates current worktree support, historical evidence and open requirements; milestone descriptions below retain their historical scope.
+
 Current development: [bounded HDL queues](docs/queues.md) under focused qualification. Earlier development: [clockless models, function control flow and constant captures](docs/functions-100.md). Previous development: [combinational and automatic-subroutine qualification](docs/combinational-subroutines-200.md), covering bounded `always_comb` and pure automatic functions/tasks. The previous milestone is [200 requirement and coverage qualification cases](docs/requirements-200.md) and [stable StrictDoc requirements](requirements/velosim.sdoc), extending isolated blocking assignments to selected words, concatenations and fixed-memory elements. See the [earlier execution contract](docs/open-items-100.md) and [process, hierarchy and signed-word bounds](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
 
 Open-source experimental Verilog/SystemVerilog simulation project.

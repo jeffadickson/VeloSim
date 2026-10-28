@@ -119,7 +119,12 @@ W Model::get(size_t id) const{checkThread();return s.at(id);}
 void Model::put(size_t id,W value){checkThread();if(state->finished||state->finishRequested||state->readOnly)throw std::runtime_error("model is finished or in read-only callback");if(state->signals.at(id).direction!=vpiInput)throw std::runtime_error("only input ports may be deposited");value=word(value.v,value.x,value.z,state->signals[id].width);if(state->signals[id].two_state)value=two_state(value);if(state->dispatching)state->pending[id]=value;else s.at(id)=value;state->dirty=true;}
 void Model::useVpi(){checkThread();current=this;currentLife=state->life;}
 uint64_t Model::time() const{checkThread();return state->now;}
-void Model::timeInc(uint64_t delta){checkThread();if(state->evaluating||gotFinish()||delta>UINT64_MAX-state->now)throw std::runtime_error("invalid time advance");state->now+=delta;}
+void Model::timeInc(uint64_t delta){checkThread();if(state->evaluating||gotFinish()||delta>UINT64_MAX-state->now)throw std::runtime_error("invalid time advance");state->now+=delta;
+ // Time is an evaluation input for suspended HDL and timed callbacks. Mark a
+ // positive advance dirty even through a base Model reference, preserving ABI 2.
+ // Zero advances do not invent work; explicit requestEval remains available.
+ if(delta)state->dirty=true;
+}
 bool Model::gotFinish() const{checkThread();return state->finished||state->finishRequested;}
 bool Model::evalNeeded() const{checkThread();return !gotFinish()&&state->dirty;}
 bool Model::started() const{checkThread();return state->started;}

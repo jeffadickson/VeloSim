@@ -1,0 +1,1796 @@
+{
+  "schema": "velosim.verilator-work-packages.v1",
+  "audit_date": "2026-10-26",
+  "repository": "jeffadickson/VeloSim",
+  "head": "fa7cd2fbd962dde1f95ffb29e6b3e46a01a5cae1",
+  "branch": "procedural-types-arrays",
+  "includes_uncommitted_work": true,
+  "documented_reference": "5.052",
+  "executed_reference": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+  "epic": {
+    "number": 1,
+    "url": "https://github.com/jeffadickson/VeloSim/issues/1"
+  },
+  "status_authority": "GitHub issue state after publication; local statuses are audit-time snapshots",
+  "packages": [
+    {
+      "id": "WP-01",
+      "title": "Pin the comparison baseline and qualify existing capabilities",
+      "priority": "P0",
+      "size": "M",
+      "depends": [],
+      "requirements": [
+        "VS-QUAL-001",
+        "VS-RTL-ASSOCIATIVE-001",
+        "VS-RTL-QUEUE-001"
+      ],
+      "files": [
+        "docs/associative-arrays.md",
+        "tests/VeloSim.Tests/RtlIndexedConformanceTests.cs",
+        "tools/",
+        "requirements/velosim.sdoc"
+      ],
+      "scope": "Publish a source-hashed capability baseline; preserve Verilator 5.020 as a legacy reference and add a separately pinned 5.052 reference environment. Qualify the current associative slice before extending it; reconcile stale capability descriptions.",
+      "tasks": [
+        "Record exporter, generated model, frontend, compiler and reference versions/hashes; label worktree-only capabilities.",
+        "Replay existing associative/queue cases against each pinned reference and an independent oracle; retain disagreements as minimized cases.",
+        "Run relevant regressions, native sanitizer/coverage and Stryker.NET/property checks for the associative/frontend changes; report survivors and excluded scopes.",
+        "Make README/roadmap point to the authoritative current matrix and preserve historical reports."
+      ],
+      "acceptance": "A reproducible baseline report names every tested source hash, distinct pass/fail/skip counts, line/branch scope and known oracle differences. No broad requirement is closed from focused passes.",
+      "evidence": "docs/associative-arrays.md; native/rtl/runtime.h; current focused run 14/14 managed and 1/1 native (historical to this audit).",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-01",
+      "issue": {
+        "number": 2,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/2"
+      },
+      "dependency_issues": [],
+      "library_opportunities": [
+        "LIB-05",
+        "LIB-09",
+        "LIB-15"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-02",
+      "title": "Implement the timed scheduler and region semantics",
+      "priority": "P0",
+      "size": "XL",
+      "depends": [
+        "WP-01",
+        "WP-20"
+      ],
+      "requirements": [
+        "VS-RTL-TIME-001",
+        "VS-RTL-EVENT-TRANSPORT-001",
+        "VS-RTL-SCHEDULER-001",
+        "VS-RTL-TIME-METADATA-001"
+      ],
+      "files": [
+        "native/rtl/timed_events.h",
+        "native/rtl/external_model.h",
+        "src/VeloSim.Core/RtlDesign.cs",
+        "src/VeloSim.Core/RtlExternalSdk.cs"
+      ],
+      "scope": "Add an executing HDL scheduler rather than extending the opaque-ID transport claim. Define time precision, active/inactive/NBA ordering, reactivation and explicit supported region boundaries.",
+      "tasks": [
+        "Specify time-unit conversion, overflow, zero-delay ordering and active/inactive/NBA fixpoint behavior.",
+        "Implement copyable process/event state using standard containers, sampled NBA payloads/addresses and deterministic ordering only where the language permits.",
+        "Integrate model time jumps, pending-event queries, quiescence, budgets and full failure rollback.",
+        "Add independent region-order tests, same-source timing comparisons and rejected/out-of-scope region diagnostics."
+      ],
+      "acceptance": "Directed traces cover #0 before NBA, NBA reactivation, simultaneous clocks, sampled delayed addresses, overflow, exhausted budgets and rollback. Host input changes at a future tick cannot leak into earlier queued events.",
+      "evidence": "native/rtl/timed_events.h transports IDs only; Model::timeInc advances host time without HDL suspension.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-02",
+      "issue": {
+        "number": 3,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/3"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-01",
+          "number": 2,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/2"
+        },
+        {
+          "package": "WP-20",
+          "number": 21,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/21"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-07",
+        "LIB-12",
+        "LIB-17"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending",
+      "implementation_progress": "Bounded explicit-time SDK slice implemented; see docs/timed-execution.md. Same-source timing08 10/10 passes; full package acceptance remains open."
+    },
+    {
+      "id": "WP-03",
+      "title": "Lower suspended HDL processes, delays, waits and fork control",
+      "priority": "P0",
+      "size": "XL",
+      "depends": [
+        "WP-02"
+      ],
+      "requirements": [
+        "VS-RTL-TIME-001",
+        "VS-RTL-PROC-001",
+        "VS-RTL-SUSPEND-001"
+      ],
+      "files": [
+        "native/uhdm/rtl.cpp",
+        "native/uhdm/rtl_flatten.h",
+        "src/VeloSim.Core/RtlDesign.cs",
+        "src/VeloSim.Core/RtlInitialization.cs"
+      ],
+      "scope": "Connect typed UHDM/IR suspension points to the scheduler: procedural and intra-assignment delays, event expressions, wait, internal clocks, named events and fork/join families.",
+      "tasks": [
+        "Add explicit resumable process frames and typed delay/event/wait IR nodes; retain original source locations.",
+        "Support multiple timed initial/always processes, timeunits/timeprecision and internal generated clocks.",
+        "Implement fork/join, join_any/join_none, wait fork and disable fork incrementally with stated process-lifetime rules.",
+        "Reject unsupported timing/net-delay forms explicitly; preserve model state and pending events on failure."
+      ],
+      "acceptance": "Same-original-file comparisons exercise producer/consumer handshakes, internal oscillators, delay quantization, wait rearming, nested suspension and fork cancellation; minimized ordering cases have independent expected traces.",
+      "evidence": "rtl_flatten.h input_events requires direct scalar top-input edges; rtl.cpp statement lowering has no resumable delay/wait cases.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-03",
+      "issue": {
+        "number": 4,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/4"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-02",
+          "number": 3,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/3"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-01",
+        "LIB-07"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending",
+      "implementation_progress": "Bounded explicit-time SDK slice implemented; see docs/timed-execution.md. Same-source timing08 10/10 passes; full package acceptance remains open."
+    },
+    {
+      "id": "WP-04",
+      "title": "Support interacting processes, combinational settling and latches",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-02"
+      ],
+      "requirements": [
+        "VS-RTL-EVENT-001",
+        "VS-RTL-BLOCK-004",
+        "VS-RTL-COMB-001",
+        "VS-RTL-INIT-001",
+        "VS-RTL-SCHEDULER-001"
+      ],
+      "files": [
+        "src/VeloSim.Core/RtlCombinational.cs",
+        "src/VeloSim.Core/RtlInitialization.cs",
+        "src/VeloSim.Core/RtlDesign.cs",
+        "native/uhdm/rtl_flatten.h"
+      ],
+      "scope": "Move beyond isolated blocking writers and an acyclic whole-word DAG, retaining a documented race policy. Support concurrent startup, legal latch storage, level sensitivity and change-driven reactivation.",
+      "tasks": [
+        "Specify blocking visibility/NBA interactions and diagnose actual races without rejecting all cross-process communication.",
+        "Implement multiple initial processes and always_comb startup/sensitivity under the scheduler.",
+        "Add always @*, arbitrary level sensitivity, always_latch and selected/array combinational writes.",
+        "Support bounded settle-to-quiescence with feedback/nonconvergence diagnostics and source attribution."
+      ],
+      "acceptance": "Interacting RTL examples match independent expectations and applicable references; nonconverging/racy examples are diagnosed without claiming a unique IEEE-required ordering.",
+      "evidence": "RtlCombinational.SortCombinational rejects feedback/clock dependencies; ValidateCombFlow requires whole-word fully assigned destinations; initializer frontend permits one initial block.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-04",
+      "issue": {
+        "number": 5,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/5"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-02",
+          "number": 3,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/3"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-07",
+        "LIB-14"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending",
+      "implementation_progress": "Bounded explicit-time SDK slice implemented; see docs/timed-execution.md. Same-source timing08 10/10 passes; full package acceptance remains open."
+    },
+    {
+      "id": "WP-05",
+      "title": "Expand functions and tasks beyond pure zero-time inlining",
+      "priority": "P1",
+      "size": "XL",
+      "depends": [
+        "WP-03",
+        "WP-04"
+      ],
+      "requirements": [
+        "VS-RTL-FUNC-001",
+        "VS-RTL-TASK-001",
+        "VS-RTL-FLOW-001",
+        "VS-RTL-PARAM-001",
+        "VS-RTL-PROC-001"
+      ],
+      "files": [
+        "native/uhdm/rtl_subroutines.h",
+        "native/uhdm/rtl.cpp",
+        "src/VeloSim.Core/RtlConversion.cs"
+      ],
+      "scope": "Add stateful/static and timed tasks, broader argument modes and runtime control flow without losing declared conversion or lifetime semantics.",
+      "tasks": [
+        "Support runtime-dependent loops, break/continue and selected/local aggregate writes within functions.",
+        "Add named/default arguments, inout/ref/const-ref, arrays/aggregates and nested task calls with alias rules.",
+        "Implement static storage, captured globals, hierarchical calls and bounded recursion with explicit frame lifetimes.",
+        "Connect timed task calls to suspended processes; remove the combined-output 128-bit restriction only with ABI/copy-out evidence."
+      ],
+      "acceptance": "Tests distinguish pass-by-value from ref aliasing, automatic from static lifetime, early return and recursive limits; timed calls resume correctly and existing pure-call cases stay compatible.",
+      "evidence": "rtl_subroutines.h requires automatic calls, rejects nested task calls/ref formals and runtime-dependent function trip counts, caps combined task outputs at128 bits.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-05",
+      "issue": {
+        "number": 6,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/6"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-03",
+          "number": 4,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/4"
+        },
+        {
+          "package": "WP-04",
+          "number": 5,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/5"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-01",
+        "LIB-19"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-06",
+      "title": "Complete elaboration namespaces, hierarchy and interface connections",
+      "priority": "P1",
+      "size": "XL",
+      "depends": [
+        "WP-01",
+        "WP-20"
+      ],
+      "requirements": [
+        "VS-RTL-HIER-001",
+        "VS-RTL-PARAM-001"
+      ],
+      "files": [
+        "native/uhdm/rtl_flatten.h",
+        "native/uhdm/rtl_subroutines.h",
+        "src/VeloSim.Core/SurelogFrontend.cs",
+        "src/VeloSim.Core/SlangFrontend.cs"
+      ],
+      "scope": "Preserve Surelog/UHDM as the elaborator; expand execution lowering for packages/imports, parameter expressions, interfaces/modports and richer hierarchy/ports.",
+      "tasks": [
+        "Audit package/type/value namespaces, instance arrays, nested generate scopes and hierarchical variable/function/task references by declaration identity.",
+        "Support compound constant expressions, parameter selections and type parameters without trusting lossy folded values.",
+        "Add legal open ports, selected/aggregate/unpacked ports, inout binding and interfaces/modports.",
+        "Evaluate bind/program/clocking/virtual-interface forms individually; explicitly diagnose unsupported cases and add multi-file include/macro tests."
+      ],
+      "acceptance": "Multi-file same-source designs preserve shadowing, distinct parameter overrides, generated scope names and port conversion; supported parsing alone never counts as executable capability.",
+      "evidence": "rtl_flatten.h rejects open/unresolved, inout and memory instance ports; parameter capture contract only accepts known literal/unary-literal values.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-06",
+      "issue": {
+        "number": 7,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/7"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-01",
+          "number": 2,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/2"
+        },
+        {
+          "package": "WP-20",
+          "number": 21,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/21"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-01",
+        "LIB-06",
+        "LIB-19"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-07",
+      "title": "Broaden expressions, numeric types and packed word sizes",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-01"
+      ],
+      "requirements": [
+        "VS-RTL-WORD-256-001",
+        "VS-RTL-INTEGER-001",
+        "VS-RTL-TYPE-001"
+      ],
+      "files": [
+        "native/rtl/runtime.h",
+        "native/uhdm/rtl.cpp",
+        "native/uhdm/rtl_types.h",
+        "src/VeloSim.Core/RtlDesign.cs",
+        "native/rtl/external_model.h"
+      ],
+      "scope": "Remove the fixed 256-bit boundary deliberately and add missing typed expression families; treat real arithmetic as a separate numeric model rather than an integer approximation.",
+      "tasks": [
+        "Inventory unsupported casts, fill literals, streaming concatenation, assignment expressions, wildcard equality/inside and system bit/count queries.",
+        "Implement flexible packed declaration bounds, signed indices/conversions and words beyond256 bits with matched host/VPI representation.",
+        "Add real/shortreal, string and handle type contracts or explicit scoped rejections; define numerical conversion/rounding.",
+        "Reconcile legacy64-bit independent IR with structural RTL capabilities without implying they already share a representation."
+      ],
+      "acceptance": "Independent BigInteger/bit-string oracles and multiple frontends cover widths255/256/257/512/1024, X/Z, signed overflow and casts; ABI changes are versioned and old hosts fail clearly.",
+      "evidence": "RTL validation/runtime cap words256; independent IR remains64-bit. Existing byte/shortint/int/longint/integer/time and bounded enums are implemented.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-07",
+      "issue": {
+        "number": 8,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/8"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-01",
+          "number": 2,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/2"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-02",
+        "LIB-03",
+        "LIB-05",
+        "LIB-15"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-08",
+      "title": "Expand aggregates, array shapes and whole-array operations",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-06",
+        "WP-07"
+      ],
+      "requirements": [
+        "VS-RTL-PACKED-001",
+        "VS-RTL-ARRAY-SHAPE-001",
+        "VS-RTL-ARRAY-001"
+      ],
+      "files": [
+        "native/uhdm/rtl_types.h",
+        "native/uhdm/rtl_flatten.h",
+        "src/VeloSim.Core/RtlArrays.cs"
+      ],
+      "scope": "Add unpacked/mixed-state aggregates, assignment patterns and array operations beyond bounded scalar elements.",
+      "tasks": [
+        "Define unpacked structures/unions, tagged forms and aggregate layout/state conversion; retain explicit diagnostics for unsupported forms.",
+        "Support whole-array assignments, slices, foreach and aggregate argument/port transport.",
+        "Extend negative/unusual dimension bounds, rank limits, shape conversions and packed multidimensional declarations.",
+        "Add aggregate/container nesting and alias/copy semantics using typed storage rather than flattening away lifetime."
+      ],
+      "acceptance": "Tests verify member layout independently, array direction/bounds, deep-copy behavior and malformed shape rejection; resource limits become explicit configurable contracts.",
+      "evidence": "Current packed aggregates require uniform state, untagged equal-width unions; fixed arrays rank1..4, nonnegative bounds, total256 cells.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-08",
+      "issue": {
+        "number": 9,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/9"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-06",
+          "number": 7,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/7"
+        },
+        {
+          "package": "WP-07",
+          "number": 8,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/8"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-01",
+        "LIB-02",
+        "LIB-04",
+        "LIB-19"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-09",
+      "title": "Finish dynamic, associative and queue language semantics",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-01",
+        "WP-08"
+      ],
+      "requirements": [
+        "VS-RTL-ASSOCIATIVE-001",
+        "VS-RTL-QUEUE-001",
+        "VS-RTL-DYNAMIC-ARRAY-001",
+        "VS-RTL-ARRAY-001"
+      ],
+      "files": [
+        "native/rtl/runtime.h",
+        "src/VeloSim.Core/RtlAssociative.cs",
+        "src/VeloSim.Core/RtlQueues.cs",
+        "src/VeloSim.Core/RtlArrays.cs",
+        "native/uhdm/rtl.cpp"
+      ],
+      "scope": "Extend the existing working bounded container slices rather than reimplementing storage. Close language-level method, lifetime, copy and ownership gaps.",
+      "tasks": [
+        "Add string/wildcard associative keys, foreach, nested values, default patterns and broader key/value types.",
+        "Add dynamic-array cross-array initialization/copy, nested dimensions and lifetime-safe references.",
+        "Add queue insert, slices/$ indexing, bounded queue declarations/truncation, concatenation and array methods.",
+        "Implement locator/order/reduction methods and configurable capacity; qualify signed/absent-key/missing-read behavior independently of the legacy reference."
+      ],
+      "acceptance": "Each method has typed same-source positive/negative cases, independent container expectations, overflow atomicity and rollback; no test exclusion is mislabeled as Verilator agreement.",
+      "evidence": "Current integral associative worktree slice passes focused14+native1; queues/dynamic arrays remain module-scope1D and capped256.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-09",
+      "issue": {
+        "number": 10,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/10"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-01",
+          "number": 2,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/2"
+        },
+        {
+          "package": "WP-08",
+          "number": 9,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/9"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-04",
+        "LIB-05",
+        "LIB-15"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-10",
+      "title": "Implement HDL system tasks, strings, real values and file I/O",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-03",
+        "WP-07"
+      ],
+      "requirements": [
+        "VS-RTL-PROC-001",
+        "VS-RTL-TYPE-001"
+      ],
+      "files": [
+        "native/uhdm/rtl.cpp",
+        "native/rtl/runtime.h",
+        "src/VeloSim.Core/RtlDesign.cs"
+      ],
+      "scope": "Make ordinary self-checking testbenches usable: diagnostics, termination, time queries, plusargs, memory files, formatted text and reproducible random functions.",
+      "tasks": [
+        "Implement $display/$write/$strobe/$monitor, $finish/$stop/$fatal/$error with correct execution region and exit results.",
+        "Add $time/$realtime and timescale formatting; string operations and numeric formatting/conversion.",
+        "Add plusargs and $readmemh/$readmemb plus file open/read/write/scan with checked failures and deterministic paths.",
+        "Provide seeded $random/$urandom families with documented state scope and replay metadata."
+      ],
+      "acceptance": "Self-checking HDL programs execute and fail with exact status/source diagnostics; file malformed/missing/error cases and time-format rounding are tested independently.",
+      "evidence": "rtl.cpp accepts only a narrow system-function whitelist and has no general system-task runtime; host trace printing is not HDL $display support.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-10",
+      "issue": {
+        "number": 11,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/11"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-03",
+          "number": 4,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/4"
+        },
+        {
+          "package": "WP-07",
+          "number": 8,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/8"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-02",
+        "LIB-10"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-11",
+      "title": "Add resolved nets, inouts, primitives and force/release",
+      "priority": "P1",
+      "size": "XL",
+      "depends": [
+        "WP-02",
+        "WP-04",
+        "WP-06"
+      ],
+      "requirements": [
+        "VS-RTL-HIER-001",
+        "VS-RTL-TIME-001"
+      ],
+      "files": [
+        "native/uhdm/rtl.cpp",
+        "native/uhdm/rtl_flatten.h",
+        "native/rtl/runtime.h"
+      ],
+      "scope": "Specify four-state multi-driver resolution and expand wire/inout/gate semantics. Separate useful digital parity from analog or full timing-check ambitions.",
+      "tasks": [
+        "Add multi-driver wire/tri/wand/wor/supply/pull resolution and bidirectional port behavior.",
+        "Lower digital gate primitives and UDP tables with checked source semantics.",
+        "Implement force/release lifetime, deposits and delayed continuous/net assignments as separately accepted slices.",
+        "Record strengths, transistor switches, specify/SDF and analog modeling as scoped decisions rather than assuming Verilator provides full conformance."
+      ],
+      "acceptance": "Independent resolution tables exercise Z, conflicting drivers, force/release and hierarchy; do not use mostly-two-state Verilator as the sole resolution oracle.",
+      "evidence": "rtl_flatten.h rejects resolved/pull net types and inout ports; continuous assignment delays/strengths explicitly rejected.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-11",
+      "issue": {
+        "number": 12,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/12"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-02",
+          "number": 3,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/3"
+        },
+        {
+          "package": "WP-04",
+          "number": 5,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/5"
+        },
+        {
+          "package": "WP-06",
+          "number": 7,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/7"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-17",
+        "LIB-19"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-12",
+      "title": "Provide SystemVerilog DPI-C import and export",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-05",
+        "WP-06",
+        "WP-07"
+      ],
+      "requirements": [],
+      "files": [
+        "src/VeloSim.Core/RtlExternalSdk.cs",
+        "native/rtl/external_model.h",
+        "native/uhdm/rtl_subroutines.h"
+      ],
+      "scope": "Add actual HDL import/export DPI-C functionality; a similarly named generated C++ class is not DPI compatibility.",
+      "tasks": [
+        "Specify standard scalar/vector/4-state argument ABI and generate svdpi-compatible declarations.",
+        "Implement import/export functions/tasks, context scope and error propagation across the native boundary.",
+        "Add open-array handles, strings and ref/output modes incrementally with lifetime tests.",
+        "Create standalone external-host examples and ABI compatibility tests on Windows/Linux."
+      ],
+      "acceptance": "The same small C host and HDL DPI fixtures compile against both tools for the declared subset, exercise imports and exports, and reject unsupported signatures clearly.",
+      "evidence": "Current SDK exposes V<top> lifecycle/ports and a VPI subset; no implemented DPI import/export lowering found.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-12",
+      "issue": {
+        "number": 13,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/13"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-05",
+          "number": 6,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/6"
+        },
+        {
+          "package": "WP-06",
+          "number": 7,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/7"
+        },
+        {
+          "package": "WP-07",
+          "number": 8,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/8"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-16"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-13",
+      "title": "Expand VPI scheduling, hierarchy and cocotb integration",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-02",
+        "WP-06",
+        "WP-08"
+      ],
+      "requirements": [],
+      "files": [
+        "native/rtl/vpi.cpp",
+        "native/rtl/vpi_user.h",
+        "native/rtl/external_model.h",
+        "tests/native/external_tests.cpp"
+      ],
+      "scope": "Broaden the existing VPI subset based on required client behavior; retain checked ABI and honest supported-call documentation.",
+      "tasks": [
+        "Add simulator time units/precision, nested scopes, indexed memory/aggregate handles and standard value formats.",
+        "Implement timed/read-write/read-only/next-time callbacks and cancellation at correct scheduler regions.",
+        "Add delayed puts and force/release modes only when their semantics are implemented; preserve multi-model isolation.",
+        "Qualify cocotb/GPI compatibility against real client tests, treating third-party Python as an explicit integration dependency."
+      ],
+      "acceptance": "A documented API capability table links each supported operation to tests, including callback ordering, reentrancy, removed handles, multiple models and actual cocotb smoke/regressions.",
+      "evidence": "vpi_user.h currently defines ValueChange, ReadOnlySynch, StartOfSimulation and EndOfSimulation; a full header does not supply missing runtime services.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-13",
+      "issue": {
+        "number": 14,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/14"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-02",
+          "number": 3,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/3"
+        },
+        {
+          "package": "WP-06",
+          "number": 7,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/7"
+        },
+        {
+          "package": "WP-08",
+          "number": 9,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/9"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-16"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-14",
+      "title": "Implement assertions, properties and sampled-value semantics",
+      "priority": "P1",
+      "size": "XL",
+      "depends": [
+        "WP-02",
+        "WP-03",
+        "WP-20"
+      ],
+      "requirements": [],
+      "files": [
+        "native/uhdm/rtl.cpp",
+        "native/uhdm/rtl_flatten.h",
+        "src/VeloSim.Core/RtlDesign.cs"
+      ],
+      "scope": "Add explicit immediate/assertion support and a staged SVA subset with sampling regions, failure reporting and coverage. Reject unsupported property forms.",
+      "tasks": [
+        "Fail closed on executable assertions currently outside the IR; add immediate assertions with source diagnostics.",
+        "Specify sampled values, $past/$rose/$fell/$stable and clock/disable-iff handling.",
+        "Implement bounded concurrent sequences/implication/repetition and cover property incrementally.",
+        "Track unsupported liveness/sequence forms and compare failure cycles with independent monitors and pinned Verilator."
+      ],
+      "acceptance": "Intentionally failing properties demonstrably fail at the expected cycle; no successful build may silently erase verification statements. SVA support remains a declared subset.",
+      "evidence": "Current audit probe: concurrent assert property accepted by Surelog and exporter (exit0); emitted normalized model has no assertion/property node. This is source/IR evidence of omission, not a new runtime simulation.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-14",
+      "issue": {
+        "number": 15,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/15"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-02",
+          "number": 3,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/3"
+        },
+        {
+          "package": "WP-03",
+          "number": 4,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/4"
+        },
+        {
+          "package": "WP-20",
+          "number": 21,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/21"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-01",
+        "LIB-19"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-15",
+      "title": "Collect coverage of simulated HDL designs",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-14"
+      ],
+      "requirements": [
+        "VS-QUAL-001"
+      ],
+      "files": [
+        "src/VeloSim.Core/RtlDesign.cs",
+        "src/VeloSim.Core/RtlExternalSdk.cs",
+        "tools/"
+      ],
+      "scope": "Add DUT line/branch/toggle/property/functional coverage. Keep it separate from Coverlet/LLVM measurement of simulator implementation.",
+      "tasks": [
+        "Preserve HDL source maps through elaboration, flattening and generated code.",
+        "Instrument HDL line/branch/toggle counters and emit stable mergeable IDs.",
+        "Add property counters and a staged covergroup/coverpoint/bin/cross subset.",
+        "Provide merge/report/exclusion APIs and verify counts with hand-calculated HDL fixtures."
+      ],
+      "acceptance": "A tiny DUT produces independently predicted counts across merged runs; reports identify excluded constructs, reset semantics and source hashes. Simulator C# coverage is never reported as DUT coverage.",
+      "evidence": "Existing Coverlet/LLVM and qualification reports measure simulator source; no established general HDL coverage product was found.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-15",
+      "issue": {
+        "number": 16,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/16"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-14",
+          "number": 15,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/15"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-18"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-16",
+      "title": "Plan staged classes, constrained randomization and UVM support",
+      "priority": "P3",
+      "size": "XL",
+      "depends": [
+        "WP-03",
+        "WP-05",
+        "WP-06",
+        "WP-07",
+        "WP-12",
+        "WP-14",
+        "WP-15"
+      ],
+      "requirements": [
+        "VS-RTL-TYPE-001",
+        "VS-RANDOM-CONSTRAINT-001"
+      ],
+      "files": [
+        "native/uhdm/rtl_types.h",
+        "native/uhdm/rtl_subroutines.h",
+        "src/VeloSim.Core/RtlDesign.cs"
+      ],
+      "scope": "A separate testbench-language milestone after RTL correctness, not a promise of immediate UVM parity. Define object lifetimes, synchronization and constraint-solving integration.",
+      "tasks": [
+        "Inventory object handles, inheritance/virtual dispatch, constructors and visibility before selecting representation.",
+        "Add class methods, mailboxes/semaphores and supported virtual-interface/clocking behavior in coherent slices.",
+        "Research maintained solver/library integration for constraints and seeded random stability; retain unsatisfied-constraint diagnostics.",
+        "Pin a UVM release and run explicit compatibility tests only after prerequisites; document known limitations.",
+        "Implement VS-RANDOM-CONSTRAINT-001 in documented subsets; evaluate Z3 as an informational candidate and independently verify translation, replay and solver failures."
+      ],
+      "acceptance": "Each staged subset has reproducible tests and a compatibility manifest. Do not label parse acceptance or a toy class example as UVM support.",
+      "evidence": "Current RTL types/lowering only support bounded word/array storage; official Verilator5.052 release announces UVM2020-3.2 with limitations, unlike installed5.020.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-16",
+      "issue": {
+        "number": 17,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/17"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-03",
+          "number": 4,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/4"
+        },
+        {
+          "package": "WP-05",
+          "number": 6,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/6"
+        },
+        {
+          "package": "WP-06",
+          "number": 7,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/7"
+        },
+        {
+          "package": "WP-07",
+          "number": 8,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/8"
+        },
+        {
+          "package": "WP-12",
+          "number": 13,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/13"
+        },
+        {
+          "package": "WP-14",
+          "number": 15,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/15"
+        },
+        {
+          "package": "WP-15",
+          "number": 16,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/16"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-13",
+        "LIB-19"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-17",
+      "title": "Add HDL tracing, source debugging and model checkpoints",
+      "priority": "P1",
+      "size": "L",
+      "depends": [
+        "WP-02",
+        "WP-06"
+      ],
+      "requirements": [
+        "VS-TRACE-COMPRESSED-001"
+      ],
+      "files": [
+        "src/VeloSim.Core/RtlExternalSdk.cs",
+        "native/rtl/external_model.h",
+        "src/VeloSim.Core/TraceComparison.cs"
+      ],
+      "scope": "Provide hierarchical waveforms, usable runtime diagnostics and persistent model save/restore; distinguish test trace strings and exception rollback from these user features.",
+      "tasks": [
+        "Implement VS-TRACE-COMPRESSED-001 lossless compressed waveforms; evaluate FST/libfst (LIB-11) as implementation information; preserve hierarchy, wide X/Z values and simulation time.",
+        "Implement time/source/process context in runtime failures and controlled trace filtering.",
+        "Specify portable/versioned checkpoint schema for words, containers, scheduler frames and events.",
+        "Qualify save/restore, multi-model context and ABI mismatch failures; assess SystemC adapter needs with WP-19."
+      ],
+      "acceptance": "Waveforms parsed by an independent reader match known traces; checkpoint restart reproduces future outputs/events exactly and rejects mismatched source/runtime versions. Compressed waveform output must satisfy VS-TRACE-COMPRESSED-001; plain text or VCD-only output does not close that requirement.",
+      "evidence": "VS_RTL text output supports comparison; SDK rollback is in-memory exception recovery, not a complete waveform/checkpoint product.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-17",
+      "issue": {
+        "number": 18,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/18"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-02",
+          "number": 3,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/3"
+        },
+        {
+          "package": "WP-06",
+          "number": 7,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/7"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-06",
+        "LIB-10",
+        "LIB-11",
+        "LIB-12"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-18",
+      "title": "Scale simulation, resource limits and measured parallel execution",
+      "priority": "P2",
+      "size": "XL",
+      "depends": [
+        "WP-01",
+        "WP-04",
+        "WP-07"
+      ],
+      "requirements": [
+        "VS-QUAL-001"
+      ],
+      "files": [
+        "native/scheduler.cpp",
+        "native/ir/engine.cpp",
+        "src/VeloSim.Core/RtlDesign.cs",
+        "native/uhdm/rtl_flatten.h",
+        "CMakeLists.txt"
+      ],
+      "scope": "Remove toy-design bottlenecks and measure the actual structural backend. Worker-count configuration and a parallel native kernel do not prove HDL execution speedup.",
+      "tasks": [
+        "Make signal/memory/process/depth/step budgets explicit configurable limits with predictable rejection.",
+        "Profile representative CPU/bus/FIFO designs and separate elaboration, generation, native compile and simulation timing.",
+        "Add reusable incremental code-generation/build caching and split output where measurements justify it.",
+        "Parallelize independent structural work only after semantic dependency analysis; compare outputs and wall/CPU/memory on identical sources."
+      ],
+      "acceptance": "Published benchmarks include source/tool/configuration hashes, baseline timings, repeat distributions and correctness checks; demonstrate actual worker scaling or explicitly report no gain.",
+      "evidence": "rtl_flatten.h declaration budgets256 signals/16 memories, process and expansion limits; generated multi-worker comparisons alone are not speedup evidence.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-18",
+      "issue": {
+        "number": 19,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/19"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-01",
+          "number": 2,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/2"
+        },
+        {
+          "package": "WP-04",
+          "number": 5,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/5"
+        },
+        {
+          "package": "WP-07",
+          "number": 8,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/8"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-03",
+        "LIB-08",
+        "LIB-14",
+        "LIB-15",
+        "LIB-18"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-19",
+      "title": "Qualify Windows/Linux distribution and native host integrations",
+      "priority": "P2",
+      "size": "L",
+      "depends": [
+        "WP-01",
+        "WP-12",
+        "WP-13",
+        "WP-17"
+      ],
+      "requirements": [
+        "VS-VERIFY-REMOTE-001"
+      ],
+      "files": [
+        "tools/remote/Start-VeloSimCampaign.ps1",
+        "CMakeLists.txt",
+        "src/VeloSim.Core/RtlExternalSdk.cs",
+        "docs/remote-windows-campaign.md"
+      ],
+      "scope": "Make clean-machine installs, SDK generation and hosts reproducible on intended platforms; assess SystemC as a separate supported integration.",
+      "tasks": [
+        "Validate portable checked download/setup flows, pinned SDKs/tools and resumable authentication without overwriting checkouts.",
+        "Run native Windows and Linux exported-host/plugin smoke cases with distinct output trees and ABI manifests.",
+        "Add SystemC scheduling adapter only against an explicit tested integration contract.",
+        "Package examples, API XMLDoc/engineering docs and offline handoff instructions; preserve manual/disabled CI policies."
+      ],
+      "acceptance": "A disconnected Windows machine can follow the documented flow and reproduce a short verified run before long campaigns; native-vs-WSL coverage and unsupported toolchains are explicit.",
+      "evidence": "Remote campaign tooling and NativeAOT tooling exist; this audit does not rerun clean-machine Windows installation or certify SystemC compatibility.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-19",
+      "issue": {
+        "number": 20,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/20"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-01",
+          "number": 2,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/2"
+        },
+        {
+          "package": "WP-12",
+          "number": 13,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/13"
+        },
+        {
+          "package": "WP-13",
+          "number": 14,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/14"
+        },
+        {
+          "package": "WP-17",
+          "number": 18,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/18"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-03",
+        "LIB-06",
+        "LIB-08",
+        "LIB-09",
+        "LIB-17"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    },
+    {
+      "id": "WP-20",
+      "title": "Reject executable constructs that lowering would silently omit",
+      "priority": "P0",
+      "size": "M",
+      "depends": [
+        "WP-01"
+      ],
+      "requirements": [
+        "VS-QUAL-001"
+      ],
+      "files": [
+        "native/uhdm/rtl_flatten.h",
+        "native/uhdm/rtl.cpp",
+        "src/VeloSim.Core/NormalizedUhdm.cs",
+        "tests/VeloSim.Tests/RtlEvolutionRejectionTests.cs"
+      ],
+      "scope": "Audit UHDM module/scope items and prevent successful compilation from discarding executable behavior such as assertions, final blocks, primitives or unsupported processes.",
+      "tasks": [
+        "Inventory every executable/module-item UHDM family and classify lowered, elaboration-only, explicitly ignored by contract, or rejected.",
+        "Add source-located diagnostics for unknown executable items and preserve recognized inactive/elaboration-only declarations.",
+        "Add negative fixtures for assertions, final blocks, gate/UDP instances, bind/clocking/program items and unsupported statements.",
+        "Require an intentionally observable behavior/failure test for every accepted executable feature, including verification statements."
+      ],
+      "acceptance": "Unsupported executable constructs fail explicitly; supported assertions and final blocks have demonstrable effects. A positive parser/exporter exit alone never satisfies acceptance.",
+      "evidence": "Current audit probe: concurrent assert property accepted by Surelog and exporter (exit0); emitted normalized model has no assertion/property node. This is source/IR evidence of omission, not a new runtime simulation.",
+      "status": "open",
+      "planning_id": "VS-PLAN-WP-20",
+      "issue": {
+        "number": 21,
+        "url": "https://github.com/jeffadickson/VeloSim/issues/21"
+      },
+      "dependency_issues": [
+        {
+          "package": "WP-01",
+          "number": 2,
+          "url": "https://github.com/jeffadickson/VeloSim/issues/2"
+        }
+      ],
+      "library_opportunities": [
+        "LIB-01",
+        "LIB-06"
+      ],
+      "library_review_status": "source-and-primary-doc-evaluated; adoption qualification pending"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "G01",
+      "feature": "Multiple independent edge processes",
+      "velosim_status": "partial",
+      "gap": "Top scalar input posedge/negedge and async-reset edge lists work; internal/arbitrary events do not.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-EVENT-001",
+      "package": "WP-03",
+      "verilator_reference": "L",
+      "verilator_baseline": "Broad processes"
+    },
+    {
+      "id": "G02",
+      "feature": "Interacting blocking/NBA processes",
+      "velosim_status": "partial",
+      "gap": "Blocking writes are isolated; general interprocess blocking visibility and races are rejected.",
+      "source": "src/VeloSim.Core/RtlDesign.cs",
+      "requirement": "VS-RTL-BLOCK-004",
+      "package": "WP-04",
+      "verilator_reference": "L",
+      "verilator_baseline": "Broader scheduling"
+    },
+    {
+      "id": "G03",
+      "feature": "General executing timed event queue",
+      "velosim_status": "missing",
+      "gap": "Opaque-ID transport exists; no suspended-HDL execution scheduler.",
+      "source": "native/rtl/timed_events.h",
+      "requirement": "VS-RTL-TIME-001",
+      "package": "WP-02",
+      "verilator_reference": "L",
+      "verilator_baseline": "--timing"
+    },
+    {
+      "id": "G04",
+      "feature": "Procedural delays and intra-assignment timing",
+      "velosim_status": "missing",
+      "gap": "No typed resumable delay execution; transport availability is not HDL support.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-RTL-TIME-001",
+      "package": "WP-03",
+      "verilator_reference": "L",
+      "verilator_baseline": "--timing"
+    },
+    {
+      "id": "G05",
+      "feature": "Event expressions, wait and named events",
+      "velosim_status": "missing",
+      "gap": "Only direct scalar top-input edge events are lowered.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-TIME-001",
+      "package": "WP-03",
+      "verilator_reference": "L",
+      "verilator_baseline": "--timing"
+    },
+    {
+      "id": "G06",
+      "feature": "fork/join and cancellation",
+      "velosim_status": "missing",
+      "gap": "No resumable fork process/frame IR.",
+      "source": "src/VeloSim.Core/RtlDesign.cs",
+      "requirement": "VS-RTL-TIME-001",
+      "package": "WP-03",
+      "verilator_reference": "L",
+      "verilator_baseline": "--timing"
+    },
+    {
+      "id": "G07",
+      "feature": "Time units/precision and HDL time queries",
+      "velosim_status": "missing",
+      "gap": "Host uint64 time exists; HDL timescale/scheduler semantics remain open.",
+      "source": "native/rtl/external_model.h",
+      "requirement": "VS-RTL-TIME-001",
+      "package": "WP-02",
+      "verilator_reference": "C",
+      "verilator_baseline": "Timed host API"
+    },
+    {
+      "id": "G08",
+      "feature": "Concurrent initial and final processes",
+      "velosim_status": "partial",
+      "gap": "Ordered constant declaration startup plus at most one untimed initial; final execution not established.",
+      "source": "src/VeloSim.Core/RtlInitialization.cs",
+      "requirement": "VS-RTL-INIT-001",
+      "package": "WP-04",
+      "verilator_reference": "L",
+      "verilator_baseline": "initial/final"
+    },
+    {
+      "id": "G09",
+      "feature": "always_comb and continuous logic",
+      "velosim_status": "partial",
+      "gap": "Acyclic fully assigned whole-word DAG implemented; feedback/clock-dependent logic and broader sensitivity remain restricted.",
+      "source": "src/VeloSim.Core/RtlCombinational.cs",
+      "requirement": "VS-RTL-COMB-001",
+      "package": "WP-04",
+      "verilator_reference": "L",
+      "verilator_baseline": "always_comb"
+    },
+    {
+      "id": "G10",
+      "feature": "always_latch and level-sensitive always",
+      "velosim_status": "missing",
+      "gap": "Explicit input-edge processes and bounded always_comb only.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-COMB-001",
+      "package": "WP-04",
+      "verilator_reference": "L",
+      "verilator_baseline": "latches"
+    },
+    {
+      "id": "G11",
+      "feature": "Procedural runtime loops",
+      "velosim_status": "partial",
+      "gap": "while/do/repeat/for implemented under shared20000-step budget; break/continue/foreach/general suspension absent.",
+      "source": "src/VeloSim.Core/RtlDesign.cs",
+      "requirement": "VS-RTL-RUNTIME-LOOP-001",
+      "package": "WP-05",
+      "verilator_reference": "L",
+      "verilator_baseline": "General loops"
+    },
+    {
+      "id": "G12",
+      "feature": "Pure automatic functions",
+      "velosim_status": "partial",
+      "gap": "Typed nonrecursive inlining, explicit returns and bounded constant-control loops exist; runtime function loops/captures limited.",
+      "source": "native/uhdm/rtl_subroutines.h",
+      "requirement": "VS-RTL-FUNC-001",
+      "package": "WP-05",
+      "verilator_reference": "L",
+      "verilator_baseline": "Functions"
+    },
+    {
+      "id": "G13",
+      "feature": "Tasks and argument modes",
+      "velosim_status": "partial",
+      "gap": "Pure zero-time input/output task inlining; no ref/inout/nested tasks, selected copy-out or general timed tasks; combined outputs128 bits.",
+      "source": "native/uhdm/rtl_subroutines.h",
+      "requirement": "VS-RTL-TASK-001",
+      "package": "WP-05",
+      "verilator_reference": "L",
+      "verilator_baseline": "Tasks"
+    },
+    {
+      "id": "G14",
+      "feature": "Static lifetime, recursion and global captures",
+      "velosim_status": "missing",
+      "gap": "Only automatic pure bounded calls; mutable captures/static state/hierarchical calls unsupported.",
+      "source": "native/uhdm/rtl_subroutines.h",
+      "requirement": "VS-RTL-PROC-001",
+      "package": "WP-05",
+      "verilator_reference": "L",
+      "verilator_baseline": "Broader calls"
+    },
+    {
+      "id": "G15",
+      "feature": "Module hierarchy and generate scopes",
+      "velosim_status": "partial",
+      "gap": "Elaborated module/generate flattening exists; depth/declaration/port restrictions remain.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-HIER-001",
+      "package": "WP-06",
+      "verilator_reference": "L",
+      "verilator_baseline": "Hierarchy/generate"
+    },
+    {
+      "id": "G16",
+      "feature": "Open, selected, unpacked and inout ports",
+      "velosim_status": "partial",
+      "gap": "Scalar-word inputs/whole-word outputs accepted; open and memory instance ports rejected.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-HIER-001",
+      "package": "WP-06",
+      "verilator_reference": "L",
+      "verilator_baseline": "Broader ports"
+    },
+    {
+      "id": "G17",
+      "feature": "Interfaces, modports and clocking/program blocks",
+      "velosim_status": "not-established",
+      "gap": "Elaboration parsing does not establish typed runtime lowering; no general interface execution contract.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-HIER-001",
+      "package": "WP-06",
+      "verilator_reference": "L",
+      "verilator_baseline": "Interfaces; restrictions"
+    },
+    {
+      "id": "G18",
+      "feature": "Packages, parameters and type namespaces",
+      "velosim_status": "partial",
+      "gap": "Literal/unary-literal immutable captures are bound by declaration; compound constants/selections/types need explicit audit.",
+      "source": "native/uhdm/rtl_subroutines.h",
+      "requirement": "VS-RTL-PARAM-001",
+      "package": "WP-06",
+      "verilator_reference": "L",
+      "verilator_baseline": "Broader namespaces"
+    },
+    {
+      "id": "G19",
+      "feature": "Preprocessor and multi-file setup",
+      "velosim_status": "partial",
+      "gap": "Surelog include directories/defines/multiple sources are wired; broad macro/library configuration qualification is not established.",
+      "source": "src/VeloSim.Core/SurelogFrontend.cs",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-06",
+      "verilator_reference": "L",
+      "verilator_baseline": "Full preprocessor"
+    },
+    {
+      "id": "G20",
+      "feature": "Signed and two/four-state integral arithmetic",
+      "velosim_status": "partial",
+      "gap": "RTL words1..256 and byte/shortint/int/longint/integer/time/enums exist; no blanket Verilog type-conformance claim.",
+      "source": "native/rtl/runtime.h",
+      "requirement": "VS-RTL-INTEGER-001",
+      "package": "WP-07",
+      "verilator_reference": "L",
+      "verilator_baseline": "Integral support"
+    },
+    {
+      "id": "G21",
+      "feature": "Packed words beyond256 bits",
+      "velosim_status": "missing",
+      "gap": "Structural model and ABI2 cap256; separate independent IR cap64.",
+      "source": "native/rtl/runtime.h",
+      "requirement": "VS-RTL-WORD-256-001",
+      "package": "WP-07",
+      "verilator_reference": "X",
+      "verilator_baseline": "512-bit lint accepted"
+    },
+    {
+      "id": "G22",
+      "feature": "Packed declaration bounds and signed indices",
+      "velosim_status": "partial",
+      "gap": "Canonical descending packed bounds and unsigned fixed-array/selection index restrictions remain.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-RTL-TYPE-001",
+      "package": "WP-07",
+      "verilator_reference": "L",
+      "verilator_baseline": "Broader bounds"
+    },
+    {
+      "id": "G23",
+      "feature": "Broader operators, casts and fill literals",
+      "velosim_status": "partial",
+      "gap": "Many arithmetic/logic/selected-write operators exist; no general streaming/pattern/inside/cast expression lowering.",
+      "source": "src/VeloSim.Core/RtlDesign.cs",
+      "requirement": "VS-RTL-TYPE-001",
+      "package": "WP-07",
+      "verilator_reference": "L",
+      "verilator_baseline": "Broader; restrictions"
+    },
+    {
+      "id": "G24",
+      "feature": "Real/shortreal, strings and handles",
+      "velosim_status": "missing",
+      "gap": "Packed integral storage cannot represent general real/string/object lifetime semantics.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-RTL-TYPE-001",
+      "package": "WP-07",
+      "verilator_reference": "L",
+      "verilator_baseline": "Types; restrictions"
+    },
+    {
+      "id": "G25",
+      "feature": "Packed structs/unions/enums",
+      "velosim_status": "partial",
+      "gap": "Uniform-state packed structures/equal-width untagged unions supported to256 bits; enum forms bounded.",
+      "source": "native/uhdm/rtl_types.h",
+      "requirement": "VS-RTL-PACKED-001",
+      "package": "WP-08",
+      "verilator_reference": "L",
+      "verilator_baseline": "Aggregates; restrictions"
+    },
+    {
+      "id": "G26",
+      "feature": "Unpacked/mixed-state/tagged aggregates",
+      "velosim_status": "missing",
+      "gap": "These aggregate forms are explicitly outside the packed contract.",
+      "source": "native/uhdm/rtl_types.h",
+      "requirement": "VS-RTL-TYPE-001",
+      "package": "WP-08",
+      "verilator_reference": "L",
+      "verilator_baseline": "Requires case qualification"
+    },
+    {
+      "id": "G27",
+      "feature": "Fixed multidimensional arrays",
+      "velosim_status": "partial",
+      "gap": "Rank1..4, nonnegative bounds and total256 elements; broader shapes/ranks remain open.",
+      "source": "src/VeloSim.Core/RtlArrays.cs",
+      "requirement": "VS-RTL-ARRAY-SHAPE-001",
+      "package": "WP-08",
+      "verilator_reference": "L",
+      "verilator_baseline": "Multidimensional arrays"
+    },
+    {
+      "id": "G28",
+      "feature": "Whole-array assignment, patterns and foreach",
+      "velosim_status": "missing",
+      "gap": "Current IR addresses scalar elements; broad aggregate copies/patterns/iteration not supplied.",
+      "source": "src/VeloSim.Core/RtlArrays.cs",
+      "requirement": "VS-RTL-ARRAY-001",
+      "package": "WP-08",
+      "verilator_reference": "L",
+      "verilator_baseline": "Patterns; restrictions"
+    },
+    {
+      "id": "G29",
+      "feature": "Dynamic arrays",
+      "velosim_status": "partial",
+      "gap": "Owning1D new[count]/self-preserving resize,size,delete,indexed operations exist; cross-array/nested/aggregate forms absent.",
+      "source": "src/VeloSim.Core/RtlArrays.cs",
+      "requirement": "VS-RTL-DYNAMIC-ARRAY-001",
+      "package": "WP-09",
+      "verilator_reference": "T",
+      "verilator_baseline": "Container runtime"
+    },
+    {
+      "id": "G30",
+      "feature": "Queues",
+      "velosim_status": "partial",
+      "gap": "push/pop/size/delete/indexed operations bounded256; insert/slices/$/bounded-queue behavior and wider methods open.",
+      "source": "src/VeloSim.Core/RtlQueues.cs",
+      "requirement": "VS-RTL-QUEUE-001",
+      "package": "WP-09",
+      "verilator_reference": "T",
+      "verilator_baseline": "Container runtime"
+    },
+    {
+      "id": "G31",
+      "feature": "Integral associative arrays",
+      "velosim_status": "worktree-focused",
+      "gap": "Map-backed integral1..256-bit keys, num/exists/delete/traversal, focused14managed+1native; broader regression/qualification still open.",
+      "source": "src/VeloSim.Core/RtlAssociative.cs",
+      "requirement": "VS-RTL-ASSOCIATIVE-001",
+      "package": "WP-01",
+      "verilator_reference": "T",
+      "verilator_baseline": "Container runtime"
+    },
+    {
+      "id": "G32",
+      "feature": "String/wildcard associative keys and nesting",
+      "velosim_status": "missing",
+      "gap": "Current associative type metadata accepts integral keys only, module-scope packed values.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-ASSOCIATIVE-001",
+      "package": "WP-09",
+      "verilator_reference": "L",
+      "verilator_baseline": "String-key lint accepted"
+    },
+    {
+      "id": "G33",
+      "feature": "Array locator/order/reduction methods",
+      "velosim_status": "missing",
+      "gap": "No general find/sort/reverse/sum/product method family in emitted IR.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-RTL-ARRAY-001",
+      "package": "WP-09",
+      "verilator_reference": "X",
+      "verilator_baseline": "Method-by-method qualification"
+    },
+    {
+      "id": "G34",
+      "feature": "Container references, copies and process sharing",
+      "velosim_status": "partial",
+      "gap": "Owning snapshots/rollback exist; mutation isolation rejects general cross-process container readers and alias references.",
+      "source": "src/VeloSim.Core/RtlAssociative.cs",
+      "requirement": "VS-RTL-ARRAY-001",
+      "package": "WP-09",
+      "verilator_reference": "T",
+      "verilator_baseline": "Method-by-method qualification"
+    },
+    {
+      "id": "G35",
+      "feature": "HDL print, fatal and termination tasks",
+      "velosim_status": "missing",
+      "gap": "Generated harness tracing is not HDL $display/$fatal/$finish execution support.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-RTL-PROC-001",
+      "package": "WP-10",
+      "verilator_reference": "L",
+      "verilator_baseline": "System tasks"
+    },
+    {
+      "id": "G36",
+      "feature": "Memory-file load and general file I/O",
+      "velosim_status": "missing",
+      "gap": "No general $readmemh/$readmemb or fopen/scan/format runtime lowering.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-RTL-PROC-001",
+      "package": "WP-10",
+      "verilator_reference": "L",
+      "verilator_baseline": "File tasks"
+    },
+    {
+      "id": "G37",
+      "feature": "Plusargs and seeded HDL random functions",
+      "velosim_status": "missing",
+      "gap": "Test-runner seeds exist; HDL plusargs/random function semantics are separate and absent.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-RTL-PROC-001",
+      "package": "WP-10",
+      "verilator_reference": "L",
+      "verilator_baseline": "Seeded tasks"
+    },
+    {
+      "id": "G38",
+      "feature": "System bit/count/type queries",
+      "velosim_status": "partial",
+      "gap": "Only narrow system-function handling; broad $bits/$countones/$isunknown queries need lowering/qualification.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-RTL-TYPE-001",
+      "package": "WP-07",
+      "verilator_reference": "L",
+      "verilator_baseline": "Broader queries"
+    },
+    {
+      "id": "G39",
+      "feature": "Multi-driver nets, tri/inout and pulls",
+      "velosim_status": "missing",
+      "gap": "Resolved/pull net types and inout connections rejected; four-state words alone do not resolve drivers.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-HIER-001",
+      "package": "WP-11",
+      "verilator_reference": "L",
+      "verilator_baseline": "Tri/inout; restrictions"
+    },
+    {
+      "id": "G40",
+      "feature": "Digital gate primitives and UDPs",
+      "velosim_status": "not-established",
+      "gap": "No established executable gate/UDP lowering contract; audit for silent omission before implementing.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-11",
+      "verilator_reference": "L",
+      "verilator_baseline": "Gates/UDP; restrictions"
+    },
+    {
+      "id": "G41",
+      "feature": "force/release and delayed continuous assignments",
+      "velosim_status": "missing",
+      "gap": "No force/release runtime; continuous delays/strengths explicitly rejected.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-RTL-TIME-001",
+      "package": "WP-11",
+      "verilator_reference": "L",
+      "verilator_baseline": "Force; restrictions"
+    },
+    {
+      "id": "G42",
+      "feature": "C++ generated model lifecycle",
+      "velosim_status": "partial",
+      "gap": "V<top> ports/eval/final/host time and ABI2 exist; API resemblance does not guarantee Verilator source compatibility.",
+      "source": "src/VeloSim.Core/RtlExternalSdk.cs",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-12",
+      "verilator_reference": "C",
+      "verilator_baseline": "Generated host model"
+    },
+    {
+      "id": "G43",
+      "feature": "DPI-C import/export/context/open arrays",
+      "velosim_status": "missing",
+      "gap": "No HDL DPI-C implementation; external C++ port access and VPI are distinct.",
+      "source": "src/VeloSim.Core/RtlExternalSdk.cs",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-12",
+      "verilator_reference": "C",
+      "verilator_baseline": "DPI-C"
+    },
+    {
+      "id": "G44",
+      "feature": "VPI basic handles, deposits and callbacks",
+      "velosim_status": "partial",
+      "gap": "Implemented limited VPI subset against same model state; not full standard API.",
+      "source": "native/rtl/vpi_user.h",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-13",
+      "verilator_reference": "C",
+      "verilator_baseline": "Limited VPI"
+    },
+    {
+      "id": "G45",
+      "feature": "VPI timed callbacks, memory handles and force",
+      "velosim_status": "missing",
+      "gap": "Limited callback reasons and word handles; complete scheduler/client semantics absent.",
+      "source": "native/rtl/vpi.cpp",
+      "requirement": "VS-RTL-TIME-001",
+      "package": "WP-13",
+      "verilator_reference": "C",
+      "verilator_baseline": "Limited VPI"
+    },
+    {
+      "id": "G46",
+      "feature": "Actual cocotb/GPI compatibility",
+      "velosim_status": "not-established",
+      "gap": "No current full-client qualification; a compatible-looking header is insufficient.",
+      "source": "tests/native/external_tests.cpp",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-13",
+      "verilator_reference": "C",
+      "verilator_baseline": "Client qualification needed"
+    },
+    {
+      "id": "G47",
+      "feature": "Immediate and concurrent assertions/SVA",
+      "velosim_status": "silent-omission",
+      "gap": "Audit probe accepts assert property (exporter exit0) but emits no assertion/property node. Unsupported verification behavior is silently omitted.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-14",
+      "verilator_reference": "L",
+      "verilator_baseline": "Partial assertions"
+    },
+    {
+      "id": "G48",
+      "feature": "DUT line/branch/toggle coverage",
+      "velosim_status": "missing",
+      "gap": "Coverlet/LLVM measure simulator code; no general emitted HDL coverage counters/report product.",
+      "source": "src/VeloSim.Core/RtlDesign.cs",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-15",
+      "verilator_reference": "S",
+      "verilator_baseline": "DUT coverage"
+    },
+    {
+      "id": "G49",
+      "feature": "Functional coverage and covergroups",
+      "velosim_status": "missing",
+      "gap": "No coverpoint/bin/cross model or source-level coverage integration.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-15",
+      "verilator_reference": "S",
+      "verilator_baseline": "Functional coverage"
+    },
+    {
+      "id": "G50",
+      "feature": "Classes and synchronization objects",
+      "velosim_status": "missing",
+      "gap": "No object heap/lifetime/dispatch/mailbox/semaphore runtime model.",
+      "source": "native/uhdm/rtl_types.h",
+      "requirement": "VS-RTL-TYPE-001",
+      "package": "WP-16",
+      "verilator_reference": "R",
+      "verilator_baseline": "Classes; restrictions"
+    },
+    {
+      "id": "G51",
+      "feature": "Constrained randomization and UVM",
+      "velosim_status": "missing",
+      "gap": "No class constraint solver/UVM execution contract; keep a later milestone.",
+      "source": "src/VeloSim.Core/RtlDesign.cs",
+      "requirement": "VS-RTL-TYPE-001",
+      "package": "WP-16",
+      "verilator_reference": "R",
+      "verilator_baseline": "5.052 UVM milestone"
+    },
+    {
+      "id": "G52",
+      "feature": "VCD/FST hierarchical waveform output",
+      "velosim_status": "not-established",
+      "gap": "Text comparison traces exist; a general structural HDL waveform product is not established.",
+      "source": "src/VeloSim.Core/TraceComparison.cs",
+      "requirement": "VS-TRACE-COMPRESSED-001",
+      "package": "WP-17",
+      "verilator_reference": "X",
+      "verilator_baseline": "VCD/FST"
+    },
+    {
+      "id": "G53",
+      "feature": "Persistent save/restore and clone contexts",
+      "velosim_status": "missing",
+      "gap": "Exception rollback is not persistent complete-model checkpoint/restart.",
+      "source": "native/rtl/external_model.h",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-17",
+      "verilator_reference": "C",
+      "verilator_baseline": "Save/clone APIs"
+    },
+    {
+      "id": "G54",
+      "feature": "Source debugging and actionable diagnostics",
+      "velosim_status": "partial",
+      "gap": "Rejection/resource diagnostics exist; hierarchy/time/process source mapping and interactive workflow incomplete.",
+      "source": "native/uhdm/rtl.cpp",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-17",
+      "verilator_reference": "X",
+      "verilator_baseline": "Source/tool workflow"
+    },
+    {
+      "id": "G55",
+      "feature": "Large-design limits and compilation scale",
+      "velosim_status": "partial",
+      "gap": "256signal/16memory declarations, bounded depth/steps/containers; no representative large-design acceptance baseline.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-18",
+      "verilator_reference": "X",
+      "verilator_baseline": "Hierarchical compilation"
+    },
+    {
+      "id": "G56",
+      "feature": "Structural HDL parallel execution/performance",
+      "velosim_status": "not-established",
+      "gap": "Worker1/4/8 equal-output checks are not evidence of structural process parallel speedup; native kernels have separate scopes.",
+      "source": "native/scheduler.cpp",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-18",
+      "verilator_reference": "S",
+      "verilator_baseline": "Threaded models"
+    },
+    {
+      "id": "G57",
+      "feature": "Clean-machine Windows/Linux deployment",
+      "velosim_status": "partial",
+      "gap": "NativeAOT/exported SDK/remote scripts exist; this audit does not certify clean-machine platform parity.",
+      "source": "tools/remote/Start-VeloSimCampaign.ps1",
+      "requirement": "VS-VERIFY-REMOTE-001",
+      "package": "WP-19",
+      "verilator_reference": "F",
+      "verilator_baseline": "WSL/cross-compile"
+    },
+    {
+      "id": "G58",
+      "feature": "SystemC model integration",
+      "velosim_status": "not-established",
+      "gap": "No current generated SystemC adapter conformance evidence.",
+      "source": "src/VeloSim.Core/RtlExternalSdk.cs",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-19",
+      "verilator_reference": "C",
+      "verilator_baseline": "SystemC"
+    },
+    {
+      "id": "G59",
+      "feature": "Fail-closed module-item completeness",
+      "velosim_status": "risk",
+      "gap": "Confirmed assertion omission in the frontend probe; audit other executable module items and fail explicitly.",
+      "source": "native/uhdm/rtl_flatten.h",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-20",
+      "verilator_reference": "L",
+      "verilator_baseline": "Requires independent audit"
+    },
+    {
+      "id": "G60",
+      "feature": "Current source/references/documentation consistency",
+      "velosim_status": "partial",
+      "gap": "Historical docs describe64/128-bit and earlier single-process limits; worktree associative changes are not in HEAD or remote.",
+      "source": "docs/roadmap.md",
+      "requirement": "VS-QUAL-001",
+      "package": "WP-01",
+      "verilator_reference": "R",
+      "verilator_baseline": "Versioned release/docs"
+    }
+  ],
+  "references": {
+    "L": {
+      "title": "Input languages and limitations (5.052 guide)",
+      "url": "https://verilator.org/guide/latest/languages.html"
+    },
+    "C": {
+      "title": "C++/SystemC, DPI, VPI and host timing APIs",
+      "url": "https://verilator.org/guide/latest/connecting.html"
+    },
+    "S": {
+      "title": "Simulation and DUT coverage",
+      "url": "https://verilator.org/guide/latest/simulating.html"
+    },
+    "X": {
+      "title": "Verilation, tracing, hierarchy, threads and CMake",
+      "url": "https://verilator.org/guide/latest/verilating.html"
+    },
+    "R": {
+      "title": "Verilator5.052 release history",
+      "url": "https://verilator.org/guide/latest/changes.html"
+    },
+    "F": {
+      "title": "Windows/platform FAQ",
+      "url": "https://verilator.org/guide/latest/faq.html"
+    },
+    "T": {
+      "title": "Installed Verilator5.020 /usr/share/verilator/include/verilated_types.h (local source inspection; online fetch unavailable)",
+      "url": "file:installed-reference:/usr/share/verilator/include/verilated_types.h"
+    }
+  },
+  "library_review": {
+    "date": "2026-10-26",
+    "opportunities": 19,
+    "packages_updated": 20,
+    "report": "docs/library-opportunities.md",
+    "index": "docs/library-opportunities.json",
+    "evidence": "source and primary-documentation review; no new dependency builds or runtime results"
+  }
+}

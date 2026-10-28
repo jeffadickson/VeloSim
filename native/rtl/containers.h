@@ -9,49 +9,38 @@ namespace vsrtl {
 // owns its cells; copying a model snapshot therefore copies container contents.
 // Limits bound host allocation independently of an HDL declaration's bounds.
 class DynamicArray {
- int width_;
- bool two_state_;
+ ElementType type_;
  std::vector<W> cells_;
- W initial() const { return two_state_ ? word(0,0,0,width_) : unknown(width_); }
- W convert(W value) const { value=resize(value,width_); return two_state_ ? two_state(value) : value; }
 public:
- static constexpr size_t capacity=256;
- explicit DynamicArray(int width,bool two_state=false):width_(width),two_state_(two_state) {
-  if(width<1||width>256)throw std::invalid_argument("container element width");
- }
+ static constexpr size_t capacity=container_capacity;
+ explicit DynamicArray(int width,bool two_state=false):type_(width,two_state) {}
  size_t size() const { return cells_.size(); }
  // new[n](old) retains a prefix; ordinary new[n] initializes every cell.
  // Construct before swapping so rejected/failed allocations preserve old state.
  void allocate(size_t count,bool preserve=false) {
   if(count>capacity)throw std::length_error("dynamic array capacity");
-  std::vector<W> next(count,initial());
-  if(preserve)std::copy_n(cells_.begin(),std::min(count,cells_.size()),next.begin());
-  cells_.swap(next);
+  dynamic_allocate(cells_,word(count,0,0,64),type_.width(),type_.is_two_state(),preserve,false);
  }
  void clear() { cells_.clear(); }
- W read(size_t index) const { return index<cells_.size()?cells_[index]:initial(); }
- void write(size_t index,W value) { if(index<cells_.size())cells_[index]=convert(value); }
+ W read(size_t index) const { return dynamic_read(cells_,word(index,0,0,64),type_.width(),type_.is_two_state()); }
+ void write(size_t index,W value) { if(index<cells_.size())cells_[index]=type_.convert(value); }
 };
 
 // Queue overflow is a resource failure, not a model of bounded-queue [$:N]
 // truncation. HDL adapters must distinguish those two contracts explicitly.
 class Queue {
- DynamicArray type_;
+ ElementType type_;
  std::deque<W> cells_;
- W convert(W value) const { auto copy=type_;copy.allocate(1);copy.write(0,value);return copy.read(0); }
 public:
  explicit Queue(int width,bool two_state=false):type_(width,two_state) {}
  size_t size() const { return cells_.size(); }
- W read(size_t index) const { return index<cells_.size()?cells_[index]:type_.read(0); }
- void write(size_t index,W value) { if(index<cells_.size())cells_[index]=convert(value); }
+ W read(size_t index) const { return index<cells_.size()?cells_[index]:type_.initial(); }
+ void write(size_t index,W value) { if(index<cells_.size())cells_[index]=type_.convert(value); }
  void push(W value,bool front=false) {
-  if(cells_.size()==DynamicArray::capacity)throw std::length_error("queue capacity");
-  value=convert(value);if(front)cells_.push_front(value);else cells_.push_back(value);
+  queue_push(cells_,value,type_.width(),type_.is_two_state(),front);
  }
  W pop(bool front=false) {
-  if(cells_.empty())return type_.read(0);
-  W value=front?cells_.front():cells_.back();
-  if(front)cells_.pop_front();else cells_.pop_back();return value;
+  return queue_pop(cells_,type_.width(),type_.is_two_state(),front);
  }
  void clear() { cells_.clear(); }
 };
@@ -59,16 +48,15 @@ public:
 // Only canonical unsigned integral keys are represented here. Signed/string
 // ordering, unknown keys, iteration methods and wildcard keys need HDL adapters.
 class AssociativeArray {
- DynamicArray type_;
- std::map<Bits,W> cells_;
+ ElementType type_;
+ AssociativeStorage cells_;
 public:
  explicit AssociativeArray(int width,bool two_state=false):type_(width,two_state) {}
  size_t size() const { return cells_.size(); }
  bool exists(Bits key) const { return cells_.contains(key); }
- W read(Bits key) const { auto it=cells_.find(key);return it==cells_.end()?type_.read(0):it->second; }
+ W read(Bits key) const { return assoc_read(cells_,word(key,0,0,256),256,false,type_.width(),type_.is_two_state()); }
  void write(Bits key,W value) {
-  if(!exists(key)&&cells_.size()==DynamicArray::capacity)throw std::length_error("associative array capacity");
-  auto copy=type_;copy.allocate(1);copy.write(0,value);cells_.insert_or_assign(key,copy.read(0));
+  assoc_write(cells_,word(key,0,0,256),value,256,false,type_.width(),type_.is_two_state());
  }
  void erase(Bits key) { cells_.erase(key); }
  void clear() { cells_.clear(); }
