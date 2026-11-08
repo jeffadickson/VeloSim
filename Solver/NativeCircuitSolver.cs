@@ -15,17 +15,25 @@ public sealed partial class NativeRcSolver
             job.Options.Analysis == BridgeAnalysis.Ac && job.Options.FrequenciesHz is not { Length: >= 1 and <= 128 })
             throw new RcSolverException("Invalid circuit job.");
 
+        var nodes = job.Nodes.ToList();
+        var elements = job.Elements.SelectMany(element => Elements(element, job.Options, nodes)).ToArray();
+        if (nodes.Count > 128) throw new RcSolverException("The lowered circuit exceeds the native node budget.");
         var request = JsonSerializer.Serialize(new
         {
             schema_version = "1", case_id = "schematic-circuit", backend = "lu",
-            circuit = new { nodes = job.Nodes, elements = job.Elements.SelectMany(element => Elements(element, job.Options)).ToArray() },
+            circuit = new { nodes, elements },
             analysis = Analysis(job)
         });
         return await ExchangeAsync(request, json => ParseCircuit(json, job), 32 * 1024 * 1024, cancellation);
     }
 
-    private static IEnumerable<Dictionary<string, object>> Elements(CircuitElement element, BridgeOptions options)
+    private static IEnumerable<Dictionary<string, object>> Elements(CircuitElement element, BridgeOptions options, List<string> nodes)
     {
+        if (element.Kind is Kind.Npn or Kind.Pnp)
+        {
+            foreach (var primitive in BjtElements(element, options, nodes)) yield return primitive;
+            yield break;
+        }
         yield return Element(element, options);
         if (element.Kind is not (Kind.Nmos or Kind.Pmos)) yield break;
         var model = FindModel(options.Mos1, element.Id, binding => binding.Id)!;
@@ -56,6 +64,43 @@ public sealed partial class NativeRcSolver
                 } };
         }
     }
+
+    // The same Ebers–Moll primitive composition as the native deck frontend.
+    // The private sense branches carry conduction current, leaving room for separate storage.
+    private static IEnumerable<Dictionary<string, object>> BjtElements(CircuitElement element,
+        BridgeOptions options, List<string> nodes)
+    {
+        var model = FindModel(options.Bjts, element.Id, b => b.Id)
+            ?? throw new RcSolverException("BJT requires a model binding.");
+        var pnp = element.Kind == Kind.Pnp;
+        var be = nodes.Count;
+        nodes.Add(element.Id + "_be");
+        var bc = nodes.Count;
+        nodes.Add(element.Id + "_bc");
+        var beSense = element.Id + "_be_sense";
+        var bcSense = element.Id + "_bc_sense";
+        yield return Primitive("voltage", beSense, pnp ? element.N : element.Base, be, "volts", 0d);
+        yield return Primitive("voltage", bcSense, pnp ? element.P : element.Base, bc, "volts", 0d);
+        var forward = Primitive("diode", element.Id + "_be", be, pnp ? element.Base : element.N,
+            "saturation_amps", model.SaturationAmps / model.ForwardBeta);
+        forward["thermal_volts"] = model.ForwardThermalVolts;
+        yield return forward;
+        var reverse = Primitive("diode", element.Id + "_bc", bc, pnp ? element.Base : element.P,
+            "saturation_amps", model.SaturationAmps / model.ReverseBeta);
+        reverse["thermal_volts"] = model.ReverseThermalVolts;
+        yield return reverse;
+        var collector = Primitive("cccs", element.Id + "_f", pnp ? element.N : element.P,
+            pnp ? element.P : element.N, "gain", model.ForwardBeta);
+        collector["control_id"] = beSense;
+        yield return collector;
+        var emitter = Primitive("cccs", element.Id + "_r", pnp ? element.P : element.N,
+            pnp ? element.N : element.P, "gain", model.ReverseBeta);
+        emitter["control_id"] = bcSense;
+        yield return emitter;
+    }
+
+    private static Dictionary<string, object> Primitive(string kind, string id, int p, int n, string parameter, double value) =>
+        new() { ["kind"] = kind, ["id"] = id, ["p"] = p, ["n"] = n, [parameter] = value };
 
     private static Dictionary<string, object> Element(CircuitElement element, BridgeOptions options)
     {
@@ -161,7 +206,7 @@ public sealed partial class NativeRcSolver
             {
                 stop_s = options.StopSeconds, max_step_s = options.StepSeconds, max_steps = 8192,
                 // The native nonlinear profile is restricted to backward Euler.
-                method = job.Elements.Any(e => e.Kind is Kind.Diode or Kind.Nmos or Kind.Pmos)
+                method = job.Elements.Any(e => e.Kind is Kind.Diode or Kind.Nmos or Kind.Pmos or Kind.Npn or Kind.Pnp)
                     ? "backward_euler" : "trapezoidal",
                 sources = pulses.Concat(defaults).Select(p => new { id = p.Id, waveform = new
                 {

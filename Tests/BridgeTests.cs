@@ -115,6 +115,25 @@ public sealed class BridgeTests
         Assert.Equal(CommandCode.Ok, result.Code);
     }
 
+    [Fact]
+    public async Task BjtRequiresExplicitModelAndPreservesCollectorBaseEmitterOrder()
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadBjtDemo(session.Version));
+        var options = BridgeDemo.BjtOptions(BridgeAnalysis.Dc);
+        Assert.Equal(CommandCode.UnsupportedCircuit, (await session.ExecuteBridgeAsync(
+            new RunBridge(session.Version, options with { Bjts = [] }), Never)).Code);
+        var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options), (job, _) =>
+        {
+            var bjt = Assert.Single(job.Elements, element => element.Kind == Kind.Npn);
+            Assert.Equal(job.ProbeNode, job.Nodes[bjt.P]);
+            Assert.Equal(0, bjt.N);
+            Assert.NotEqual(0, bjt.Base);
+            return Task.FromResult<IReadOnlyList<BridgeSample>>([new(0, 2)]);
+        });
+        Assert.Equal(CommandCode.Ok, result.Code);
+    }
+
     private static Task<IReadOnlyList<BridgeSample>> Never(CircuitJob job, CancellationToken token) =>
         throw new InvalidOperationException("Invalid input reached the solver.");
 }

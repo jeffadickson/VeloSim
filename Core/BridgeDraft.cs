@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace SchematicLab.Core;
 
-public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1 }
+public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1, Bjts }
 public sealed record SetBridgeDraft(BridgeField Field, string Text) : LessonCommand;
 
 /// <summary>Browser entry fields for typed circuit options. Form drafts have no electrical effect.</summary>
@@ -11,7 +11,7 @@ public sealed class BridgeDraft
     private readonly Dictionary<BridgeField, string> fields = new()
     {
         [BridgeField.Probe] = "P1", [BridgeField.Frequencies] = "100 1000", [BridgeField.Stop] = ".005",
-        [BridgeField.Step] = ".00001", [BridgeField.Phasors] = "", [BridgeField.Pulses] = "", [BridgeField.Controls] = "", [BridgeField.Diodes] = "", [BridgeField.Mos1] = ""
+        [BridgeField.Step] = ".00001", [BridgeField.Phasors] = "", [BridgeField.Pulses] = "", [BridgeField.Controls] = "", [BridgeField.Diodes] = "", [BridgeField.Mos1] = "", [BridgeField.Bjts] = ""
     };
 
     public string this[BridgeField field] => fields[field];
@@ -34,6 +34,7 @@ public sealed class BridgeDraft
         fields[BridgeField.Controls] = "F1 V1; H1 V1";
         fields[BridgeField.Diodes] = "";
         fields[BridgeField.Mos1] = "";
+        fields[BridgeField.Bjts] = "";
         if (!models) return;
         fields[BridgeField.Stop] = ".0001";
         fields[BridgeField.Step] = ".00000005";
@@ -42,6 +43,18 @@ public sealed class BridgeDraft
         fields[BridgeField.Controls] = "";
         fields[BridgeField.Diodes] = "D1 1e-14 " + (8.617333262145e-5 * 300.15).ToString("R", CultureInfo.InvariantCulture) + " 2e-9 .7 .5 .5 1e-8";
         fields[BridgeField.Mos1] = "M1 .7 .001 0 .6 .02 1e-10 2e-10 5e-11 3e-10 4e-10 .8 .5 .5";
+    }
+
+    internal void LoadBjt()
+    {
+        LoadDemo(false);
+        fields[BridgeField.Stop] = ".0001";
+        fields[BridgeField.Step] = ".00000005";
+        fields[BridgeField.Phasors] = "V2 1 0";
+        fields[BridgeField.Pulses] = "V2 .55 .68 0 .00002 .00002 .005 .01";
+        fields[BridgeField.Controls] = "";
+        var thermal = BridgeDemo.BjtOptions(BridgeAnalysis.Dc).Bjts![0].ForwardThermalVolts.ToString("R", CultureInfo.InvariantCulture);
+        fields[BridgeField.Bjts] = $"Q1 1e-15 100 1 {thermal} {thermal}";
     }
 
     public BridgeOptions? Parse(BridgeAnalysis analysis)
@@ -58,7 +71,9 @@ public sealed class BridgeDraft
                 : new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]),
                     Number(row[6]), Number(row[7]), Number(row[8]), Number(row[9]), Number(row[10]), Number(row[11]),
                     Number(row[12]), Number(row[13]))).ToArray();
-            var options = new BridgeOptions(analysis, this[BridgeField.Probe], Controls: controls, Diodes: diodes, Mos1: mos);
+            var bjts = Rows(BridgeField.Bjts, 6).Select(row => new BjtBinding(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]))).ToArray();
+            var options = new BridgeOptions(analysis, this[BridgeField.Probe], Controls: controls, Diodes: diodes, Mos1: mos, Bjts: bjts);
             if (analysis == BridgeAnalysis.Dc) return options;
             if (analysis == BridgeAnalysis.Ac)
             {

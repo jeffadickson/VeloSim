@@ -53,7 +53,7 @@ public sealed partial class LessonSession
 
             // Successful edits record the prior board. Failed edits preserve both history stacks.
             var before = command is PlacePart or SetPartValue or DeletePart or ConnectPins or
-                LoadRc or LoadBridgeDemo or LoadModelDemo or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart or
+                LoadRc or LoadBridgeDemo or LoadModelDemo or LoadBjtDemo or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart or
                 SetNetLabel or SetWireRoute or DeleteWire or JoinRoutes or DeleteJunction or LoadDocument ? board.Copy() : null;
             switch (command)
             {
@@ -170,6 +170,15 @@ public sealed partial class LessonSession
                         return Result(CommandCode.InvalidInput, "Choose two valid terminals on different nets.");
                     RecordEdit(before!);
                     return Result(CommandCode.Ok, "Wire added.");
+                case LoadBjtDemo:
+                    highlightAnchor = null;
+                    board = BridgeDemo.BuildBjt();
+                    BridgeDraft.LoadBjt();
+                    Wiring = new();
+                    ClearSelection();
+                    ClearGesture();
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "BJT example loaded.");
                 case LoadBridgeDemo:
                 case LoadModelDemo:
                     var models = command is LoadModelDemo;

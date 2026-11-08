@@ -50,3 +50,13 @@ The bridge shall map effective MOS1 gate overlap capacitances and body depletion
 COMMENT: >>>
 Mos1OverlapAndBodyCharge, BridgeNgspice mos1-charge fixture, BrowserSmoke and McpSmoke.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-BJT-001
+TITLE: Bind a three-terminal bipolar conduction model
+STATEMENT: >>>
+The bridge shall preserve collector, base and emitter identity and require explicit saturation current, forward and reverse gain, and effective thermal voltages. It shall lower the three-terminal conduction profile into native junctions and signed controlled branches, with private nodes counted against the circuit limit. Invalid parameters or missing models shall fail before solving.
+<<<
+COMMENT: >>>
+BjtRequiresExplicitModel, BridgeNgspice bjt fixture, BrowserSmoke and McpSmoke. Charge storage, substrate, series resistances, and full Gummel-Poon behavior remain outside this profile.
+<<<

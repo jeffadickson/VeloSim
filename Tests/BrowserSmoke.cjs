@@ -210,6 +210,13 @@ const server = http.createServer((req, res) => {
       }
       await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-models.png")});
       console.log("Browser ran the diode and MOS1 channel in all three analyses.");
+      await button("Open BJT example").click();
+      for (const kind of ["Dc", "Ac", "Transient"]) {
+        await analysis.getByRole("button", {name:"Analyze " + kind, exact:true}).click();
+        await analysis.getByTestId("bridge-count").filter({hasText:"P1 · " + kind}).waitFor();
+      }
+      await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-bjt.png")});
+      console.log("Browser ran the BJT in all three analyses.");
     }
     if (!rcHost) await page.screenshot({path:path.resolve(process.argv[4])});
     assert.deepEqual(errors, []);

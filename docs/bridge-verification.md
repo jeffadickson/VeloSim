@@ -80,3 +80,16 @@ This scope excludes intrinsic channel charge and a PMOS reference fixture.
 
 The Core suite passed 30 tests. Coverlet measured 3,503 of 3,966 lines and
 991 of 1,474 branches. Native, transport, MCP and browser code were unmeasured.
+
+## Three-terminal BJT
+
+The bridge reuses the Ebers–Moll primitive composition used by the native
+deck frontend. The NPN collector fixture measured errors of 3.19 nV in DC,
+7.34 nV for two complex AC points, and 1.03 microvolts in transient
+(2,001 native and 4,011 ngspice samples). The reference uses the nominal
+27 C thermal-voltage convention. Browser and MCP ran all three modes.
+PNP polarity is mapped but lacks a new independent fixture. This is
+conduction only, with no transistor storage or high-current effects.
+
+Core passed 31 tests. Coverage was 3,551 of 4,014 lines and 1,030 of 1,524
+branches. The targeted base-to-emitter terminal mutant was caught.

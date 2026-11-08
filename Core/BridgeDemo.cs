@@ -18,6 +18,24 @@ public static class BridgeDemo
         Diodes: [new("D1", 1e-14, 8.617333262145e-5 * 300.15, 2e-9, .7, .5, .5, 1e-8)],
         Mos1: [new("M1", .7, .001, 0, .6, .02, 1e-10, 2e-10, 5e-11, 3e-10, 4e-10)]);
 
+    // The BJT reference deck uses the simulator's documented 27 C nominal convention.
+    private const double ThermalVolts = 1.38064852e-23 / 1.6021766208e-19 * 300.15;
+
+    public static BridgeOptions BjtOptions(BridgeAnalysis analysis) => new(analysis, "P1",
+        FrequenciesHz: [100, 1000], StopSeconds: .0001, StepSeconds: .00000005,
+        Phasors: [new("V2", 1, 0)], Pulses: [new("V2", .55, .68, 0, .00002, .00002, .005, .01)],
+        Bjts: [new("Q1", 1e-15, 100, 1, ThermalVolts, ThermalVolts)]);
+
+    internal static Board BuildBjt() => Build(
+    [
+        (Kind.Ground, 310, 330, 0, ["0"]),
+        (Kind.Supply, 85, 95, 2, ["supply", "0"]),
+        (Kind.Supply, 85, 235, .65, ["base", "0"]),
+        (Kind.Resistor, 300, 90, 1000, ["supply", "collector"]),
+        (Kind.Npn, 315, 225, 0, ["collector", "base", "0"]),
+        (Kind.Probe, 470, 160, 0, ["collector"])
+    ]);
+
     internal static Board BuildModels() => Build(
     [
         (Kind.Ground, 320, 330, 0, ["0"]),

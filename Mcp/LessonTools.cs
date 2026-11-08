@@ -145,6 +145,11 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
     public CommandResult LoadMixed(Guid documentId, long revision, CancellationToken cancellationToken) =>
         session.Execute(new LoadBridgeDemo(new(documentId, revision)), cancellationToken);
 
+    [McpServerTool(Name = "schematic_load_bjt_demo", UseStructuredContent = true)]
+    [Description("Load the three-terminal BJT conduction example.")]
+    public CommandResult LoadBjt(Guid documentId, long revision, CancellationToken cancellationToken) =>
+        session.Execute(new LoadBjtDemo(new(documentId, revision)), cancellationToken);
+
     [McpServerTool(Name = "schematic_load_model_demo", UseStructuredContent = true)]
     [Description("Load a diode and MOS level 1 example with two voltage probes.")]
     public CommandResult LoadModels(Guid documentId, long revision, CancellationToken cancellationToken) =>

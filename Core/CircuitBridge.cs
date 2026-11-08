@@ -16,16 +16,21 @@ public sealed record Mos1Binding(string Id, double ThresholdVolts, double Beta, 
     double GateSourceFarads = 0, double GateDrainFarads = 0, double GateBulkFarads = 0,
     double DrainBodyFarads = 0, double SourceBodyFarads = 0, double BodyVolts = .8,
     double BodyGrading = .5, double ForwardCoefficient = .5);
+/// <summary>Effective conduction parameters for the bounded three-terminal BJT profile.</summary>
+public sealed record BjtBinding(string Id, double SaturationAmps, double ForwardBeta, double ReverseBeta,
+    double ForwardThermalVolts, double ReverseThermalVolts);
 public sealed record CurrentControl(string Id, string VoltageSourceId);
 public sealed record BridgeOptions(BridgeAnalysis Analysis, string ProbeId, double[]? FrequenciesHz = null,
     double StopSeconds = .005, double StepSeconds = .00001, SourcePhasor[]? Phasors = null,
-    SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null, DiodeBinding[]? Diodes = null, Mos1Binding[]? Mos1 = null);
+    SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null, DiodeBinding[]? Diodes = null, Mos1Binding[]? Mos1 = null,
+    BjtBinding[]? Bjts = null);
 
 public sealed record RunBridge(DocumentVersion Expected, BridgeOptions Options) : DocumentCommand(Expected);
 public sealed record LoadBridgeDemo(DocumentVersion Expected) : DocumentCommand(Expected);
+public sealed record LoadBjtDemo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record LoadModelDemo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record CircuitElement(Kind Kind, string Id, int P, int N, double Value, int Cp = 0, int Cn = 0,
-    string? ControlId = null, int Gate = 0, int Bulk = 0);
+    string? ControlId = null, int Gate = 0, int Bulk = 0, int Base = 0);
 /// <summary>Bounded circuit transport with explicit ground and an observable node.</summary>
 public sealed record CircuitJob(string[] Nodes, CircuitElement[] Elements, string ProbeNode, BridgeOptions Options);
 public sealed record BridgeSample(double Axis, double Real, double Imaginary = 0);
@@ -61,12 +66,14 @@ public sealed partial class Board
         {
             if (part.Kind is Kind.Ground or Kind.Probe) continue;
             if (part.Kind is not (Kind.Resistor or Kind.Capacitor or Kind.Inductor or Kind.Supply or
-                Kind.Current or Kind.PulseVoltage or Kind.Vcvs or Kind.Vccs or Kind.Ccvs or Kind.Cccs or Kind.Diode or Kind.Nmos or Kind.Pmos))
+                Kind.Current or Kind.PulseVoltage or Kind.Vcvs or Kind.Vccs or Kind.Ccvs or Kind.Cccs or Kind.Diode or Kind.Nmos or Kind.Pmos or Kind.Npn or Kind.Pnp))
                 return null;
             var mos = part.Kind is Kind.Nmos or Kind.Pmos;
+            var bipolar = part.Kind is Kind.Npn or Kind.Pnp;
+            if (bipolar && options.Bjts?.Any(binding => binding.Id == part.Id) != true) return null;
             if (mos && options.Mos1?.Any(binding => binding.Id == part.Id) != true) return null;
             var p = assignments[new(part.Id, 0)];
-            var n = assignments[new(part.Id, mos ? 2 : 1)];
+            var n = assignments[new(part.Id, mos || bipolar ? 2 : 1)];
             if (p == n || !ValidPartValue(part.Kind, part.Value)) return null;
             var control = options.Controls?.SingleOrDefault(binding => binding.Id == part.Id)?.VoltageSourceId;
             if (part.Kind is Kind.Ccvs or Kind.Cccs && control is null) return null;
@@ -74,8 +81,10 @@ public sealed partial class Board
             var cn = !mos && part.PinCount == 4 ? assignments[new(part.Id, 3)] : 0;
             var gate = mos ? assignments[new(part.Id, 1)] : 0;
             var bulk = mos ? assignments[new(part.Id, 3)] : 0;
-            elements.Add(new(part.Kind, part.Id, p, n, part.Value, cp, cn, control, gate, bulk));
+            var baseNode = bipolar ? assignments[new(part.Id, 1)] : 0;
+            elements.Add(new(part.Kind, part.Id, p, n, part.Value, cp, cn, control, gate, bulk, baseNode));
         }
+        if (nodes.Count + 2 * elements.Count(element => element.Kind is Kind.Npn or Kind.Pnp) > 128) return null;
         return new(nodes.ToArray(), elements.ToArray(), nodes[assignments[probe]], options);
     }
 }
@@ -96,12 +105,12 @@ public sealed partial class LessonSession
                 return Result(CommandCode.InvalidInput, "Supply analysis options.");
             options = options with { FrequenciesHz = options.FrequenciesHz?.ToArray(), Phasors = options.Phasors?.ToArray(),
                 Pulses = options.Pulses?.ToArray(), Controls = options.Controls?.ToArray(),
-                Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray() };
+                Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray(), Bjts = options.Bjts?.ToArray() };
             if (!ValidBridgeOptions(options))
                 return Result(CommandCode.InvalidInput, "Check the probe, analysis settings, and source bindings.");
             var compiled = board.CompileBridge(options);
             if (compiled is null) return Result(CommandCode.UnsupportedCircuit,
-                "Use supported parts and connected terminals. Current controls and MOS level 1 devices require explicit bindings.");
+                "Use supported parts and connected terminals. Current controls and transistor models require explicit bindings.");
             job = compiled;
         }
 
@@ -140,7 +149,13 @@ public sealed partial class LessonSession
         var controls = options.Controls ?? [];
         var diodes = options.Diodes ?? [];
         var mos = options.Mos1 ?? [];
-        return diodes.Length <= 64 && mos.Length <= 64 &&
+        var bjts = options.Bjts ?? [];
+        return bjts.Length <= 64 && bjts.All(b => b is not null && FindPart(b.Id)?.Kind is Kind.Npn or Kind.Pnp &&
+            Positive(b.SaturationAmps) && Positive(b.ForwardBeta) && Positive(b.ReverseBeta) &&
+            Positive(b.ForwardThermalVolts) && Positive(b.ReverseThermalVolts) &&
+            Positive(b.SaturationAmps / b.ForwardBeta) && Positive(b.SaturationAmps / b.ReverseBeta)) &&
+            bjts.Select(b => b.Id).Distinct().Count() == bjts.Length &&
+            diodes.Length <= 64 && mos.Length <= 64 &&
             diodes.All(d => d is not null && FindPart(d.Id)?.Kind == Kind.Diode &&
                 Positive(d.SaturationAmps) && Positive(d.ThermalVolts) && Nonnegative(d.JunctionFarads) &&
                 Positive(d.JunctionVolts) && d.Grading is >= 0 and < 1 &&

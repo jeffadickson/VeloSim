@@ -48,7 +48,8 @@
         (BridgeField.Pulses, "Pulse sources (ID low high delay rise fall width period)"),
         (BridgeField.Controls, "Current controls (ID voltage-source ID)"),
         (BridgeField.Diodes, "Diode (ID IS thermal volts [CJO VJ M FC TT])"),
-        (BridgeField.Mos1, "MOS1 (ID threshold beta gamma phi lambda [CGS CGD CGB CBD CBS PB MJ FC])")
+        (BridgeField.Mos1, "MOS1 (ID threshold beta gamma phi lambda [CGS CGD CGB CBD CBS PB MJ FC])"),
+        (BridgeField.Bjts, "BJT conduction (ID IS BF BR forward-Vt reverse-Vt)")
     ];
 
     private void Set(BridgeField field, ChangeEventArgs change) =>

@@ -13,7 +13,7 @@ var directory = Path.GetFullPath(args[2]);
 if (Directory.EnumerateFileSystemEntries(directory).Any())
     throw new ArgumentException("Use an empty artifact directory to prevent stale oracle data.");
 var fixture = args.Length == 3 ? "mixed" : args[3];
-if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge")) throw new ArgumentException("Unknown fixture.");
+if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt")) throw new ArgumentException("Unknown fixture.");
 var deck = """
     Mixed RLC and controlled-source reference
     V1 in 0 DC 1 AC 1 30 PULSE(0 1 0 10u 10u 10m 20m)
@@ -68,6 +68,20 @@ if (fixture != "mixed")
     if (fixture == "diode-charge")
         deck = deck.Replace("TT=0 CJO=0", "TT=10n CJO=2n VJ=.7 M=.5 FC=.5", StringComparison.Ordinal);
 }
+if (fixture == "bjt")
+{
+    deck = """
+        Three-terminal NPN conduction reference
+        V1 vdd 0 2
+        V2 base 0 DC .65 AC 1 PULSE(.55 .68 0 20u 20u 5m 10m)
+        R1 vdd collector 1k
+        Q1 collector base 0 QN
+        .model QN NPN(IS=1e-15 BF=100 BR=1 NF=1 NR=1)
+        .temp 27
+        .options tnom=27
+        """ + Environment.NewLine + deck[deck.IndexOf(".control", StringComparison.Ordinal)..]
+            .Replace("v(drain)", "v(collector)", StringComparison.Ordinal);
+}
 await File.WriteAllTextAsync(Path.Combine(directory, "reference.cir"), deck);
 var info = new ProcessStartInfo(Path.GetFullPath(args[0]))
 {
@@ -91,12 +105,21 @@ if (process.ExitCode != 0) throw new IOException($"ngspice exited with {process.
 
 var solver = new NativeRcSolver(Path.GetFullPath(args[1]));
 var session = new LessonSession();
-session.Execute(fixture == "mixed" ? new LoadBridgeDemo(session.Version) : new LoadModelDemo(session.Version));
+session.Execute(fixture switch
+{
+    "mixed" => new LoadBridgeDemo(session.Version),
+    "bjt" => new LoadBjtDemo(session.Version),
+    _ => new LoadModelDemo(session.Version)
+});
 foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
 {
-    var options = fixture == "mixed" ? BridgeDemo.Options(analysis)
-        : BridgeDemo.ModelOptions(analysis, fixture.StartsWith("diode", StringComparison.Ordinal) ? "P1" : "P2");
-    if (fixture is not ("mixed" or "mos1-charge"))
+    var options = fixture switch
+    {
+        "mixed" => BridgeDemo.Options(analysis),
+        "bjt" => BridgeDemo.BjtOptions(analysis),
+        _ => BridgeDemo.ModelOptions(analysis, fixture.StartsWith("diode", StringComparison.Ordinal) ? "P1" : "P2")
+    };
+    if (options.Mos1 is not null && fixture != "mos1-charge")
         options = options with { Mos1 = [options.Mos1![0] with
         {
             GateSourceFarads = 0, GateDrainFarads = 0, GateBulkFarads = 0, DrainBodyFarads = 0, SourceBodyFarads = 0
