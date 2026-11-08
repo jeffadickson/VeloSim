@@ -33,6 +33,19 @@ public static class BridgeDemo
         Bjts: [new("Q1", 1e-15, 100, 1, ThermalVolts, ThermalVolts,
             new(3e-10, .75, .33, .5, 1e-9), new(2e-10, .75, .33, .5, 2e-9))]);
 
+    public static BridgeOptions SoiOptions() => new(BridgeAnalysis.Dc, "P1", FdSoi: ["M1"]);
+
+    internal static Board BuildSoi() => Build(
+    [
+        (Kind.Ground, 310, 330, 0, ["0"]),
+        (Kind.Supply, 85, 85, .8, ["supply", "0"]),
+        (Kind.Supply, 85, 185, .8, ["gate", "0"]),
+        (Kind.Supply, 85, 285, -1, ["back-gate", "0"]),
+        (Kind.Resistor, 300, 90, 1000, ["supply", "drain"]),
+        (Kind.NmosSoi, 315, 225, 0, ["drain", "gate", "0", "back-gate"]),
+        (Kind.Probe, 520, 150, 0, ["drain"])
+    ]);
+
     public static BridgeOptions Bsim3Options(BridgeAnalysis analysis) => new(analysis, "P1",
         FrequenciesHz: [1e6, 1e9], StopSeconds: 1e-9, StepSeconds: 2e-12,
         Phasors: [new("V2", 1, 0)], Pulses: [new("V2", .8, .9, 0, 1e-9, 1e-9, 5e-9, 1e-8)],

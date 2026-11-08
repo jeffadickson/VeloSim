@@ -37,10 +37,11 @@ public sealed record BridgeOptions(BridgeAnalysis Analysis, string ProbeId, doub
     double StopSeconds = .005, double StepSeconds = .00001, SourcePhasor[]? Phasors = null,
     SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null, DiodeBinding[]? Diodes = null, Mos1Binding[]? Mos1 = null,
     BjtBinding[]? Bjts = null, Bsim3Binding[]? Bsim3 = null,
-    SourcePwl[]? Pwl = null, SourceSine[]? Sines = null, SourceExponential[]? Exponentials = null);
+    SourcePwl[]? Pwl = null, SourceSine[]? Sines = null, SourceExponential[]? Exponentials = null, string[]? FdSoi = null);
 
 public sealed record RunBridge(DocumentVersion Expected, BridgeOptions Options) : DocumentCommand(Expected);
 public sealed record LoadBridgeDemo(DocumentVersion Expected) : DocumentCommand(Expected);
+public sealed record LoadSoiDemo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record LoadBsim3Demo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record LoadBjtDemo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record LoadModelDemo(DocumentVersion Expected) : DocumentCommand(Expected);
@@ -56,6 +57,11 @@ public sealed partial class Board
 {
     internal CircuitJob? CompileBridge(BridgeOptions options)
     {
+        var soi = parts.Where(part => part.Kind == Kind.NmosSoi).ToArray();
+        if (soi.Any(part => options.Analysis != BridgeAnalysis.Dc || options.FdSoi?.Contains(part.Id) != true ||
+            wires.Any(wire => wire.A == new Pin(part.Id, 4) || wire.B == new Pin(part.Id, 4)) ||
+            labels.Any(label => label.Terminal == new Pin(part.Id, 4)))) return null;
+
         var grounds = parts.Where(part => part.Kind == Kind.Ground).Select(part => new Pin(part.Id, 0)).ToArray();
         var probe = new Pin(options.ProbeId, 0);
         if (grounds.Length == 0 || !parts.Any(part => part.Id == probe.Part && part.Kind == Kind.Probe)) return null;
@@ -68,6 +74,7 @@ public sealed partial class Board
         foreach (var part in parts)
         for (var index = 0; index < part.PinCount; index++)
         {
+            if (part.Kind == Kind.NmosSoi && index == 4) continue; // Pinned four-terminal profile has no body-contact port.
             var pin = new Pin(part.Id, index);
             if (assignments.ContainsKey(pin)) continue;
             var net = TraceNet(pin)!;
@@ -81,12 +88,13 @@ public sealed partial class Board
         {
             if (part.Kind is Kind.Ground or Kind.Probe) continue;
             if (part.Kind is not (Kind.Resistor or Kind.Capacitor or Kind.Inductor or Kind.Supply or
-                Kind.Current or Kind.PulseVoltage or Kind.Vcvs or Kind.Vccs or Kind.Ccvs or Kind.Cccs or Kind.Diode or Kind.Nmos or Kind.Pmos or Kind.Npn or Kind.Pnp))
+                Kind.Current or Kind.PulseVoltage or Kind.Vcvs or Kind.Vccs or Kind.Ccvs or Kind.Cccs or Kind.Diode or Kind.Nmos or Kind.Pmos or Kind.Npn or Kind.Pnp or Kind.NmosSoi))
                 return null;
-            var mos = part.Kind is Kind.Nmos or Kind.Pmos;
+            var bulkMos = part.Kind is Kind.Nmos or Kind.Pmos;
+            var mos = bulkMos || part.Kind == Kind.NmosSoi;
             var bipolar = part.Kind is Kind.Npn or Kind.Pnp;
             if (bipolar && options.Bjts?.Any(binding => binding.Id == part.Id) != true) return null;
-            if (mos && options.Mos1?.Any(binding => binding.Id == part.Id) != true &&
+            if (bulkMos && options.Mos1?.Any(binding => binding.Id == part.Id) != true &&
                 options.Bsim3?.Any(binding => binding.Id == part.Id) != true) return null;
             var p = assignments[new(part.Id, 0)];
             var n = assignments[new(part.Id, mos || bipolar ? 2 : 1)];
@@ -123,12 +131,12 @@ public sealed partial class LessonSession
                 Pulses = options.Pulses?.ToArray(), Controls = options.Controls?.ToArray(),
                 Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray(), Bjts = options.Bjts?.ToArray(), Bsim3 = options.Bsim3?.ToArray(),
                 Pwl = options.Pwl?.Select(wave => wave is null ? null! : wave with { Points = wave.Points?.ToArray()! }).ToArray(),
-                Sines = options.Sines?.ToArray(), Exponentials = options.Exponentials?.ToArray() };
+                Sines = options.Sines?.ToArray(), Exponentials = options.Exponentials?.ToArray(), FdSoi = options.FdSoi?.ToArray() };
             if (!ValidBridgeOptions(options))
                 return Result(CommandCode.InvalidInput, "Check the probe, analysis settings, and source bindings.");
             var compiled = board.CompileBridge(options);
             if (compiled is null) return Result(CommandCode.UnsupportedCircuit,
-                "Use supported parts and connected terminals. Current controls and transistor models require explicit bindings.");
+                "Use supported parts and connected terminals. Check the model binding, terminal connections and supported analyses.");
             job = compiled;
         }
 
@@ -169,7 +177,10 @@ public sealed partial class LessonSession
         var mos = options.Mos1 ?? [];
         var bjts = options.Bjts ?? [];
         var bulk = options.Bsim3 ?? [];
-        return bulk.Length <= 64 && bulk.All(b => b is not null && FindPart(b.Id)?.Kind is Kind.Nmos or Kind.Pmos &&
+        var fd = options.FdSoi ?? [];
+        return fd.Length <= 64 && fd.All(id => id is not null && FindPart(id)?.Kind == Kind.NmosSoi) &&
+            fd.Distinct().Count() == fd.Length &&
+            bulk.Length <= 64 && bulk.All(b => b is not null && FindPart(b.Id)?.Kind is Kind.Nmos or Kind.Pmos &&
             Positive(b.Tox) && Positive(b.Nch) && Positive(b.Nsub) && double.IsFinite(b.ThresholdVolts) &&
             Positive(b.Width) && Positive(b.Length) && Nonnegative(b.DrainPerimeter) && Nonnegative(b.SourcePerimeter) &&
             Nonnegative(b.DrainArea) && Nonnegative(b.SourceArea)) &&

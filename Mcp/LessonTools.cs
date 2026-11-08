@@ -145,6 +145,11 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
     public CommandResult LoadMixed(Guid documentId, long revision, CancellationToken cancellationToken) =>
         session.Execute(new LoadBridgeDemo(new(documentId, revision)), cancellationToken);
 
+    [McpServerTool(Name = "schematic_load_soi_demo", UseStructuredContent = true)]
+    [Description("Load the pinned four-terminal FD-SOI operating-point example.")]
+    public CommandResult LoadSoi(Guid documentId, long revision, CancellationToken cancellationToken) =>
+        session.Execute(new LoadSoiDemo(new(documentId, revision)), cancellationToken);
+
     [McpServerTool(Name = "schematic_load_bsim3_demo", UseStructuredContent = true)]
     [Description("Load the bulk BSIM3 3.3.0 example. Execution requires a configured native provider.")]
     public CommandResult LoadBsim3(Guid documentId, long revision, CancellationToken cancellationToken) =>

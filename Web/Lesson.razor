@@ -23,6 +23,7 @@
                 <button @onclick="() => Dispatch(new LoadModelDemo(session.Version))">Open semiconductor example</button>
                 <button @onclick="() => Dispatch(new LoadBjtDemo(session.Version))">Open BJT example</button>
                 <button @onclick="() => Dispatch(new LoadBsim3Demo(session.Version))">Open BSIM3 example</button>
+                <button @onclick="() => Dispatch(new LoadSoiDemo(session.Version))">Open FD-SOI example</button>
                 <div class="catalog">
                     <button type="button" aria-expanded="@(session.CatalogOpen ? "true" : "false")" @onclick="() => Dispatch(new ToggleCatalog())">Parts library</button>
                     @if (session.CatalogOpen)
@@ -449,6 +450,7 @@
         Kind.Current or Kind.Inductor or Kind.Vcvs or Kind.Vccs or Kind.Cccs or Kind.Ccvs => "General solver · linear device",
         Kind.Diode => "General solver · conduction and junction charge",
         Kind.Nmos or Kind.Pmos => "General solver · requires MOS1 or BSIM3 binding",
+        Kind.NmosSoi => "Pinned FD-SOI DC · requires provider and floating body contact",
         Kind.Npn or Kind.Pnp => "General solver · requires a BJT conduction binding",
         Kind.CoupledInductor => "Drawing only · references to windings are pending",
         _ => "Placement and wiring only"

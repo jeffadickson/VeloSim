@@ -16,7 +16,7 @@ options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
 var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
-    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "run_circuit" };
+    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "run_circuit" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
@@ -173,6 +173,18 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
             var runBulk = solved.Bridge ?? throw new InvalidOperationException($"BSIM3 {analysis}: {solved.Message}");
             Console.WriteLine($"MCP BSIM3 {analysis}: {runBulk.Samples.Count} samples.");
         }
+    }
+    if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_BSIM_SOI_FD_HOST")))
+    {
+        var currentSoiVersion = (await Call(other, "read_circuit")).Version;
+        var soi = await Call(other, "load_soi_demo", Edit(currentSoiVersion));
+        var arguments = Edit(soi.Version);
+        arguments["options"] = BridgeDemo.SoiOptions();
+        var result = await Call(other, "run_circuit", arguments);
+        Require(result.Bridge is { Samples.Count: 1 }, $"FD-SOI refused: {result.Message}");
+        arguments["options"] = BridgeDemo.SoiOptions() with { Analysis = BridgeAnalysis.Ac, FrequenciesHz = [1000] };
+        Require((await Call(other, "run_circuit", arguments)).Code == CommandCode.UnsupportedCircuit, "FD-SOI accepted AC.");
+        Console.WriteLine("MCP FD-SOI DC passed and unsupported AC was refused.");
     }
 }
 var current = (await Call(client, "read_circuit")).Version;

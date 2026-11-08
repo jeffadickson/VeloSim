@@ -119,6 +119,14 @@ public sealed partial class NativeRcSolver
 
     private static Dictionary<string, object> Element(CircuitElement element, BridgeOptions options)
     {
+        if (element.Kind == Kind.NmosSoi)
+        {
+            if (options.Analysis != BridgeAnalysis.Dc || options.FdSoi?.Contains(element.Id) != true)
+                throw new RcSolverException("The pinned FD-SOI profile supports DC operating point only.");
+            return new() { ["kind"] = "bsim_soi_fd_reference", ["id"] = element.Id, ["p"] = element.P,
+                ["n"] = element.N, ["gate"] = element.Gate, ["back_gate"] = element.Bulk };
+        }
+
         if (element.Kind is Kind.Nmos or Kind.Pmos)
         {
             var bulk = FindModel(options.Bsim3, element.Id, model => model.Id);

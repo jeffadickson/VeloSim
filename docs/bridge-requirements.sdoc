@@ -90,3 +90,13 @@ The bridge shall support inline ordered PWL, damped sine and exponential overrid
 COMMENT: >>>
 BridgeTests, BrowserSmoke, McpSmoke and BridgeNgspice. File assets and stochastic sources are outside this requirement.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-SOI-FD-001
+TITLE: Execute the pinned four-terminal FD-SOI profile
+STATEMENT: >>>
+The bridge shall bind an explicitly selected NMOS SOI instance to the pinned four-terminal native model and preserve drain, gate, source and back gate identity. The schematic body contact shall be left unconnected. The binding shall admit DC operating point and refuse AC or transient before invoking the native solver.
+<<<
+COMMENT: >>>
+SoiBridgeTests, BrowserSmoke, McpSmoke and BridgeNgspice fd-soi. Arbitrary SOI cards, PMOS, body-contact models and charge-dependent analyses remain separate.
+<<<

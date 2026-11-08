@@ -13,7 +13,7 @@ var directory = Path.GetFullPath(args[2]);
 if (Directory.EnumerateFileSystemEntries(directory).Any())
     throw new ArgumentException("Use an empty artifact directory to prevent stale oracle data.");
 var fixture = args.Length == 3 ? "mixed" : args[3];
-if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3" or "waveforms" or "exponential" or "sine")) throw new ArgumentException("Unknown fixture.");
+if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3" or "waveforms" or "exponential" or "sine" or "fd-soi")) throw new ArgumentException("Unknown fixture.");
 var deck = """
     Mixed RLC and controlled-source reference
     V1 in 0 DC 1 AC 1 30 PULSE(0 1 0 10u 10u 10m 20m)
@@ -123,6 +123,35 @@ if (fixture == "bsim3")
             .Replace("ac lin 1 1000 1000", "ac lin 1 1g 1g", StringComparison.Ordinal)
             .Replace("tran .025u 100u 0 .025u", "tran 1p 1n 0 1p", StringComparison.Ordinal);
 }
+if (fixture == "fd-soi")
+{
+    var card = Environment.GetEnvironmentVariable("SCHEMATIC_SOI_NGSPICE_CARD");
+    if (card is null || !Path.IsPathFullyQualified(card) || !File.Exists(card))
+        throw new ArgumentException("Set SCHEMATIC_SOI_NGSPICE_CARD to the pinned FD model card.");
+    var bytes = await File.ReadAllBytesAsync(card);
+    if (Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)) !=
+        "8CB77650FD65C5712F9C2CFAFBC974F5B49DA1C1411AD9CC910E17965CDA6491")
+        throw new InvalidDataException("The FD reference card does not match the pinned bytes.");
+    await File.WriteAllBytesAsync(Path.Combine(directory, "nmosfd.mod"), bytes);
+    deck = """
+        Loaded pinned FD SOI
+        V1 vdd 0 .8
+        V2 gate 0 .8
+        V3 back 0 -1
+        R1 vdd drain 1k
+        M1 drain gate 0 back n1 w=10u l=.25u
+        .option gmin=1e-25 itl1=500 noacct
+        .include nmosfd.mod
+        .control
+        set wr_singlescale
+        set numdgt=16
+        op
+        wrdata dc.dat v(drain)
+        quit
+        .endc
+        .end
+        """;
+}
 await File.WriteAllTextAsync(Path.Combine(directory, "reference.cir"), deck);
 var info = new ProcessStartInfo(Path.GetFullPath(args[0]))
 {
@@ -151,17 +180,23 @@ session.Execute(fixture switch
     "waveforms" or "exponential" or "sine" => new ResetLesson(session.Version),
     "mixed" => new LoadBridgeDemo(session.Version),
     "bjt" => new LoadBjtDemo(session.Version),
+    "fd-soi" => new LoadSoiDemo(session.Version),
     "bsim3" => new LoadBsim3Demo(session.Version),
     _ => new LoadModelDemo(session.Version)
 });
-foreach (var analysis in fixture is "waveforms" or "exponential" or "sine"
-    ? [BridgeAnalysis.Transient] : Enum.GetValues<BridgeAnalysis>())
+foreach (var analysis in fixture switch
+{
+    "waveforms" or "exponential" or "sine" => [BridgeAnalysis.Transient],
+    "fd-soi" => [BridgeAnalysis.Dc],
+    _ => Enum.GetValues<BridgeAnalysis>()
+})
 {
     var options = fixture switch
     {
         "mixed" => BridgeDemo.Options(analysis),
         "waveforms" or "exponential" or "sine" => BridgeDemo.WaveformOptions(fixture),
         "bjt" => BridgeDemo.BjtOptions(analysis),
+        "fd-soi" => BridgeDemo.SoiOptions(),
         "bsim3" => BridgeDemo.Bsim3Options(analysis),
         _ => BridgeDemo.ModelOptions(analysis, fixture.StartsWith("diode", StringComparison.Ordinal) ? "P1" : "P2")
     };

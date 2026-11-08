@@ -148,3 +148,17 @@ trial failed the native L1 constraint audit and remains unqualified.
 Core passed 34 tests with 3,736/4,205 lines and 1,140/1,674 branches
 covered including generated code. The duplicate-PWL-time mutant was
 caught. Browser, MCP and native engine coverage were unmeasured.
+
+## Pinned FD-SOI DC
+
+The Windows x64 native provider ran a 1 kΩ loaded FD NMOS with an
+independent −1 V back gate. Browser and MCP completed DC and rejected
+AC. Core also checked the floating body-contact requirement. The drain
+probe differed from the pinned ngspice deck by 9.39e-15 V.
+
+Set SPICE_BSIM_SOI_FD_HOST to the trusted native FD host and use a
+compatible executable. For the oracle, set SCHEMATIC_SOI_NGSPICE_CARD
+to the exact pinned card and run the fd-soi fixture. The tested
+engine and FD library hashes were 2FABE6FE59455B3A60251138853660F7190A5FAEB1B71FB9F0E0CCF378C284FD
+and 573D6E3C4C1573EC54DDCB973960220185A49C92C8A0B85CD3A5089508815B1C.
+Core passed 35 tests with 3,773/4,243 lines and 1,178/1,712 branches.

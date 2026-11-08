@@ -247,6 +247,15 @@ const server = http.createServer((req, res) => {
         await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-bsim3.png")});
         console.log("Browser ran bulk BSIM3 in all three analyses.");
       }
+      if (process.env.SPICE_BSIM_SOI_FD_HOST) {
+        await button("Open FD-SOI example").click();
+        await analysis.getByRole("button", {name:"Analyze Dc", exact:true}).click();
+        await analysis.getByTestId("bridge-count").filter({hasText:"P1 · Dc"}).waitFor();
+        await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-soi.png")});
+        await analysis.getByRole("button", {name:"Analyze Ac", exact:true}).click();
+        await analysis.getByTestId("bridge-status").filter({hasText:"supported analyses"}).waitFor();
+        console.log("Browser ran FD-SOI DC and refused unsupported AC.");
+      }
       await button("Reset example").click();
       if (await button("Parts library").getAttribute("aria-expanded") !== "true") await button("Parts library").click();
       await lesson.getByLabel("Find a generic symbol").fill("file-backed pwl current");
