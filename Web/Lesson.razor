@@ -1,0 +1,239 @@
+<main>
+    <header><p class="eyebrow">CIRCUIT NOTEBOOK / 01</p><h1>The voltage divider</h1>
+        <p>Build a circuit, change a resistor, and see where the voltage goes.</p></header>
+    <section class="layout">
+        <div class="sheet">
+            <nav aria-label="Schematic tools">
+                @foreach (var kind in QuickParts)
+                {
+                    <button aria-pressed="@(placing == kind ? "true" : "false")" @onclick="() => Choose(kind)">+ @kind</button>
+                }
+                <button @onclick="Reset">Reset example</button>
+                <details class="catalog">
+                    <summary>Parts library</summary>
+                    <label for="part-search">Find a generic symbol</label>
+                    <input id="part-search" @bind="search" @bind:event="oninput" placeholder="e.g. MOSFET or capacitor" />
+                    @foreach (var group in VisibleParts())
+                    {
+                        <p class="eyebrow">@group.Key</p>
+                        @foreach (var kind in group)
+                        {
+                            <button @onclick="() => Choose(kind)">@PartCatalog.Get(kind).Name</button>
+                        }
+                    }
+                </details>
+            </nav>
+            <svg viewBox="0 0 640 370" role="group" aria-label="Interactive circuit schematic">
+                <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                    <circle cx="0" cy="0" r="1" fill="#cad3cb" />
+                </pattern></defs>
+                <rect width="640" height="370" fill="url(#grid)" />
+                @foreach (var wire in board.Wires)
+                {
+                    var a = PinPosition(wire.A);
+                    var b = PinPosition(wire.B);
+                    // Route two top pins above their bodies, and approach the ground from above.
+                    var target = board.Parts.First(p => p.Id == wire.B.Part);
+                    var bend = target.Kind switch
+                    {
+                        Kind.Probe => b.Y,
+                        Kind.Ground => b.Y - 18,
+                        _ when wire.A.Index == 0 && wire.B.Index == 0 => Math.Min(a.Y, b.Y) - 20,
+                        _ => (a.Y + b.Y) / 2
+                    };
+                    <path class="wire" d="M @a.X @a.Y V @bend H @b.X V @b.Y" />
+                }
+                @foreach (var part in board.Parts)
+                {
+                    <g transform="translate(@part.X @part.Y)" class="@(selected == part.Id ? "part selected" : "part")">
+                        <rect class="hit" x="-25" y="-24" width="50" height="48" rx="6" tabindex="0" role="button"
+                              aria-label="Select @part.Id" @onclick="() => Select(part.Id)" @onkeydown="e => Key(e, () => Select(part.Id))" />
+                        <path class="art" d="@PartCatalog.Get(part.Kind).Artwork" />
+                        <foreignObject x="40" y="-20" width="90" height="40">
+                            <span class="label @(part.Kind == Kind.Probe ? "probe-label" : "")">@part.Id @ValueLabel(part)</span>
+                        </foreignObject>
+                        @for (var i = 0; i < part.PinCount; i++)
+                        {
+                            var pin = new Pin(part.Id, i);
+                            var offset = PartCatalog.Get(part.Kind).Terminals[i];
+                            <circle class="@(pending == pin ? "pin pending" : "pin")" cx="@offset.X" cy="@offset.Y" r="7"
+                                    tabindex="0" role="button" aria-label="@PinLabel(part, i)"
+                                    @onclick="() => TapPin(pin)" @onkeydown="e => Key(e, () => TapPin(pin))" />
+                        }
+                    </g>
+                }
+                @if (placing is Kind kindToPlace)
+                {
+                    @foreach (var slot in Slots)
+                    {
+                        if (board.Parts.Any(p => Math.Abs(p.X - slot.X) < 64 && Math.Abs(p.Y - slot.Y) < 55)) continue;
+                        <circle class="slot" cx="@slot.X" cy="@slot.Y" r="10" tabindex="0" role="button"
+                                aria-label="Place @kindToPlace at @slot.X, @slot.Y" @onclick="() => Place(kindToPlace, slot)"
+                                @onkeydown="e => Key(e, () => Place(kindToPlace, slot))" />
+                    }
+                }
+            </svg>
+            <p class="status" role="status">@status</p>
+        </div>
+        <aside>
+            <p class="eyebrow">VOLTAGE PROBE · @(board.Parts.FirstOrDefault(p => p.Kind == Kind.Probe)?.Id ?? "none")</p>
+            <output aria-live="polite" data-testid="voltage">@(board.Output() is double voltage ? $"{voltage:0.###} V" : "—")</output>
+            <p>With no load, the lower resistor sets the share of supply voltage at the midpoint.</p>
+            <p class="formula">Vout = Vin × Rlower / (Rupper + Rlower)</p>
+            @if (board.Parts.FirstOrDefault(p => p.Id == selected) is Part active)
+            {
+                <div class="inspector"><strong>@active.Id · @PartCatalog.Get(active.Kind).Name</strong>
+                    <small>@(PartCatalog.Get(active.Kind).DividerSupported ? "Divider lesson supported" : "Placement and wiring only")</small>
+                    @if (active.Kind is Kind.Supply or Kind.Resistor)
+                    {
+                        <label for="value">Value (@(active.Kind == Kind.Supply ? "V" : "Ω"))</label>
+                        <input id="value" type="number" step="any" @bind="valueInput" @bind:event="oninput" />
+                        <button @onclick="Apply">Apply value</button>
+                    }
+                    <button class="remove" @onclick="Remove">Delete @active.Id</button>
+                </div>
+            }
+        </aside>
+    </section>
+    <section class="results" aria-label="Simulation results">
+        <div><p class="eyebrow">SIMULATION RESULTS</p><h2>DC input sweep</h2>
+            <p>Analytical divider model. The trace shows the voltage at the probe as the supply rises.</p>
+            <button @onclick="() => showingSweep = true">Run DC sweep</button>
+        </div>
+        @if (showingSweep)
+        {
+            var sweep = board.Sweep();
+            if (sweep.Count == 0)
+            {
+                <p role="status">Connect a valid divider to plot the probe voltage.</p>
+            }
+            else
+            {
+                var limit = sweep[^1].Input;
+                <figure>
+                    <svg viewBox="0 0 520 220" role="img" aria-label="DC sweep plot of probe voltage against input voltage">
+                        <path d="M60 25V174H493" class="axis" />
+                        <path d="M60 99H493M276 25V174" class="guide" />
+                        <polyline class="trace" points="@Plot(sweep, limit)" />
+                        <circle class="trace-end" cx="493" cy="@Coordinate(174 - 149 * (sweep[^1].Probe / limit))" r="4" />
+                        <foreignObject x="6" y="15" width="53" height="30"><span>@($"{limit:G4} V")</span></foreignObject>
+                        <foreignObject x="12" y="153" width="46" height="20"><span>0 V</span></foreignObject>
+                        <foreignObject x="427" y="182" width="83" height="24"><span>@($"{limit:G4} V")</span></foreignObject>
+                        <foreignObject x="205" y="185" width="170" height="25"><span>Input voltage (V)</span></foreignObject>
+                    </svg>
+                    <figcaption><span class="legend"></span> Probe voltage (V) · 21 points · Final @($"{sweep[^1].Probe:G4} V")</figcaption>
+                </figure>
+            }
+        }
+    </section>
+</main>
+
+@code {
+    private Board board = Board.Divider();
+    private string? selected;
+    private string valueInput = "";
+    private Pin? pending;
+    private Kind? placing;
+    private bool showingSweep;
+
+    private static string Plot(IReadOnlyList<(double Input, double Probe)> sweep, double limit) =>
+        string.Join(" ", sweep.Select(point =>
+            $"{Coordinate(60 + 433 * (point.Input / limit))},{Coordinate(174 - 149 * (point.Probe / limit))}"));
+
+    private static string Coordinate(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
+    private const string Instructions = "Select a part to edit it. Select two terminals to draw a wire.";
+    private string status = Instructions;
+
+    // Explicit placement targets work equally with pointer and keyboard, regardless of SVG scaling.
+    private static readonly (int X, int Y)[] Slots =
+        (from y in new[] { 70, 160, 250, 310 } from x in new[] { 80, 200, 320, 440, 560 } select (x, y)).ToArray();
+
+    private void Select(string id)
+    {
+        selected = id;
+        valueInput = board.Parts.First(p => p.Id == id).Value.ToString(CultureInfo.InvariantCulture);
+        placing = null;
+        pending = null;
+        status = $"Selected {id}.";
+    }
+
+    private void Choose(Kind kind)
+    {
+        placing = kind;
+        pending = null;
+        status = $"Choose a placement point for {kind}.";
+    }
+
+    private void Place(Kind kind, (int X, int Y) slot) => Select(board.Place(kind, slot.X, slot.Y).Id);
+
+    private void Apply() =>
+        status = selected is not null && double.TryParse(valueInput, CultureInfo.InvariantCulture, out var value) &&
+            board.SetValue(selected, value) ? $"Updated {selected}." : "Enter a finite value greater than zero.";
+
+    private void Remove()
+    {
+        if (selected is null || !board.Remove(selected)) return;
+        status = $"Deleted {selected} and its incident wires.";
+        selected = null;
+        pending = null;
+    }
+
+    private void Reset()
+    {
+        board = Board.Divider();
+        selected = null;
+        placing = null;
+        pending = null;
+        status = Instructions;
+    }
+
+    private void TapPin(Pin pin)
+    {
+        placing = null;
+        if (pending is Pin first)
+        {
+            status = board.Connect(first, pin) ? "Wire added." : "Those terminals are already on the same net.";
+            pending = null;
+        }
+        else
+        {
+            pending = pin;
+            status = "Choose a second terminal.";
+        }
+    }
+
+    private static void Key(KeyboardEventArgs e, Action action)
+    {
+        if (e.Key is "Enter" or " ") action();
+    }
+
+    private (int X, int Y) PinPosition(Pin pin)
+    {
+        var part = board.Parts.First(p => p.Id == pin.Part);
+        var offset = PartCatalog.Get(part.Kind).Terminals[pin.Index];
+        return (part.X + offset.X, part.Y + offset.Y);
+    }
+
+    private static readonly Kind[] QuickParts = [Kind.Supply, Kind.Resistor, Kind.Ground, Kind.Probe];
+    private string search = "";
+
+    private IEnumerable<IGrouping<string, Kind>> VisibleParts() =>
+        Enum.GetValues<Kind>().Where(kind =>
+        {
+            var spec = PartCatalog.Get(kind);
+            return spec.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                   spec.Category.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                   (kind is Kind.Nmos or Kind.Pmos && "mosfet".Contains(search, StringComparison.OrdinalIgnoreCase));
+        }).GroupBy(kind => PartCatalog.Get(kind).Category);
+
+    private static string PinLabel(Part part, int pin) =>
+        $"{part.Id} terminal {pin + 1} · {PartCatalog.Get(part.Kind).Terminals[pin].Name}";
+
+    private static string ValueLabel(Part part) => part.Kind switch
+    {
+        Kind.Supply => $"{part.Value:0.##} V",
+        Kind.Resistor => part.Value >= 1000 ? $"{part.Value / 1000:0.##} kΩ" : $"{part.Value:0.##} Ω",
+        Kind.Probe => "V probe",
+        _ => ""
+    };
+}
