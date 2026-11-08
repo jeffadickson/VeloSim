@@ -1,0 +1,42 @@
+[DOCUMENT]
+TITLE: SchematicLab commands and agent access
+
+[REQUIREMENT]
+UID: SCH-CMD-001
+TITLE: Shared typed application commands
+STATEMENT: >>>
+Every user action shall resolve to a stable typed command. Pointer, keyboard, menu, and programmatic adapters shall invoke the same handler for the same action. Each registered command shall declare its parameters, availability, outcome, and undo behavior. Platform events that merely deliver an action shall map to its command without duplicating execution.
+<<<
+COMMENT: >>>
+Open. Verify pointer and keyboard equivalence, registry completeness, and that only command handlers can mutate application state. View commands and draft input are included in the registry.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CMD-002
+TITLE: Explicit outcomes and atomic edits
+STATEMENT: >>>
+Commands shall return typed success, refusal, cancellation, or required-input outcomes. Invalid requests shall leave committed state intact. Programmatic execution shall neither wait for a dialog nor infer missing values or a selection. Mutations shall identify their document and expected revision. A stale revision shall be refused before mutation.
+<<<
+COMMENT: >>>
+Open. Verify invalid values, unknown parts and pins, stale revisions, cancellation, and two concurrent edits to the same revision.
+<<<
+
+[REQUIREMENT]
+UID: SCH-MCP-001
+TITLE: MCP adapter for the application command registry
+STATEMENT: >>>
+The MCP host shall expose an explicit allowlist of registered commands through discoverable tools with typed input and structured results. It shall dispatch through the shared application handlers and distinguish inspection, edit, analysis, and result queries. View and gesture commands shall remain available to the UI without requiring equivalent MCP tools.
+<<<
+COMMENT: >>>
+Open. Verify initialize, tools/list and tools/call through an MCP client. Discover the catalog and circuit, change R2 from 1000 to 3000 ohms, run the divider sweep, and retrieve 3.75 V at a 5 V input. Reject malformed arguments and unknown commands.
+<<<
+
+[REQUIREMENT]
+UID: SCH-MCP-002
+TITLE: Explicit agent document ownership
+STATEMENT: >>>
+Each MCP operation shall target a host-owned workspace and document. The agent shall be able to inspect document identity and revision before editing. The host shall serialize conflicting edits, bound work, propagate cancellation, and prevent access outside the workspace. A browser session shall share document state with the agent only through an explicit binding.
+<<<
+COMMENT: >>>
+Open. Verify two isolated sessions, cancellation, bounded input, stale revision refusal, and document identity across UI and MCP when a shared session is configured.
+<<<
