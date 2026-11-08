@@ -16,7 +16,8 @@ public sealed record LessonView(string? Selected, bool CatalogOpen, string Filte
 public sealed record AnalysisHistory(IReadOnlyList<SweepRun> Sweeps, IReadOnlyList<TransientRun> Transients,
     IReadOnlyList<Guid> Current);
 
-internal sealed record SavedSession(LessonView View, AnalysisHistory History);
+internal sealed record SavedSession(LessonView View, AnalysisHistory History,
+    Dictionary<BridgeField, string>? AnalysisFields = null);
 
 public sealed partial class LessonSession
 {
@@ -44,17 +45,20 @@ public sealed partial class LessonSession
         lock (gate) return version == Version || (revision == restoredRevision && restoredCurrent.Contains(id));
     }
 
-    public AnalysisHistory History { get { lock (gate) return CaptureSession().History; } }
+    public AnalysisHistory History { get { lock (gate) return CaptureHistory(); } }
 
-    private SavedSession CaptureSession() => new(View, new(
+    private SavedSession CaptureSession() => new(View, CaptureHistory(), BridgeDraft.Snapshot());
+
+    private AnalysisHistory CaptureHistory() => new(
         Array.AsReadOnly(runs.ToArray()), Array.AsReadOnly(transients.ToArray()),
         Array.AsReadOnly(runs.Where(run => IsCurrent(run.Id, run.Version)).Select(run => run.Id)
-            .Concat(transients.Where(run => IsCurrent(run.Id, run.Version)).Select(run => run.Id)).ToArray())));
+            .Concat(transients.Where(run => IsCurrent(run.Id, run.Version)).Select(run => run.Id)).ToArray()));
 
     private void ApplySession(SavedSession saved)
     {
         sessionGeneration++;
         Wiring = new();
+        BridgeDraft.Restore(saved.AnalysisFields);
         ClearGesture();
         ClearSelection();
         if (saved.View.Selected is { } id) Select(FindPart(id)!);
@@ -76,6 +80,7 @@ public sealed partial class LessonSession
     {
         if (saved is not { View.Filter.Length: <= 128, History.Sweeps.Count: <= RunLimit,
             History.Transients.Count: <= RunLimit, History.Current.Count: <= 2 * RunLimit }) return false;
+        if (saved.AnalysisFields is { } fields && !BridgeDraft.ValidFields(fields)) return false;
         if (saved.View.Selected is { } selected && !candidate.Parts.Any(part => part.Id == selected)) return false;
         if (saved.View.Highlight is Pin pin && !candidate.Connected(pin, pin)) return false;
 

@@ -100,3 +100,23 @@ The bridge shall bind an explicitly selected NMOS SOI instance to the pinned fou
 COMMENT: >>>
 SoiBridgeTests, BrowserSmoke, McpSmoke and BridgeNgspice fd-soi. Arbitrary SOI cards, PMOS, body-contact models and charge-dependent analyses remain separate.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-SETTINGS-001
+TITLE: Persist and transfer analysis entry settings
+STATEMENT: >>>
+A saved sheet shall retain bounded model, waveform and analysis entry fields. Reload and undo shall restore the applicable fields, and older sheets shall use defaults. MCP shall read fields and apply a bounded batch atomically. Importing entry fields shall not bypass model validation at execution.
+<<<
+COMMENT: >>>
+BridgeSettingsTests, BrowserSmoke and McpSmoke. These are sheet-local settings rather than a named reusable model definition store.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-DC-STEP-001
+TITLE: Select bounded DC source continuation
+STATEMENT: >>>
+An explicit DC source-continuation request shall use the bounded native source-stepping policy. It shall preserve the full-source operating point and refuse the policy on other analysis modes.
+<<<
+COMMENT: >>>
+BridgeNgspice mos1-high and browser and MCP high-bias runs.
+<<<

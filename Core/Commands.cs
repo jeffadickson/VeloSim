@@ -33,7 +33,7 @@ public sealed record SweepRun(Guid Id, DocumentVersion Version, IReadOnlyList<Sw
 public sealed record CatalogEntry(Kind Kind, PartDefinition Definition);
 public sealed record CommandResult(CommandCode Code, DocumentVersion Version, string Message,
     Part? Part = null, CircuitSnapshot? Circuit = null, SweepRun? Run = null,
-    IReadOnlyList<CatalogEntry>? Catalog = null, TransientRun? Transient = null, IReadOnlyList<CircuitFinding>? Findings = null, string? Document = null, NetHighlight? Net = null, LessonView? View = null, AnalysisHistory? History = null, BridgeRun? Bridge = null);
+    IReadOnlyList<CatalogEntry>? Catalog = null, TransientRun? Transient = null, IReadOnlyList<CircuitFinding>? Findings = null, string? Document = null, NetHighlight? Net = null, LessonView? View = null, AnalysisHistory? History = null, BridgeRun? Bridge = null, IReadOnlyDictionary<BridgeField, string>? AnalysisFields = null);
 
 public sealed record MovePart(DocumentVersion Expected, string PartId, int X, int Y) : DocumentCommand(Expected);
 public sealed record RotatePart(DocumentVersion Expected, string PartId) : DocumentCommand(Expected);

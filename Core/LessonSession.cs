@@ -96,6 +96,11 @@ public sealed partial class LessonSession
                 case UpdateWiringDraft wiring when wiring.Draft is { Name.Length: <= 48, Bends.Length: <= 256 }:
                     Wiring = wiring.Draft;
                     return Result(CommandCode.Ok, "Wiring selection updated.");
+                case ReadAnalysisFields:
+                    return Result(CommandCode.Ok, "Analysis settings read.") with { AnalysisFields = BridgeDraft.Snapshot() };
+                case ApplyAnalysisFields settings:
+                    return BridgeDraft.Apply(settings.Fields) ? Result(CommandCode.Ok, "Analysis settings applied.")
+                        : Result(CommandCode.InvalidInput, "Invalid analysis settings.");
                 case SetBridgeDraft draftChange:
                     return BridgeDraft.Set(draftChange.Field, draftChange.Text)
                         ? Result(CommandCode.Ok, "Analysis draft updated.")
@@ -109,7 +114,7 @@ public sealed partial class LessonSession
                 case ReadView:
                     return Result(CommandCode.Ok, "View inspected.") with { View = View, Net = HighlightedNet };
                 case ReadAnalysisHistory:
-                    return Result(CommandCode.Ok, "History inspected.") with { History = CaptureSession().History };
+                    return Result(CommandCode.Ok, "History inspected.") with { History = CaptureHistory() };
                 case CheckCircuit:
                     return Result(CommandCode.Ok, "Circuit checked.") with { Findings = board.Check() };
                 case FocusTerminal focus:

@@ -162,3 +162,16 @@ to the exact pinned card and run the fd-soi fixture. The tested
 engine and FD library hashes were 2FABE6FE59455B3A60251138853660F7190A5FAEB1B71FB9F0E0CCF378C284FD
 and 573D6E3C4C1573EC54DDCB973960220185A49C92C8A0B85CD3A5089508815B1C.
 Core passed 35 tests with 3,773/4,243 lines and 1,178/1,712 branches.
+
+## Higher-bias DC recovery and settings
+
+The original 3 V drain-supply and 1 V diode-drive MOS1 fixture failed
+with the default Newton iteration limit in DC and AC. Its native
+one-shot request succeeded with source continuation in DC. The browser
+and MCP opt-in recovered that operating point, which matched ngspice
+within 2.65 nV. AC still uses the default operating-point initialization.
+
+The browser and MCP restored the PWL and charged-BJT entry fields from
+a saved sheet. The isolated mutant dropping settings restoration failed.
+Core passed 36 tests with 3,848/4,331 lines and 1,202/1,756 branches
+covered. Browser, MCP, adapter and native solver coverage were unmeasured.

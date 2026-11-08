@@ -37,7 +37,7 @@ public sealed record BridgeOptions(BridgeAnalysis Analysis, string ProbeId, doub
     double StopSeconds = .005, double StepSeconds = .00001, SourcePhasor[]? Phasors = null,
     SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null, DiodeBinding[]? Diodes = null, Mos1Binding[]? Mos1 = null,
     BjtBinding[]? Bjts = null, Bsim3Binding[]? Bsim3 = null,
-    SourcePwl[]? Pwl = null, SourceSine[]? Sines = null, SourceExponential[]? Exponentials = null, string[]? FdSoi = null);
+    SourcePwl[]? Pwl = null, SourceSine[]? Sines = null, SourceExponential[]? Exponentials = null, string[]? FdSoi = null, bool UseSourceContinuation = false);
 
 public sealed record RunBridge(DocumentVersion Expected, BridgeOptions Options) : DocumentCommand(Expected);
 public sealed record LoadBridgeDemo(DocumentVersion Expected) : DocumentCommand(Expected);
@@ -161,7 +161,8 @@ public sealed partial class LessonSession
 
     private bool ValidBridgeOptions(BridgeOptions options)
     {
-        if (options.ProbeId is not { Length: > 0 and <= 12 } || !Enum.IsDefined(options.Analysis)) return false;
+        if (options.ProbeId is not { Length: > 0 and <= 12 } || !Enum.IsDefined(options.Analysis) ||
+            options.UseSourceContinuation && options.Analysis != BridgeAnalysis.Dc) return false;
         var frequencies = options.FrequenciesHz ?? [];
         if (options.Analysis == BridgeAnalysis.Ac && (frequencies.Length is < 1 or > 128 ||
             frequencies.Any(f => f is <= 0 or > 1e12 || !double.IsFinite(f)) ||

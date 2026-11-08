@@ -42,6 +42,7 @@
     private bool running;
     private static readonly (BridgeField Key, string Label)[] fields =
     [
+        (BridgeField.DcContinuation, "DC source stepping (true or false)"),
         (BridgeField.Probe, "Probe ID"), (BridgeField.Frequencies, "AC frequencies (Hz)"),
         (BridgeField.Stop, "Transient stop (s)"), (BridgeField.Step, "Maximum step (s)"),
         (BridgeField.Phasors, "AC sources (ID magnitude phase°)"),

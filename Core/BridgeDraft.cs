@@ -2,17 +2,38 @@ using System.Globalization;
 
 namespace SchematicLab.Core;
 
-public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1, Bjts, Bsim3, Pwl, Sines, Exponentials, FdSoi }
+public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1, Bjts, Bsim3, Pwl, Sines, Exponentials, FdSoi, DcContinuation }
 public sealed record SetBridgeDraft(BridgeField Field, string Text) : LessonCommand;
+public sealed record ReadAnalysisFields : LessonCommand;
+public sealed record ApplyAnalysisFields(IReadOnlyDictionary<BridgeField, string> Fields) : LessonCommand;
 
 /// <summary>Browser entry fields for typed circuit options. Form drafts have no electrical effect.</summary>
 public sealed class BridgeDraft
 {
-    private readonly Dictionary<BridgeField, string> fields = new()
+    private static readonly Dictionary<BridgeField, string> Defaults = new()
     {
         [BridgeField.Probe] = "P1", [BridgeField.Frequencies] = "100 1000", [BridgeField.Stop] = ".005",
-        [BridgeField.Step] = ".00001", [BridgeField.Phasors] = "", [BridgeField.Pulses] = "", [BridgeField.Controls] = "", [BridgeField.Diodes] = "", [BridgeField.Mos1] = "", [BridgeField.Bjts] = "", [BridgeField.Bsim3] = "", [BridgeField.Pwl] = "", [BridgeField.Sines] = "", [BridgeField.Exponentials] = "", [BridgeField.FdSoi] = ""
+        [BridgeField.Step] = ".00001", [BridgeField.Phasors] = "", [BridgeField.Pulses] = "", [BridgeField.Controls] = "", [BridgeField.Diodes] = "", [BridgeField.Mos1] = "", [BridgeField.Bjts] = "", [BridgeField.Bsim3] = "", [BridgeField.Pwl] = "", [BridgeField.Sines] = "", [BridgeField.Exponentials] = "", [BridgeField.FdSoi] = "", [BridgeField.DcContinuation] = ""
     };
+    private readonly Dictionary<BridgeField, string> fields = new(Defaults);
+
+    internal Dictionary<BridgeField, string> Snapshot() => new(fields);
+
+    internal static bool ValidFields(IReadOnlyDictionary<BridgeField, string> values) =>
+        values.Count <= Defaults.Count && values.All(entry => Defaults.ContainsKey(entry.Key) && entry.Value is { Length: <= 4096 });
+
+    internal bool Apply(IReadOnlyDictionary<BridgeField, string>? values)
+    {
+        if (values is null || !ValidFields(values)) return false;
+        foreach (var entry in values) fields[entry.Key] = entry.Value;
+        return true;
+    }
+
+    internal void Restore(IReadOnlyDictionary<BridgeField, string>? values)
+    {
+        foreach (var entry in Defaults) fields[entry.Key] = entry.Value;
+        if (values is not null) Apply(values);
+    }
 
     public string this[BridgeField field] => fields[field];
 
@@ -40,6 +61,7 @@ public sealed class BridgeDraft
         fields[BridgeField.Sines] = "";
         fields[BridgeField.Exponentials] = "";
         fields[BridgeField.FdSoi] = "";
+        fields[BridgeField.DcContinuation] = "";
         if (!models) return;
         fields[BridgeField.Stop] = ".0001";
         fields[BridgeField.Step] = ".00000005";
@@ -105,7 +127,13 @@ public sealed class BridgeDraft
                 Number(row[8]), Number(row[9]), Number(row[10]))).ToArray();
             var options = new BridgeOptions(analysis, this[BridgeField.Probe], Controls: controls, Diodes: diodes, Mos1: mos, Bjts: bjts, Bsim3: bsim3,
                 FdSoi: Tokens(this[BridgeField.FdSoi]));
-            if (analysis == BridgeAnalysis.Dc) return options;
+            if (analysis == BridgeAnalysis.Dc)
+            {
+                var setting = this[BridgeField.DcContinuation];
+                if (setting.Length == 0) return options;
+                return bool.TryParse(setting, out var continuation)
+                    ? options with { UseSourceContinuation = continuation } : null;
+            }
             if (analysis == BridgeAnalysis.Ac)
             {
                 var phasors = Rows(BridgeField.Phasors, 3).Select(row => new SourcePhasor(row[0], Number(row[1]), Number(row[2]))).ToArray();

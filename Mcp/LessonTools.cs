@@ -145,6 +145,16 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
     public CommandResult LoadMixed(Guid documentId, long revision, CancellationToken cancellationToken) =>
         session.Execute(new LoadBridgeDemo(new(documentId, revision)), cancellationToken);
 
+    [McpServerTool(Name = "schematic_read_analysis_fields", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Read the saved analysis, waveform and model entry fields.")]
+    public CommandResult AnalysisFields(CancellationToken cancellationToken) =>
+        session.Execute(new ReadAnalysisFields(), cancellationToken);
+
+    [McpServerTool(Name = "schematic_apply_analysis_fields", UseStructuredContent = true)]
+    [Description("Apply a bounded set of analysis entry fields atomically.")]
+    public CommandResult ApplyFields(Dictionary<BridgeField, string> fields, CancellationToken cancellationToken) =>
+        session.Execute(new ApplyAnalysisFields(fields), cancellationToken);
+
     [McpServerTool(Name = "schematic_load_soi_demo", UseStructuredContent = true)]
     [Description("Load the pinned four-terminal FD-SOI operating-point example.")]
     public CommandResult LoadSoi(Guid documentId, long revision, CancellationToken cancellationToken) =>

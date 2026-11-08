@@ -117,3 +117,10 @@ MCP exposes the same run command as `schematic_run_circuit`, with a
 revision and typed `options` object. Example tools are
 `schematic_load_bridge_demo` and `schematic_load_model_demo`.
 See [bridge verification](docs/bridge-verification.md) for ngspice cases.
+
+The analysis panel accepts inline PWL, damped sine and exponential rows.
+Model and waveform entry fields travel with the saved sheet. MCP can
+inspect and transfer those fields with schematic_read_analysis_fields
+and schematic_apply_analysis_fields. Set DC source stepping to true
+for the bounded opt-in continuation policy. The pinned FD-SOI example
+requires SPICE_BSIM_SOI_FD_HOST and supports DC operating point only.

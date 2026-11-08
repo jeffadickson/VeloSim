@@ -214,7 +214,14 @@ public sealed partial class NativeRcSolver
     private static object Analysis(CircuitJob job)
     {
         var options = job.Options;
-        if (options.Analysis == BridgeAnalysis.Dc) return new { kind = "operating_point" };
+        if (options.Analysis == BridgeAnalysis.Dc)
+            return options.UseSourceContinuation
+                ? new { kind = "operating_point_newton", options = new
+                {
+                    max_iterations = 50, absolute_tolerance = 1e-12, relative_tolerance = 1e-9,
+                    continuation = new { initial_step = .125, minimum_step = .0001, max_stages = 64 }
+                } }
+                : new { kind = "operating_point" };
         if (options.Analysis == BridgeAnalysis.Ac)
         {
             var phasors = options.Phasors ?? [];

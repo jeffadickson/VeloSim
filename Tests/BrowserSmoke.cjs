@@ -230,6 +230,16 @@ const server = http.createServer((req, res) => {
       }
       await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-models.png")});
       console.log("Browser ran the diode and MOS1 channel in all three analyses.");
+      for (const [id, value] of [["V1", "3"], ["V3", "1"]]) {
+        await button("Select " + id).click();
+        await lesson.getByRole("spinbutton", {name:/^Value \(/}).fill(value);
+        await button("Apply value").click();
+      }
+      await analysis.getByLabel(/Diode \(ID/).fill("D1 1e-14 .025864925786328215");
+      await analysis.getByLabel(/DC source stepping/).fill("true");
+      await analysis.getByRole("button", {name:"Analyze Dc", exact:true}).click();
+      await analysis.getByTestId("bridge-count").filter({hasText:"P2 · Dc"}).waitFor();
+      console.log("Browser recovered the higher-bias MOS1 operating point.");
       await button("Open BJT example").click();
       for (const kind of ["Dc", "Ac", "Transient"]) {
         await analysis.getByRole("button", {name:"Analyze " + kind, exact:true}).click();
@@ -237,6 +247,14 @@ const server = http.createServer((req, res) => {
       }
       await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-bjt.png")});
       console.log("Browser ran the BJT in all three analyses.");
+      await analysis.getByLabel(/PWL sources/).fill("V2 0 .55 1e-5 .68");
+      await analysis.getByLabel(/Pulse sources/).fill("");
+      await button("Save sheet").click();
+      await page.reload();
+      await button("Reload sheet").click();
+      assert.equal(await analysis.getByLabel(/PWL sources/).inputValue(), "V2 0 .55 1e-5 .68");
+      assert.match(await analysis.getByLabel(/BJT \(ID/).inputValue(), /3e-10/);
+      console.log("Browser restored model and source settings after reload.");
       if (process.env.SPICE_BSIM330_HOST) {
         await button("Open BSIM3 example").click();
         for (const kind of ["Dc", "Ac", "Transient"]) {

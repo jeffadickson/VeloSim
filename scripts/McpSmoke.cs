@@ -16,7 +16,7 @@ options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
 var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
-    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "run_circuit" };
+    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "read_analysis_fields", "apply_analysis_fields", "run_circuit" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
@@ -153,7 +153,19 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
         Require(bridge.ProbeId == probe && bridge.Analysis == analysis, "Wrong semiconductor run.");
         Console.WriteLine($"MCP semiconductor {probe} {analysis}: {bridge.Samples.Count} samples.");
     }
-    var bjt = await Call(other, "load_bjt_demo", Edit(models.Version));
+    var high1 = await Call(other, "set_value", ValueEdit(models.Version, "V1", 3));
+    var high2 = await Call(other, "set_value", ValueEdit(high1.Version, "V3", 1));
+    var highOptions = BridgeDemo.ModelOptions(BridgeAnalysis.Dc, "P2");
+    var highArgs = Edit(high2.Version);
+    highArgs["options"] = highOptions with
+    {
+        UseSourceContinuation = true,
+        Diodes = [highOptions.Diodes![0] with { JunctionFarads = 0, TransitSeconds = 0 }]
+    };
+    var highRun = await Call(other, "run_circuit", highArgs);
+    Require(highRun.Bridge is { Samples.Count: 1 }, $"Source stepping refused: {highRun.Message}");
+    Console.WriteLine("MCP recovered the higher-bias MOS1 operating point.");
+    var bjt = await Call(other, "load_bjt_demo", Edit(high2.Version));
     foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
     {
         var arguments = Edit(bjt.Version);
@@ -161,6 +173,18 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
         var solved = await Call(other, "run_circuit", arguments);
         var runBjt = solved.Bridge ?? throw new InvalidOperationException($"BJT {analysis}: {solved.Message}");
         Console.WriteLine($"MCP BJT {analysis}: {runBjt.Samples.Count} samples.");
+    }
+    var appliedFields = await Call(other, "apply_analysis_fields", new() { ["fields"] = new Dictionary<string, string> { ["Pwl"] = "V2 0 .55 1e-5 .68" } });
+    Require(appliedFields.Code == CommandCode.Ok, "Recipe fields refused.");
+    var recipe = (await Call(other, "save_document")).Document!;
+    await using (var imported = await Open())
+    {
+        var target = Edit((await Call(imported, "read_circuit")).Version);
+        target["document"] = recipe;
+        Require((await Call(imported, "load_document", target)).Code == CommandCode.Ok, "Recipe reload failed.");
+        var fields = (await Call(imported, "read_analysis_fields")).AnalysisFields!;
+        Require(fields[BridgeField.Pwl] == "V2 0 .55 1e-5 .68" && fields[BridgeField.Bjts].Contains("3e-10"),
+            "Reload did not restore the source and model fields.");
     }
     if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_BSIM330_HOST")))
     {
@@ -245,6 +269,14 @@ static Dictionary<string, object?> Edit(DocumentVersion version, double? value =
         arguments["value"] = voltageOrResistance;
     }
     return arguments;
+}
+
+static Dictionary<string, object?> ValueEdit(DocumentVersion version, string id, double value)
+{
+    var fields = Edit(version);
+    fields["partId"] = id;
+    fields["value"] = value;
+    return fields;
 }
 
 static void Require(bool valid, string reason)
