@@ -230,6 +230,32 @@ const server = http.createServer((req, res) => {
       }
       await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-models.png")});
       console.log("Browser ran the diode and MOS1 channel in all three analyses.");
+      if (process.env.SCHEMATIC_MEYER_ORACLE) {
+        const oracle = name => fs.readFileSync(path.join(process.env.SCHEMATIC_MEYER_ORACLE, name), "utf8")
+          .trim().split(/\r?\n/).map(line => line.trim().split(/\s+/).map(Number));
+        await analysis.getByLabel(/MOS1 \(ID/).fill("M1 .7 .001 0 .6 .02 3.45314379969e-9");
+        await analysis.getByLabel(/Diode \(ID/).fill("D1 1e-14 .025864925786328215");
+        await analysis.getByLabel(/Transient stop/).fill(".00002");
+        for (const [kind, references, tolerance] of [
+          ["Ac", [oracle("ac-low.dat")[0], oracle("ac-high.dat")[0]], 1e-5],
+          ["Transient", [oracle("transient.dat").at(-1)], 5e-4]
+        ]) {
+          await analysis.getByRole("button", {name:"Analyze " + kind, exact:true}).click();
+          await analysis.getByTestId("bridge-count").filter({hasText:"P2 · " + kind}).waitFor();
+          const rows = analysis.getByRole("table", {name:"Probe samples"}).locator("tbody tr");
+          for (const [index, expected] of references.entries()) {
+            const actual = (await (kind === "Ac" ? rows.nth(index) : rows.last())
+              .getByRole("cell").allTextContents()).map(Number);
+            assert.ok(actual.every(Number.isFinite) && Math.abs(actual[0] - expected[0]) < 1e-11);
+            assert.ok(Math.abs(actual[1] - expected[1]) < tolerance, JSON.stringify({kind, actual, expected}));
+            if (kind === "Ac") assert.ok(Math.abs(actual[2] - expected[2]) < tolerance);
+          }
+        }
+        await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-meyer.png")});
+        console.log("Browser matched ngspice AC and transient samples with intrinsic MOS1 charge.");
+        await button("Open semiconductor example").click();
+        await analysis.getByLabel("Probe ID", {exact:true}).fill("P2");
+      }
       for (const [id, value] of [["V1", "3"], ["V3", "1"]]) {
         await button("Select " + id).click();
         await lesson.getByRole("spinbutton", {name:/^Value \(/}).fill(value);

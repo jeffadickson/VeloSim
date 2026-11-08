@@ -21,6 +21,18 @@ public sealed class BridgeSettingsTests
             imported.Execute(new DefineNamedModel(model with { Parameters = "NaN 75 1 .025 .025" })).Code);
     }
 
+    [Theory]
+    [InlineData("M1 .7 .001 0 .6 .02 3.45e-9", 3.45e-9)]
+    [InlineData("M1 .7 .001 0 .6 .02 1e-10 2e-10 5e-11 3e-10 4e-10 .8 .5 .5 3.45e-9", 3.45e-9)]
+    [InlineData("M1 .7 .001 0 .6 .02", 0)]
+    public void Mos1DraftAcceptsIntrinsicOxideWithOrWithoutOverlap(string text, double expected)
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadModelDemo(session.Version));
+        session.Execute(new SetBridgeDraft(BridgeField.Mos1, text));
+        Assert.Equal(expected, Assert.Single(session.BridgeDraft.Parse(BridgeAnalysis.Ac)!.Mos1!).OxideFarads);
+    }
+
     [Fact]
     public void ReloadRestoresModelAndSourceDraftsAndUndoRestoresPreviousSettings()
     {

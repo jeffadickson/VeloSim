@@ -24,6 +24,14 @@ public static class BridgeDemo
         Diodes: [new("D1", 1e-14, 8.617333262145e-5 * 300.15, 2e-9, .7, .5, .5, 1e-8)],
         Mos1: [new("M1", .7, .001, 0, .6, .02, 1e-10, 2e-10, 5e-11, 3e-10, 4e-10)]);
 
+    /// <summary>Independent MOS1 fixture with 1 mm square effective geometry and 10 nm oxide.</summary>
+    public static BridgeOptions MeyerOptions(BridgeAnalysis analysis) => ModelOptions(analysis, "P2") with
+    {
+        StopSeconds = .00002,
+        Diodes = [new("D1", 1e-14, 8.617333262145e-5 * 300.15)],
+        Mos1 = [new("M1", .7, .001, 0, .6, .02, OxideFarads: 3.45314379969e-9)]
+    };
+
     // The BJT reference deck uses the simulator's documented 27 C nominal convention.
     private const double ThermalVolts = 1.38064852e-23 / 1.6021766208e-19 * 300.15;
 

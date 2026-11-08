@@ -147,16 +147,18 @@ public sealed partial class NativeRcSolver
             }
             var binding = FindModel(options.Mos1, element.Id, model => model.Id)
                 ?? throw new RcSolverException("MOS level 1 requires a model binding.");
+            var model = new Dictionary<string, object>
+            {
+                ["p_channel"] = element.Kind == Kind.Pmos, ["threshold_volts"] = binding.ThresholdVolts,
+                ["beta_amps_per_volt_squared"] = binding.Beta, ["body_effect_sqrt_volts"] = binding.Gamma,
+                ["surface_potential_volts"] = binding.Phi, ["channel_length_modulation_per_volt"] = binding.Lambda
+            };
+            if (binding.OxideFarads != 0) model["oxide_farads"] = binding.OxideFarads;
             return new()
             {
                 ["kind"] = "mos1_channel", ["id"] = element.Id, ["p"] = element.P, ["n"] = element.N,
                 ["gate"] = element.Gate, ["bulk"] = element.Bulk,
-                ["model"] = new
-                {
-                    p_channel = element.Kind == Kind.Pmos, threshold_volts = binding.ThresholdVolts,
-                    beta_amps_per_volt_squared = binding.Beta, body_effect_sqrt_volts = binding.Gamma,
-                    surface_potential_volts = binding.Phi, channel_length_modulation_per_volt = binding.Lambda
-                }
+                ["model"] = model
             };
         }
         var (kind, parameter) = element.Kind switch

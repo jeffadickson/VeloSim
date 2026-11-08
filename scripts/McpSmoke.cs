@@ -157,6 +157,40 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
         Require(bridge.ProbeId == probe && bridge.Analysis == analysis, "Wrong semiconductor run.");
         Console.WriteLine($"MCP semiconductor {probe} {analysis}: {bridge.Samples.Count} samples.");
     }
+    if (Environment.GetEnvironmentVariable("SCHEMATIC_MEYER_ORACLE") is { } oracle)
+    {
+        double[] Reference(string name, bool last = false)
+        {
+            var lines = File.ReadLines(Path.Combine(oracle, name));
+            return (last ? lines.Last() : lines.First()).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                .Select(value => double.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        }
+
+        foreach (var analysis in new[] { BridgeAnalysis.Ac, BridgeAnalysis.Transient })
+        {
+            var meyerRequest = Edit(models.Version);
+            meyerRequest["options"] = BridgeDemo.MeyerOptions(analysis);
+            var response = await Call(other, "run_circuit", meyerRequest);
+            var meyerRun = response.Bridge ?? throw new InvalidOperationException(response.Message);
+            if (analysis == BridgeAnalysis.Ac)
+            {
+                foreach (var (sample, file) in meyerRun.Samples.Zip(new[] { "ac-low.dat", "ac-high.dat" }))
+                {
+                    var expected = Reference(file);
+                    Require(sample.Axis == expected[0] && Math.Abs(sample.Real - expected[1]) < 1e-5 &&
+                        Math.Abs(sample.Imaginary - expected[2]) < 1e-5, "Meyer complex AC disagreement.");
+                }
+            }
+            else
+            {
+                var sample = meyerRun.Samples[^1];
+                var expected = Reference("transient.dat", last: true);
+                Require(Math.Abs(sample.Axis - expected[0]) < 1e-11 && Math.Abs(sample.Real - expected[1]) < 5e-4,
+                    "Meyer transient endpoint disagreement.");
+            }
+        }
+        Console.WriteLine("MCP matched ngspice AC and transient samples with intrinsic MOS1 charge.");
+    }
     var high1 = await Call(other, "set_value", ValueEdit(models.Version, "V1", 3));
     var high2 = await Call(other, "set_value", ValueEdit(high1.Version, "V3", 1));
     var highOptions = BridgeDemo.ModelOptions(BridgeAnalysis.Dc, "P2");

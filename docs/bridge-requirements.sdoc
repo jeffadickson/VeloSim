@@ -140,3 +140,13 @@ The editor shall attach a validated saved child sheet to a cell instance through
 COMMENT: >>>
 HierarchyTests, BrowserSmoke, McpSmoke and BridgeNgspice hierarchy. Supported child devices are R, L, C, ground and nested two-terminal cells. Limits are eight attachments per sheet, three levels below the root and 32,768 characters per child document. Child analysis settings are separate from the parent analysis. Child documents are embedded snapshots.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-MOS1-MEYER-001
+TITLE: Bind intrinsic MOS1 gate displacement
+STATEMENT: >>>
+The MOS1 schematic binding shall accept an optional total effective oxide capacitance in farads, separate from gate overlap and body junction parameters. The browser and MCP shall forward the same typed binding and validate its finite nonnegative domain. An omitted or zero value shall preserve existing results.
+<<<
+COMMENT: >>>
+The native model evaluates the bias-dependent Meyer partition for AC and integrates branch displacement with backward Euler for transient. The binding uses an effective capacitance, and does not prepare arbitrary model cards with TOX. Verification uses BridgeSettingsTests, BrowserSmoke, McpSmoke and BridgeNgspice mos1-meyer.
+<<<

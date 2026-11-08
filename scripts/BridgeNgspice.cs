@@ -13,7 +13,7 @@ var directory = Path.GetFullPath(args[2]);
 if (Directory.EnumerateFileSystemEntries(directory).Any())
     throw new ArgumentException("Use an empty artifact directory to prevent stale oracle data.");
 var fixture = args.Length == 3 ? "mixed" : args[3];
-if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3" or "waveforms" or "exponential" or "sine" or "fd-soi" or "mos1-high" or "hierarchy")) throw new ArgumentException("Unknown fixture.");
+if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3" or "waveforms" or "exponential" or "sine" or "fd-soi" or "mos1-high" or "hierarchy" or "mos1-meyer")) throw new ArgumentException("Unknown fixture.");
 var deck = """
     Mixed RLC and controlled-source reference
     V1 in 0 DC 1 AC 1 30 PULSE(0 1 0 10u 10u 10m 20m)
@@ -117,6 +117,10 @@ else if (fixture != "mixed")
             .Replace("tran 2u 3m 0 2u", "tran .025u 100u 0 .025u", StringComparison.Ordinal);
     if (fixture is "mos1-charge" or "mos1-high")
         deck = deck.Replace("IS=1e-30)", "IS=1e-30 CGSO=1e-5 CGDO=2e-5 CGBO=5e-6 CBD=3e-10 CBS=4e-10 PB=.8 MJ=.5 FC=.5)", StringComparison.Ordinal);
+    if (fixture == "mos1-meyer")
+        deck = deck.Replace("W=10u L=10u", "W=1m L=1m", StringComparison.Ordinal)
+            .Replace("IS=1e-30)", "IS=1e-30 TOX=10n)", StringComparison.Ordinal)
+            .Replace("tran .025u 100u", "tran .025u 20u", StringComparison.Ordinal);
     if (fixture == "mos1-high")
         deck = deck.Replace("V1 vdd 0 1", "V1 vdd 0 3", StringComparison.Ordinal)
             .Replace("V3 vd 0 DC .8", "V3 vd 0 DC 1", StringComparison.Ordinal);
@@ -235,6 +239,7 @@ foreach (var analysis in fixture switch
             Phasors: analysis == BridgeAnalysis.Ac ? [new("V1", 1, 0)] : null,
             Pulses: analysis == BridgeAnalysis.Transient ? [new("V1", 0, 5, 0, .0001, .0001, .01, .02)] : null),
         "mixed" => BridgeDemo.Options(analysis),
+        "mos1-meyer" => BridgeDemo.MeyerOptions(analysis),
         "waveforms" or "exponential" or "sine" => BridgeDemo.WaveformOptions(fixture),
         "bjt" => BridgeDemo.BjtOptions(analysis),
         "fd-soi" => BridgeDemo.SoiOptions(),
@@ -276,6 +281,17 @@ foreach (var analysis in fixture switch
     Console.WriteLine(FormattableString.Invariant(
         $"{fixture} {analysis}: native {run.Samples.Count}, ngspice {reference.Length}, max component error {maximum:G9} V, tolerance {tolerance:G9} V."));
     if (!double.IsFinite(maximum) || maximum > tolerance) Environment.ExitCode = 1;
+    if (fixture == "mos1-meyer" && analysis == BridgeAnalysis.Ac)
+    {
+        // With oxide displacement removed, the fixture must fail the same AC tolerance.
+        var noCharge = options with { Mos1 = [options.Mos1![0] with { OxideFarads = 0 }] };
+        var control = await session.ExecuteBridgeAsync(new RunBridge(session.Version, noCharge), solver.SolveCircuitAsync);
+        var controlRun = control.Bridge ?? throw new InvalidOperationException(control.Message);
+        var controlError = controlRun.Samples.Select((point, i) =>
+            Math.Max(Math.Abs(point.Real - reference[i][1]), Math.Abs(point.Imaginary - reference[i][2]))).Max();
+        Console.WriteLine(FormattableString.Invariant($"Meyer AC disabled-charge control error {controlError:G9} V."));
+        if (!double.IsFinite(controlError) || controlError <= tolerance) Environment.ExitCode = 1;
+    }
 }
 
 static double Interpolate(double[][] points, double time)

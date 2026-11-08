@@ -22,7 +22,7 @@ public sealed partial class LessonSession
         var arity = model.Family switch
         {
             BridgeField.Diodes => tokens.Length is 2 or 7,
-            BridgeField.Mos1 => tokens.Length is 5 or 13,
+            BridgeField.Mos1 => tokens.Length is 5 or 6 or 13 or 14,
             BridgeField.Bjts => tokens.Length is 5 or 15,
             BridgeField.Bsim3 => tokens.Length == 10,
             _ => false

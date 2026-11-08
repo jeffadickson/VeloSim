@@ -114,11 +114,12 @@ public sealed class BridgeDraft
                 ? new DiodeBinding(row[0], Number(row[1]), Number(row[2]))
                 : new DiodeBinding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]),
                     Number(row[5]), Number(row[6]), Number(row[7]))).ToArray();
-            var mos = Rows(BridgeField.Mos1, 6, 14).Select(row => row.Length == 6
-                ? new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]))
+            var mos = Rows(BridgeField.Mos1, 6, 14, 7, 15).Select(row => row.Length is 6 or 7
+                ? new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]),
+                    OxideFarads: row.Length == 7 ? Number(row[6]) : 0)
                 : new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]),
                     Number(row[6]), Number(row[7]), Number(row[8]), Number(row[9]), Number(row[10]), Number(row[11]),
-                    Number(row[12]), Number(row[13]))).ToArray();
+                    Number(row[12]), Number(row[13]), row.Length == 15 ? Number(row[14]) : 0)).ToArray();
             var bjts = Rows(BridgeField.Bjts, 6, 16).Select(row => new BjtBinding(row[0], Number(row[1]), Number(row[2]),
                 Number(row[3]), Number(row[4]), Number(row[5]), row.Length == 16 ? Junction(row, 6) : null,
                 row.Length == 16 ? Junction(row, 11) : null)).ToArray();
@@ -162,12 +163,12 @@ public sealed class BridgeDraft
     private static BjtJunction Junction(string[] row, int i) =>
         new(Number(row[i]), Number(row[i + 1]), Number(row[i + 2]), Number(row[i + 3]), Number(row[i + 4]));
 
-    private IEnumerable<string[]> Rows(BridgeField field, int count, int alternate = -1)
+    private IEnumerable<string[]> Rows(BridgeField field, int count, int alternate = -1, int third = -1, int fourth = -1)
     {
         foreach (var text in this[field].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var row = Tokens(text);
-            if (count >= 0 && row.Length != count && row.Length != alternate) throw new FormatException("Wrong source row length.");
+            if (count >= 0 && row.Length != count && row.Length != alternate && row.Length != third && row.Length != fourth) throw new FormatException("Wrong source row length.");
             yield return row;
         }
     }

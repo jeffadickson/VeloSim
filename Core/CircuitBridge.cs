@@ -21,7 +21,7 @@ public sealed record DiodeBinding(string Id, double SaturationAmps, double Therm
 public sealed record Mos1Binding(string Id, double ThresholdVolts, double Beta, double Gamma, double Phi, double Lambda,
     double GateSourceFarads = 0, double GateDrainFarads = 0, double GateBulkFarads = 0,
     double DrainBodyFarads = 0, double SourceBodyFarads = 0, double BodyVolts = .8,
-    double BodyGrading = .5, double ForwardCoefficient = .5);
+    double BodyGrading = .5, double ForwardCoefficient = .5, double OxideFarads = 0);
 /// <summary>Effective junction storage in farads, volts and seconds.</summary>
 public sealed record BjtJunction(double Farads, double Volts, double Grading, double ForwardCoefficient, double TransitSeconds);
 /// <summary>Effective parameters for the bounded three-terminal BJT profile.</summary>
@@ -202,7 +202,7 @@ public sealed partial class LessonSession
                 d.ForwardCoefficient is >= 0 and < 1 && Nonnegative(d.TransitSeconds)) &&
             mos.All(m => m is not null && FindPart(m.Id)?.Kind is Kind.Nmos or Kind.Pmos &&
                 double.IsFinite(m.ThresholdVolts) && Positive(m.Beta) && Positive(m.Phi) &&
-                Nonnegative(m.Gamma) && Nonnegative(m.Lambda) && Nonnegative(m.GateSourceFarads) &&
+                Nonnegative(m.OxideFarads) && Nonnegative(m.Gamma) && Nonnegative(m.Lambda) && Nonnegative(m.GateSourceFarads) &&
                 Nonnegative(m.GateDrainFarads) && Nonnegative(m.GateBulkFarads) && Nonnegative(m.DrainBodyFarads) &&
                 Nonnegative(m.SourceBodyFarads) && Positive(m.BodyVolts) && m.BodyGrading is >= 0 and < 1 &&
                 m.ForwardCoefficient is >= 0 and < 1) &&
