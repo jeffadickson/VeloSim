@@ -24,7 +24,7 @@ Serve the published `wwwroot` over HTTP. The template uses `<base href="/">` for
 
 ## Boundaries
 
-The prototype supports one sheet, 18 generic symbols, terminal-to-terminal wiring and an analytical unloaded voltage divider. It keeps edits in browser memory. Simulator integration, project files, undo/redo, hierarchy, symbol import and general-purpose wire routing are later work.
+The prototype supports one sheet, 19 generic symbols, terminal-to-terminal wiring and an analytical unloaded voltage divider. It keeps edits in browser memory. The native RC charging lesson is available with the loopback solver host. Project files, undo/redo, hierarchy, symbol import and general-purpose wire routing are later work.
 
 See [requirements](docs/requirements.sdoc), [design notes](docs/design.md), [catalog](docs/catalog.md), and [RSpice comparison](docs/rspice-requirements-scrub.md).
 
@@ -51,3 +51,22 @@ dotnet run --artifacts-path (Join-Path $out 'smoke') --file scripts/McpSmoke.cs 
 Use the [requirements index](docs/requirements.md) for the complete product
 scope. The [command verification](docs/command-verification.md) records the
 browser and MCP results.
+
+## Run the native RC lesson
+
+Publish the browser as described above. Set `SCHEMATIC_WEB_ROOT` to the published
+`wwwroot` directory and `SPICE_SOLVER_PATH` to the absolute path of the trusted
+Rust circuit-simulator executable. Run the loopback host from the SchematicLab
+directory. The same executable path enables the RC tools in the stdio MCP host.
+
+```powershell
+if (!(Test-Path -LiteralPath 'WebHost' -PathType Container)) { throw 'Run from SchematicLab' }
+if (!(Test-Path -LiteralPath $env:SCHEMATIC_WEB_ROOT -PathType Container)) { throw 'Missing published browser' }
+if (!(Test-Path -LiteralPath $env:SPICE_SOLVER_PATH -PathType Leaf)) { throw 'Missing solver' }
+dotnet run --project WebHost --artifacts-path (Join-Path $out 'host')
+```
+
+Open http://127.0.0.1:5087/, choose **Open RC example**, select **P1**, and run
+the transient. In MCP, inspect the circuit, call `schematic_load_rc` at the
+current revision, then call `schematic_run_transient` with the new revision and
+probe ID `P1`. Use `schematic_read_run` to fetch the retained waveform.

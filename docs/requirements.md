@@ -25,9 +25,11 @@ This index describes the product in its own terms. Each ID maps to a StrictDoc r
 | SCH-MCP-001 | Publish only selected typed commands as discoverable MCP tools. Return structured circuit, catalog, edit, run and result data. | Use a real client to discover tools, change R2 to 3 kΩ, and retrieve 21 samples ending at 3.75 V for a 5 V input. |
 | SCH-MCP-002 | Scope commands to the host's workspace and document. Bound work and isolate sessions. Require explicit binding to share a browser session. | Start two hosts, verify distinct document IDs, and reject a command carrying the other host's document ID. |
 
+| [SCH-RC-001 and SCH-RC-002](rc-transient.sdoc) | Edit and wire the RC charging lesson, run the native transient solver, and retain voltage samples for the chosen probe. | Compare the browser and MCP output with the analytical ramp response. |
+
 The initial command contract uses zero-based terminal indices and explicit document revisions. Every accepted edit increments the revision once. Inspection, view changes, rejected edits and analysis runs leave the circuit revision unchanged. A stale draft can be recovered by reselecting the part and applying a fresh value. The current host retains the last 16 successful analytical sweeps per session. Undo and redo remain tracked by SCH-TXN-001.
 
-The prototype supports the analytical divider and a generic symbol catalog. Routed wiring, model-backed analyses, cross-probing, general document persistence and hierarchy remain open. The browser and local stdio MCP host each own an independent session.
+The prototype supports the analytical divider, a native RC charging lesson and a generic symbol catalog. Routed wiring, model-backed analyses, cross-probing, general document persistence and hierarchy remain open. The browser and local stdio MCP host each own an independent session.
 
 The detailed catalog adds 214 individually identified targets.
 
@@ -39,4 +41,4 @@ The detailed catalog adds 214 individually identified targets.
 | [Analog and behavioral](behavioral-catalog.sdoc) | 44 | Analog blocks, interpolation, waveform generation, measurement and distributed elements |
 | [Compact models](compact-model-catalog.sdoc) | 43 | Individually identified model bindings and per-analysis qualification |
 
-Catalog targets describe scope and verification. The executable catalog currently has 18 generic symbols, and the analytical divider uses a bounded subset. Vendor-specific packs require their own manifests with exact identity, provenance, pin mapping and verified capabilities.
+Catalog targets describe scope and verification. The executable catalog currently has 19 generic symbols, and the analytical divider uses a bounded subset. Vendor-specific packs require their own manifests with exact identity, provenance, pin mapping and verified capabilities.

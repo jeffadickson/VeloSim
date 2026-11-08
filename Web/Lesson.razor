@@ -1,6 +1,8 @@
+@inject RcBrowserSolver RcSolver
+
 <main @onkeydown="CancelOnEscape">
-    <header><p class="eyebrow">CIRCUIT NOTEBOOK / 01</p><h1>The voltage divider</h1>
-        <p>Build a circuit, change a resistor, and see where the voltage goes.</p></header>
+    <header><p class="eyebrow">CIRCUIT NOTEBOOK / 01</p><h1>@(IsRc ? "Charging a capacitor" : "The voltage divider")</h1>
+        <p>@(IsRc ? "Change the resistance or capacitance and watch the probe trace." : "Build a circuit, change a resistor, and see where the voltage goes.")</p></header>
     <section class="layout">
         <div class="sheet">
             <nav aria-label="Schematic tools">
@@ -9,6 +11,7 @@
                     <button aria-pressed="@(placing == kind ? "true" : "false")" @onclick="() => Choose(kind)">+ @kind</button>
                 }
                 <button @onclick="Reset">Reset example</button>
+                <button @onclick="() => Dispatch(new LoadRc(session.Version))">Open RC example</button>
                 <div class="catalog">
                     <button type="button" aria-expanded="@(session.CatalogOpen ? "true" : "false")" @onclick="() => Dispatch(new ToggleCatalog())">Parts library</button>
                     @if (session.CatalogOpen)
@@ -80,24 +83,37 @@
         </div>
         <aside>
             <p class="eyebrow">VOLTAGE PROBE · @(session.Parts.FirstOrDefault(p => p.Kind == Kind.Probe)?.Id ?? "none")</p>
-            <output aria-live="polite" data-testid="voltage">@(session.Probe is double voltage ? $"{voltage:0.###} V" : "—")</output>
+            <output aria-live="polite" data-testid="voltage">@(ProbeVoltage is double voltage ? $"{voltage:0.###} V" : "—")</output>
+            @if (IsRc)
+            {
+                <p>Select the probe and run the transient to see the capacitor charge. The readout shows the final sample.</p>
+            }
+            else
+            {
             <p>With no load, the lower resistor sets the share of supply voltage at the midpoint.</p>
             <p class="formula">Vout = Vin × Rlower / (Rupper + Rlower)</p>
+            }
             @if (session.Parts.FirstOrDefault(p => p.Id == selected) is Part active)
             {
                 <div class="inspector"><strong>@active.Id · @PartCatalog.Get(active.Kind).Name</strong>
-                    <small>@(PartCatalog.Get(active.Kind).DividerSupported ? "Divider lesson supported" : "Placement and wiring only")</small>
-                    @if (active.Kind is Kind.Supply or Kind.Resistor)
+                    <small>@(PartReadiness(active.Kind))</small>
+                    @if (active.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PulseVoltage)
                     {
-                        <label for="value">Value (@(active.Kind == Kind.Supply ? "V" : "Ω"))</label>
+                        <label for="value">Value (@(active.Kind == Kind.Capacitor ? "F" : active.Kind == Kind.Resistor ? "Ω" : "V"))</label>
                         <input id="value" type="number" step="any" value="@session.DraftValue" @oninput="e => Dispatch(new SetDraftValue(Input(e)), announce: false)" />
                         <button @onclick="Apply">Apply value</button>
+                    }
+                    @if (active.Kind == Kind.Probe && session.Parts.Any(p => p.Kind == Kind.PulseVoltage))
+                    {
+                        <button disabled="@transientRunning" @onclick="() => RunRc(active.Id)">Run RC transient</button>
                     }
                     <button class="remove" @onclick="Remove">Delete @active.Id</button>
                 </div>
             }
         </aside>
     </section>
+    @if (!IsRc)
+    {
     <section class="results" aria-label="Simulation results">
         <div><p class="eyebrow">SIMULATION RESULTS</p><h2>DC input sweep</h2>
             <p>Analytical divider model. The trace shows the voltage at the probe as the supply rises.</p>
@@ -133,6 +149,42 @@
             }
         }
     </section>
+    }
+    @if (IsRc && transientResult is { } rc)
+    {
+        <section class="results" aria-label="RC transient results">
+            <div><p class="eyebrow">NATIVE TRANSIENT</p><h2>RC charging waveform</h2>
+                @if (rc.Transient is { } measured)
+                {
+                    <p>Probe @measured.ProbeId · R × C = @((measured.Input.TimeConstant * 1000).ToString("G4")) ms</p>
+                    <p data-testid="rc-final">Final @measured.Samples[^1].Volts.ToString("F4") V</p>
+                    @if (measured.Version != session.Version)
+                    {
+                        <p role="status">The circuit changed. Run the transient again to update this trace.</p>
+                    }
+                }
+                else
+                {
+                    <p role="status">@rc.Message</p>
+                }
+            </div>
+            @if (rc.Transient is { } run)
+            {
+                <figure>
+                    <svg viewBox="0 0 520 220" role="img" aria-label="RC probe voltage against time">
+                        <path d="M60 25V174H493" class="axis" />
+                        <path d="M60 99H493M276 25V174" class="guide" />
+                        <polyline class="trace" points="@TransientPlot(run)" />
+                        <foreignObject x="6" y="15" width="53" height="30"><span>@run.Input.Volts V</span></foreignObject>
+                        <foreignObject x="12" y="153" width="46" height="20"><span>0 V</span></foreignObject>
+                        <foreignObject x="192" y="185" width="175" height="25"><span>Time (ms)</span></foreignObject>
+                        <foreignObject x="424" y="182" width="90" height="25"><span>@((run.Input.StopSeconds * 1000).ToString("G4")) ms</span></foreignObject>
+                    </svg>
+                    <figcaption><span class="legend"></span> @run.ProbeId voltage (V) · @run.Samples.Count samples</figcaption>
+                </figure>
+            }
+        </section>
+    }
 </main>
 
 @code {
@@ -141,6 +193,26 @@
     private Pin? pending => session.PendingPin;
     private Kind? placing => session.Placement;
     private CommandResult? sweepResult;
+    private CommandResult? transientResult;
+    private bool transientRunning;
+    private bool IsRc => session.Parts.Any(part => part.Kind == Kind.PulseVoltage);
+    private double? ProbeVoltage => transientResult?.Transient is { } run && run.Version == session.Version
+        ? run.Samples[^1].Volts : session.Probe;
+
+    private async Task RunRc(string probeId)
+    {
+        transientRunning = true;
+        try
+        {
+            transientResult = await session.ExecuteTransientAsync(new RunTransient(session.Version, probeId), RcSolver.SolveAsync);
+            status = transientResult.Message;
+        }
+        finally { transientRunning = false; }
+    }
+
+    private static string TransientPlot(TransientRun run) =>
+        string.Join(" ", run.Samples.Select(sample =>
+            $"{Coordinate(60 + 433 * (sample.Seconds / run.Input.StopSeconds))},{Coordinate(174 - 149 * (sample.Volts / run.Input.Volts))}"));
 
     private static string Plot(IReadOnlyList<SweepSample> sweep, double limit) =>
         string.Join(" ", sweep.Select(point =>
@@ -223,8 +295,18 @@
     private static string PinLabel(Part part, int pin) =>
         $"{part.Id} terminal {pin + 1} · {PartCatalog.Get(part.Kind).Terminals[pin].Name}";
 
+    private static string PartReadiness(Kind kind) => kind switch
+    {
+        Kind.PulseVoltage or Kind.Capacitor => "Native RC lesson supported",
+        Kind.Resistor or Kind.Ground or Kind.Probe => "Divider and native RC lessons supported",
+        Kind.Supply => "Divider lesson supported",
+        _ => "Placement and wiring only"
+    };
+
     private static string ValueLabel(Part part) => part.Kind switch
     {
+        Kind.PulseVoltage => $"0–{part.Value:G4} V",
+        Kind.Capacitor => $"{part.Value * 1e6:G4} µF",
         Kind.Supply => $"{part.Value:0.##} V",
         Kind.Resistor => part.Value >= 1000 ? $"{part.Value / 1000:0.##} kΩ" : $"{part.Value:0.##} Ω",
         Kind.Probe => "V probe",

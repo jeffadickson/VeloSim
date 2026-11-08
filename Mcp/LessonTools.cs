@@ -1,9 +1,10 @@
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using SchematicLab.Core;
+using SchematicLab.Solver;
 
 [McpServerToolType]
-internal sealed class LessonTools(LessonSession session)
+internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
 {
     [McpServerTool(Name = "schematic_read_circuit", ReadOnly = true, UseStructuredContent = true)]
     [Description("Read the current circuit, voltage probe, document ID and revision.")]
@@ -16,7 +17,7 @@ internal sealed class LessonTools(LessonSession session)
         session.Execute(new ReadCatalog(), cancellationToken);
 
     [McpServerTool(Name = "schematic_set_value", UseStructuredContent = true)]
-    [Description("Set a resistor in ohms or a DC source in volts at the expected revision.")]
+    [Description("Set a resistor in ohms, a capacitor in farads or a supported source in volts at the expected revision.")]
     public CommandResult SetValue(Guid documentId, long revision, string partId, double value,
         CancellationToken cancellationToken) =>
         session.Execute(new SetPartValue(new(documentId, revision), partId, value), cancellationToken);
@@ -54,4 +55,15 @@ internal sealed class LessonTools(LessonSession session)
     [Description("Read a retained run by ID, including its original document revision and samples.")]
     public CommandResult ReadRunById(Guid runId, CancellationToken cancellationToken) =>
         session.Execute(new ReadRun(runId), cancellationToken);
+
+    [McpServerTool(Name = "schematic_load_rc", UseStructuredContent = true)]
+    [Description("Load the built-in RC charging example at the expected revision.")]
+    public CommandResult LoadChargingExample(Guid documentId, long revision, CancellationToken cancellationToken) =>
+        session.Execute(new LoadRc(new(documentId, revision)), cancellationToken);
+
+    [McpServerTool(Name = "schematic_run_transient", UseStructuredContent = true)]
+    [Description("Run the native RC transient solver and retain the voltage samples of the specified probe.")]
+    public Task<CommandResult> RunChargingTransient(Guid documentId, long revision, string probeId,
+        CancellationToken cancellationToken) =>
+        session.ExecuteTransientAsync(new RunTransient(new(documentId, revision), probeId), solver.SolveAsync, cancellationToken);
 }

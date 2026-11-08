@@ -4,7 +4,7 @@ namespace SchematicLab.Core;
 public enum Kind
 {
     Supply, Resistor, Ground, Probe, Capacitor, Inductor, Current, Diode,
-    Npn, Pnp, Nmos, Pmos, Njfet, Pjfet, Vcvs, Vccs, Switch, OpAmp
+    Npn, Pnp, Nmos, Pmos, Njfet, Pjfet, Vcvs, Vccs, Switch, OpAmp, PulseVoltage
 }
 
 /// <summary>Stable electrical endpoint, independent of artwork and screen position.</summary>
@@ -48,7 +48,7 @@ public sealed class Board
 
     public bool SetValue(string id, double value)
     {
-        var index = parts.FindIndex(p => p.Id == id && p.Kind is Kind.Supply or Kind.Resistor);
+        var index = parts.FindIndex(p => p.Id == id && p.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PulseVoltage);
         if (index < 0 || !double.IsFinite(value) || value <= 0) return false;
         parts[index] = parts[index] with { Value = value };
         return true;
@@ -134,6 +134,46 @@ public sealed class Board
         board.Connect(new("R1", 1), new("R2", 0));
         board.Connect(new("R1", 1), new("P1", 0));
         board.Connect(new("R2", 1), new("G1", 0));
+        board.Connect(new("V1", 1), new("G1", 0));
+        return board;
+    }
+
+    /// <summary>Resolve the selected voltage probe from electrical connectivity.</summary>
+    internal RcInput? ChargingInput(string probeId)
+    {
+        if (parts.Count != 5) return null;
+        var source = parts.Find(p => p.Kind == Kind.PulseVoltage);
+        var resistor = parts.Find(p => p.Kind == Kind.Resistor);
+        var capacitor = parts.Find(p => p.Kind == Kind.Capacitor);
+        var ground = parts.Find(p => p.Kind == Kind.Ground);
+        var probe = parts.Find(p => p.Kind == Kind.Probe && p.Id == probeId);
+        if (source is null || resistor is null || capacitor is null || ground is null || probe is null)
+            return null;
+
+        var high = new Pin(source.Id, 0);
+        var low = new Pin(ground.Id, 0);
+        var output = new Pin(probe.Id, 0);
+        if (!Connected(low, new(source.Id, 1)) || Connected(high, low) ||
+            Connected(high, output) || Connected(low, output) ||
+            !Spans(resistor, high, output) || !Spans(capacitor, output, low))
+            return null;
+
+        var input = new RcInput(resistor.Value, capacitor.Value, source.Value);
+        return input.IsValid ? input : null;
+    }
+
+    internal static Board ChargingCircuit()
+    {
+        var board = new Board();
+        board.Place(Kind.PulseVoltage, 120, 160);
+        board.Place(Kind.Resistor, 350, 75);
+        board.Place(Kind.Capacitor, 350, 215);
+        board.Place(Kind.Ground, 350, 315);
+        board.Place(Kind.Probe, 525, 145);
+        board.Connect(new("V1", 0), new("R1", 0));
+        board.Connect(new("R1", 1), new("C1", 0));
+        board.Connect(new("R1", 1), new("P1", 0));
+        board.Connect(new("C1", 1), new("G1", 0));
         board.Connect(new("V1", 1), new("G1", 0));
         return board;
     }

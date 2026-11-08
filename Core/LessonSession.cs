@@ -8,6 +8,7 @@ public sealed class LessonSession
     private readonly object gate = new();
     private readonly Guid documentId = Guid.NewGuid();
     private readonly Queue<SweepRun> runs = new();
+    private readonly Queue<TransientRun> transients = new();
     private Board board = Board.Divider();
     private long revision;
     public DocumentVersion Version { get { lock (gate) return new(documentId, revision); } }
@@ -50,6 +51,8 @@ public sealed class LessonSession
                         Catalog = Array.AsReadOnly(Enum.GetValues<Kind>().Select(k => new CatalogEntry(k, PartCatalog.Get(k))).ToArray())
                     };
                 case ReadRun query:
+                    var transient = transients.FirstOrDefault(run => run.Id == query.RunId);
+                    if (transient is not null) return Result(CommandCode.Ok, "Run retrieved.") with { Transient = transient };
                     var retained = runs.FirstOrDefault(run => run.Id == query.RunId);
                     return retained is null ? Result(CommandCode.NotFound, "Run not retained.")
                         : Result(CommandCode.Ok, "Run retrieved.") with { Run = retained };
@@ -89,6 +92,12 @@ public sealed class LessonSession
                         return Result(CommandCode.InvalidInput, "Choose two valid terminals on different nets.");
                     revision++;
                     return Result(CommandCode.Ok, "Wire added.");
+                case LoadRc:
+                    board = Board.ChargingCircuit();
+                    ClearSelection();
+                    ClearGesture();
+                    revision++;
+                    return Result(CommandCode.Ok, "RC charging example loaded.");
                 case ResetLesson:
                     board = Board.Divider();
                     ClearSelection();
@@ -128,6 +137,65 @@ public sealed class LessonSession
                     return Result(CommandCode.InvalidInput, "Invalid command or argument.");
             }
         }
+    }
+
+    /// <summary>Capture a circuit revision under lock, then run the solver without holding it.</summary>
+    public async Task<CommandResult> ExecuteTransientAsync(RunTransient command,
+        Func<RcInput, CancellationToken, Task<IReadOnlyList<TransientSample>>> solve,
+        CancellationToken cancellation = default)
+    {
+        RcInput input;
+        lock (gate)
+        {
+            if (cancellation.IsCancellationRequested) return Result(CommandCode.Cancelled, "Command cancelled.");
+            if (command.Expected.DocumentId != documentId)
+                return Result(CommandCode.WrongDocument, "The command targets a different document.");
+            if (command.Expected.Revision != revision)
+                return Result(CommandCode.StaleRevision, "The document changed. Run the current revision.");
+            if (board.ChargingInput(command.ProbeId) is not { } charging)
+                return Result(CommandCode.UnsupportedCircuit, "Wire the selected probe to a valid RC charging circuit.");
+            input = charging;
+        }
+
+        IReadOnlyList<TransientSample> samples;
+        try
+        {
+            samples = Array.AsReadOnly((await solve(input, cancellation)).ToArray());
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            return Result(CommandCode.Cancelled, "Command cancelled.");
+        }
+        catch (RcSolverException error)
+        {
+            return new(CommandCode.SolverFailed, command.Expected, error.Message);
+        }
+
+        lock (gate)
+        {
+            if (cancellation.IsCancellationRequested) return Result(CommandCode.Cancelled, "Command cancelled.");
+            if (!IsComplete(input, samples))
+                return new(CommandCode.SolverFailed, command.Expected, "The solver returned an incomplete waveform.");
+            var run = new TransientRun(Guid.NewGuid(), command.Expected, command.ProbeId, input, samples);
+            if (transients.Count == 16) transients.Dequeue();
+            transients.Enqueue(run);
+            return new(CommandCode.Ok, command.Expected, "RC transient completed.", Transient: run);
+        }
+    }
+
+    private static bool IsComplete(RcInput input, IReadOnlyList<TransientSample> samples)
+    {
+        if (samples.Count is < 2 or > 1025 || samples[0].Seconds != 0 ||
+            Math.Abs(samples[^1].Seconds - input.StopSeconds) > input.StopSeconds * 1e-9)
+            return false;
+        var previous = -1d;
+        foreach (var sample in samples)
+        {
+            if (!double.IsFinite(sample.Seconds) || !double.IsFinite(sample.Volts) || sample.Seconds <= previous)
+                return false;
+            previous = sample.Seconds;
+        }
+        return true;
     }
 
     private CommandResult Result(CommandCode code, string message) => new(code, Version, message);

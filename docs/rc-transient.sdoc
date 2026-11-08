@@ -1,0 +1,22 @@
+[DOCUMENT]
+TITLE: RC charging lesson requirements
+
+[REQUIREMENT]
+UID: SCH-RC-001
+TITLE: Bounded editable RC charging circuit
+STATEMENT: >>>
+The lesson shall place an editable pulse voltage source, resistor, capacitor, ground and voltage probe. The source amplitude shall be in volts, resistance in ohms and capacitance in farads. Electrical connections shall determine the series resistor, shunt capacitor and measured node. A disconnected, shorted or unsupported topology shall refuse before invoking the solver.
+<<<
+COMMENT: >>>
+The qualified profile has positive R and C, an amplitude greater than zero and at most 100 V, and RC from 10 microseconds to one second. The low level and initial delay are zero. The finite rise is RC divided by 100. The high level lasts through the five-time-constant observation window.
+<<<
+
+[REQUIREMENT]
+UID: SCH-RC-002
+TITLE: Native solver voltage probe through browser and agent
+STATEMENT: >>>
+The browser and MCP shall dispatch the same typed transient command with an explicit probe and circuit revision. They shall use the native transient solver and retain its completed samples with the originating revision and probe. The browser shall plot time and voltage with labeled units. The MCP host shall return the measured voltage and time coordinates. A missing backend, invalid probe, cancellation or incomplete run shall publish no successful waveform.
+<<<
+COMMENT: >>>
+Verification compares all recorded MCP samples with the finite-ramp analytical response and checks the browser trace near one time constant and at the final sample. Verify that a disconnected or unknown probe refuses and the retained prior run remains available.
+<<<
