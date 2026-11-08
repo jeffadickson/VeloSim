@@ -28,13 +28,28 @@ const server = http.createServer((req, res) => {
     await lesson.getByRole("button", {name:"Run DC sweep"}).click();
     const plot = lesson.getByRole("img", {name:/DC sweep plot/});
     assert.equal((await plot.locator("polyline").getAttribute("points")).split(" ").length, 21);
-    await lesson.getByRole("button", {name:"Select R2", exact:true}).click();
+    await lesson.getByRole("button", {name:"Select R2", exact:true}).press("Enter");
     await lesson.getByLabel("Value").fill("3000");
     await lesson.getByRole("button", {name:"Apply value"}).click();
     assert.equal(await voltage.textContent(), "3.75 V");
+    assert.match(await lesson.locator("figcaption").textContent(), /Final 2.5 V/);
+    assert.equal(await lesson.getByText(/The circuit changed/).count(), 1);
+    await lesson.getByRole("button", {name:"Run DC sweep"}).click();
     assert.match(await lesson.locator("figcaption").textContent(), /Final 3.75 V/);
+
+    // Keep the R2 draft open while a wire edit advances the document revision.
+    await lesson.getByLabel("Value").fill("9000");
+    await lesson.getByRole("button", {name:/^V1 terminal 1 /}).click();
+    await lesson.getByRole("button", {name:/^G1 terminal 1 /}).click();
+    await lesson.getByRole("button", {name:"Apply value"}).click();
+    assert.equal(await lesson.getByText(/The document changed/).count(), 1);
+    assert.equal(await lesson.getByText("R2 3 kΩ", {exact:true}).count(), 1);
+    assert.match(await lesson.locator("figcaption").textContent(), /Final 3.75 V/);
+    await lesson.getByRole("button", {name:"Reset example"}).click();
+    await lesson.getByRole("button", {name:"Select R2", exact:true}).click();
     await lesson.getByRole("button", {name:"Delete R2"}).click();
     assert.equal(await voltage.textContent(), "—");
+    await lesson.getByRole("button", {name:"Run DC sweep"}).click();
     assert.equal(await plot.count(), 0);
     await lesson.getByRole("button", {name:"+ Resistor", exact:true}).click();
     await lesson.getByRole("button", {name:/Place Resistor/}).first().click();
@@ -44,7 +59,7 @@ const server = http.createServer((req, res) => {
     await lesson.getByRole("button", {name:/^G1 terminal 1 /}).click();
     assert.equal(await voltage.textContent(), "2.5 V");
     await lesson.getByRole("button", {name:"Reset example"}).click();
-    await lesson.locator("summary").filter({hasText:"Parts library"}).click();
+    await lesson.getByRole("button", {name:"Parts library", exact:true}).click();
     await lesson.getByLabel("Find a generic symbol").fill("MOSFET");
     await lesson.getByRole("button", {name:"NMOS", exact:true}).click();
     await lesson.getByRole("button", {name:/Place Nmos/}).first().click();
@@ -52,9 +67,9 @@ const server = http.createServer((req, res) => {
     assert.equal(await lesson.getByText("Placement and wiring only").count(), 1);
     assert.equal(await voltage.textContent(), "—");
     await lesson.getByRole("button", {name:"Reset example"}).click();
-    await lesson.locator("summary").filter({hasText:"Parts library"}).click();
+    await lesson.getByRole("button", {name:"Parts library", exact:true}).click();
     await page.screenshot({path:path.resolve(process.argv[4])});
     assert.deepEqual(errors, []);
-    console.log("Embedded lesson: edit, plot, delete, place, reconnect and reset passed.");
+    console.log("Embedded lesson: edit, plot, reject stale draft, delete, place, reconnect and reset passed.");
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode=1; }).finally(() => server.close());

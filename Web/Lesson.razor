@@ -1,4 +1,4 @@
-<main>
+<main @onkeydown="CancelOnEscape">
     <header><p class="eyebrow">CIRCUIT NOTEBOOK / 01</p><h1>The voltage divider</h1>
         <p>Build a circuit, change a resistor, and see where the voltage goes.</p></header>
     <section class="layout">
@@ -9,10 +9,12 @@
                     <button aria-pressed="@(placing == kind ? "true" : "false")" @onclick="() => Choose(kind)">+ @kind</button>
                 }
                 <button @onclick="Reset">Reset example</button>
-                <details class="catalog">
-                    <summary>Parts library</summary>
+                <div class="catalog">
+                    <button type="button" aria-expanded="@(session.CatalogOpen ? "true" : "false")" @onclick="() => Dispatch(new ToggleCatalog())">Parts library</button>
+                    @if (session.CatalogOpen)
+                    {
                     <label for="part-search">Find a generic symbol</label>
-                    <input id="part-search" @bind="search" @bind:event="oninput" placeholder="e.g. MOSFET or capacitor" />
+                    <input id="part-search" value="@session.Filter" @oninput="e => Dispatch(new SetCatalogFilter(Input(e)), announce: false)" placeholder="e.g. MOSFET or capacitor" />
                     @foreach (var group in VisibleParts())
                     {
                         <p class="eyebrow">@group.Key</p>
@@ -21,19 +23,20 @@
                             <button @onclick="() => Choose(kind)">@PartCatalog.Get(kind).Name</button>
                         }
                     }
-                </details>
+                    }
+                </div>
             </nav>
             <svg viewBox="0 0 640 370" role="group" aria-label="Interactive circuit schematic">
                 <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
                     <circle cx="0" cy="0" r="1" fill="#cad3cb" />
                 </pattern></defs>
                 <rect width="640" height="370" fill="url(#grid)" />
-                @foreach (var wire in board.Wires)
+                @foreach (var wire in session.Wires)
                 {
                     var a = PinPosition(wire.A);
                     var b = PinPosition(wire.B);
                     // Route two top pins above their bodies, and approach the ground from above.
-                    var target = board.Parts.First(p => p.Id == wire.B.Part);
+                    var target = session.Parts.First(p => p.Id == wire.B.Part);
                     var bend = target.Kind switch
                     {
                         Kind.Probe => b.Y,
@@ -43,7 +46,7 @@
                     };
                     <path class="wire" d="M @a.X @a.Y V @bend H @b.X V @b.Y" />
                 }
-                @foreach (var part in board.Parts)
+                @foreach (var part in session.Parts)
                 {
                     <g transform="translate(@part.X @part.Y)" class="@(selected == part.Id ? "part selected" : "part")">
                         <rect class="hit" x="-25" y="-24" width="50" height="48" rx="6" tabindex="0" role="button"
@@ -66,7 +69,7 @@
                 {
                     @foreach (var slot in Slots)
                     {
-                        if (board.Parts.Any(p => Math.Abs(p.X - slot.X) < 64 && Math.Abs(p.Y - slot.Y) < 55)) continue;
+                        if (session.Parts.Any(p => Math.Abs(p.X - slot.X) < 64 && Math.Abs(p.Y - slot.Y) < 55)) continue;
                         <circle class="slot" cx="@slot.X" cy="@slot.Y" r="10" tabindex="0" role="button"
                                 aria-label="Place @kindToPlace at @slot.X, @slot.Y" @onclick="() => Place(kindToPlace, slot)"
                                 @onkeydown="e => Key(e, () => Place(kindToPlace, slot))" />
@@ -76,18 +79,18 @@
             <p class="status" role="status">@status</p>
         </div>
         <aside>
-            <p class="eyebrow">VOLTAGE PROBE · @(board.Parts.FirstOrDefault(p => p.Kind == Kind.Probe)?.Id ?? "none")</p>
-            <output aria-live="polite" data-testid="voltage">@(board.Output() is double voltage ? $"{voltage:0.###} V" : "—")</output>
+            <p class="eyebrow">VOLTAGE PROBE · @(session.Parts.FirstOrDefault(p => p.Kind == Kind.Probe)?.Id ?? "none")</p>
+            <output aria-live="polite" data-testid="voltage">@(session.Probe is double voltage ? $"{voltage:0.###} V" : "—")</output>
             <p>With no load, the lower resistor sets the share of supply voltage at the midpoint.</p>
             <p class="formula">Vout = Vin × Rlower / (Rupper + Rlower)</p>
-            @if (board.Parts.FirstOrDefault(p => p.Id == selected) is Part active)
+            @if (session.Parts.FirstOrDefault(p => p.Id == selected) is Part active)
             {
                 <div class="inspector"><strong>@active.Id · @PartCatalog.Get(active.Kind).Name</strong>
                     <small>@(PartCatalog.Get(active.Kind).DividerSupported ? "Divider lesson supported" : "Placement and wiring only")</small>
                     @if (active.Kind is Kind.Supply or Kind.Resistor)
                     {
                         <label for="value">Value (@(active.Kind == Kind.Supply ? "V" : "Ω"))</label>
-                        <input id="value" type="number" step="any" @bind="valueInput" @bind:event="oninput" />
+                        <input id="value" type="number" step="any" value="@session.DraftValue" @oninput="e => Dispatch(new SetDraftValue(Input(e)), announce: false)" />
                         <button @onclick="Apply">Apply value</button>
                     }
                     <button class="remove" @onclick="Remove">Delete @active.Id</button>
@@ -98,18 +101,22 @@
     <section class="results" aria-label="Simulation results">
         <div><p class="eyebrow">SIMULATION RESULTS</p><h2>DC input sweep</h2>
             <p>Analytical divider model. The trace shows the voltage at the probe as the supply rises.</p>
-            <button @onclick="() => showingSweep = true">Run DC sweep</button>
+            <button @onclick="Run">Run DC sweep</button>
         </div>
-        @if (showingSweep)
+        @if (sweepResult is { } result)
         {
-            var sweep = board.Sweep();
-            if (sweep.Count == 0)
+            if (result.Run is not { } latestRun)
             {
-                <p role="status">Connect a valid divider to plot the probe voltage.</p>
+                <p role="status">@(result.Version == session.Version ? result.Message : "The circuit changed. Run the sweep again.")</p>
             }
             else
             {
+                var sweep = latestRun.Samples;
                 var limit = sweep[^1].Input;
+                @if (latestRun.Version != session.Version)
+                {
+                    <p role="status">The circuit changed. Run the sweep again to update this trace.</p>
+                }
                 <figure>
                     <svg viewBox="0 0 520 220" role="img" aria-label="DC sweep plot of probe voltage against input voltage">
                         <path d="M60 25V174H493" class="axis" />
@@ -129,14 +136,13 @@
 </main>
 
 @code {
-    private Board board = Board.Divider();
-    private string? selected;
-    private string valueInput = "";
-    private Pin? pending;
-    private Kind? placing;
-    private bool showingSweep;
+    private readonly LessonSession session = new();
+    private string? selected => session.Selected;
+    private Pin? pending => session.PendingPin;
+    private Kind? placing => session.Placement;
+    private CommandResult? sweepResult;
 
-    private static string Plot(IReadOnlyList<(double Input, double Probe)> sweep, double limit) =>
+    private static string Plot(IReadOnlyList<SweepSample> sweep, double limit) =>
         string.Join(" ", sweep.Select(point =>
             $"{Coordinate(60 + 433 * (point.Input / limit))},{Coordinate(174 - 149 * (point.Probe / limit))}"));
 
@@ -148,60 +154,48 @@
     private static readonly (int X, int Y)[] Slots =
         (from y in new[] { 70, 160, 250, 310 } from x in new[] { 80, 200, 320, 440, 560 } select (x, y)).ToArray();
 
-    private void Select(string id)
+    private void Select(string id) => Dispatch(new SelectPart(id));
+    private void Choose(Kind kind) => Dispatch(new ArmPlacement(kind));
+    private void Place(Kind kind, (int X, int Y) slot) =>
+        Dispatch(new PlacePart(session.Version, kind, slot.X, slot.Y));
+
+    private void Apply()
     {
-        selected = id;
-        valueInput = board.Parts.First(p => p.Id == id).Value.ToString(CultureInfo.InvariantCulture);
-        placing = null;
-        pending = null;
-        status = $"Selected {id}.";
+        if (session.Selected is string id)
+        {
+            var value = double.TryParse(session.DraftValue, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed : double.NaN;
+            Dispatch(new SetPartValue(session.DraftVersion, id, value));
+        }
     }
-
-    private void Choose(Kind kind)
-    {
-        placing = kind;
-        pending = null;
-        status = $"Choose a placement point for {kind}.";
-    }
-
-    private void Place(Kind kind, (int X, int Y) slot) => Select(board.Place(kind, slot.X, slot.Y).Id);
-
-    private void Apply() =>
-        status = selected is not null && double.TryParse(valueInput, CultureInfo.InvariantCulture, out var value) &&
-            board.SetValue(selected, value) ? $"Updated {selected}." : "Enter a finite value greater than zero.";
 
     private void Remove()
     {
-        if (selected is null || !board.Remove(selected)) return;
-        status = $"Deleted {selected} and its incident wires.";
-        selected = null;
-        pending = null;
+        if (session.Selected is string id) Dispatch(new DeletePart(session.Version, id));
     }
 
-    private void Reset()
+    private void Reset() => Dispatch(new ResetLesson(session.Version));
+
+    private void TapPin(Pin pin) => Dispatch(session.PendingPin is Pin first
+        ? new ConnectPins(session.PendingVersion, first, pin)
+        : new ArmPin(pin));
+
+    private void Run() => sweepResult = Dispatch(new RunSweep(session.Version));
+
+    private void CancelOnEscape(KeyboardEventArgs e)
     {
-        board = Board.Divider();
-        selected = null;
-        placing = null;
-        pending = null;
-        status = Instructions;
+        if (e.Key == "Escape" && (placing is not null || pending is not null))
+            Dispatch(new CancelGesture());
     }
 
-    private void TapPin(Pin pin)
+    private CommandResult Dispatch(LessonCommand command, bool announce = true)
     {
-        placing = null;
-        if (pending is Pin first)
-        {
-            status = board.Connect(first, pin) ? "Wire added." : "Those terminals are already on the same net.";
-            pending = null;
-        }
-        else
-        {
-            pending = pin;
-            status = "Choose a second terminal.";
-        }
+        var result = session.Execute(command);
+        if (announce || result.Code != CommandCode.Ok) status = result.Message;
+        return result;
     }
 
+    private static string Input(ChangeEventArgs e) => e.Value?.ToString() ?? "";
     private static void Key(KeyboardEventArgs e, Action action)
     {
         if (e.Key is "Enter" or " ") action();
@@ -209,21 +203,21 @@
 
     private (int X, int Y) PinPosition(Pin pin)
     {
-        var part = board.Parts.First(p => p.Id == pin.Part);
+        var part = session.Parts.First(p => p.Id == pin.Part);
         var offset = PartCatalog.Get(part.Kind).Terminals[pin.Index];
         return (part.X + offset.X, part.Y + offset.Y);
     }
 
     private static readonly Kind[] QuickParts = [Kind.Supply, Kind.Resistor, Kind.Ground, Kind.Probe];
-    private string search = "";
+
 
     private IEnumerable<IGrouping<string, Kind>> VisibleParts() =>
         Enum.GetValues<Kind>().Where(kind =>
         {
             var spec = PartCatalog.Get(kind);
-            return spec.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                   spec.Category.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                   (kind is Kind.Nmos or Kind.Pmos && "mosfet".Contains(search, StringComparison.OrdinalIgnoreCase));
+            return spec.Name.Contains(session.Filter, StringComparison.OrdinalIgnoreCase) ||
+                   spec.Category.Contains(session.Filter, StringComparison.OrdinalIgnoreCase) ||
+                   (kind is Kind.Nmos or Kind.Pmos && "mosfet".Contains(session.Filter, StringComparison.OrdinalIgnoreCase));
         }).GroupBy(kind => PartCatalog.Get(kind).Category);
 
     private static string PinLabel(Part part, int pin) =>
