@@ -46,7 +46,9 @@
         (BridgeField.Stop, "Transient stop (s)"), (BridgeField.Step, "Maximum step (s)"),
         (BridgeField.Phasors, "AC sources (ID magnitude phase°)"),
         (BridgeField.Pulses, "Pulse sources (ID low high delay rise fall width period)"),
-        (BridgeField.Controls, "Current controls (ID voltage-source ID)")
+        (BridgeField.Controls, "Current controls (ID voltage-source ID)"),
+        (BridgeField.Diodes, "Diode conduction (ID IS thermal voltage)"),
+        (BridgeField.Mos1, "MOS1 channel (ID threshold beta gamma phi lambda)")
     ];
 
     private void Set(BridgeField field, ChangeEventArgs change) =>

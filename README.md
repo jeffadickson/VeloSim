@@ -95,3 +95,25 @@ retained runs for the displayed lesson. Reload initially shows its latest
 run. MCP exposes the same state via `schematic_highlight_net`,
 `schematic_read_view`, `schematic_read_analysis_history` and
 `schematic_read_run`.
+
+## General circuit analysis
+
+Run the loopback solver host as described above. Open **Mixed RLC example**
+or build a supported circuit, then choose **Analyze Dc**, **Analyze Ac** or
+**Analyze Transient** in **Circuit analysis**. DC reports an operating point.
+AC takes ascending frequency points in hertz and source magnitude and phase
+in degrees. Transient takes stop and step sizes in seconds and optional
+independent voltage/current pulses. Use spaces within a source row and
+semicolons between rows. F and H require a voltage-source ID whose current
+is measured from its positive to its negative pin.
+
+**Open semiconductor example** loads a diode at P1 and an NMOS level 1
+channel at P2. The model rows take effective SI parameters. MOS1 beta
+includes width divided by length, and threshold voltage is signed.
+General analysis settings and results are scoped to the current browser
+panel or MCP response. The legacy RC history remains available.
+
+MCP exposes the same run command as `schematic_run_circuit`, with a
+revision and typed `options` object. Example tools are
+`schematic_load_bridge_demo` and `schematic_load_model_demo`.
+See [bridge verification](docs/bridge-verification.md) for ngspice cases.

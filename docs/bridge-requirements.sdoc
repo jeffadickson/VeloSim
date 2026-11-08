@@ -20,3 +20,13 @@ The browser and MCP shall dispatch the same revisioned command for DC operating 
 COMMENT: >>>
 BrowserSmoke, McpSmoke, BridgeTests and BridgeNgspice compare the same mixed RLC lesson with an independently authored deck. General run history persistence and additional waveform forms remain separate requirements.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-MODEL-001
+TITLE: Bind conduction-only diode and level 1 MOS channels
+STATEMENT: >>>
+The schematic bridge shall bind a diode to effective saturation current and thermal voltage. An NMOS or PMOS level 1 channel shall require an explicit instance binding and preserve drain, gate, source and bulk identity. The binding shall validate finite effective parameters, including positive beta and surface potential and nonnegative body-effect and modulation coefficients. Nonlinear transient shall select the native backward Euler profile. Unsupported model families shall produce an explicit failure.
+<<<
+COMMENT: >>>
+BridgeTests verifies binding and terminal identity. BrowserSmoke, McpSmoke and BridgeNgspice exercise the diode and NMOS fixtures. Junction and channel charge, other model levels, and broader polarity and bias coverage remain open.
+<<<

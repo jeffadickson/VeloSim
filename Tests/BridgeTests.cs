@@ -53,6 +53,30 @@ public sealed class BridgeTests
         Assert.Equal(version, session.Version);
     }
 
+    [Fact]
+    public async Task Mos1RequiresAnExplicitBindingAndKeepsDrainGateSourceBulkOrder()
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadModelDemo(session.Version));
+        var options = BridgeDemo.ModelOptions(BridgeAnalysis.Dc, "P2");
+        var unbound = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options with { Mos1 = [] }), Never);
+        Assert.Equal(CommandCode.UnsupportedCircuit, unbound.Code);
+        var wrong = await session.ExecuteBridgeAsync(new RunBridge(session.Version,
+            options with { Mos1 = [options.Mos1![0] with { Id = "D1" }] }), Never);
+        Assert.Equal(CommandCode.InvalidInput, wrong.Code);
+        var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options), (job, _) =>
+        {
+            var mos = Assert.Single(job.Elements, e => e.Id == "M1");
+            Assert.Equal(job.ProbeNode, job.Nodes[mos.P]);
+            Assert.Equal(0, mos.N);
+            Assert.Equal(0, mos.Bulk);
+            Assert.NotEqual(mos.Gate, mos.P);
+            Assert.NotEqual(0, mos.Gate);
+            return Task.FromResult<IReadOnlyList<BridgeSample>>([new(0, 2)]);
+        });
+        Assert.Equal(CommandCode.Ok, result.Code);
+    }
+
     private static Task<IReadOnlyList<BridgeSample>> Never(CircuitJob job, CancellationToken token) =>
         throw new InvalidOperationException("Invalid input reached the solver.");
 }

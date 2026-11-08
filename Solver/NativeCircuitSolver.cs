@@ -18,14 +18,30 @@ public sealed partial class NativeRcSolver
         var request = JsonSerializer.Serialize(new
         {
             schema_version = "1", case_id = "schematic-circuit", backend = "lu",
-            circuit = new { nodes = job.Nodes, elements = job.Elements.Select(Element).ToArray() },
+            circuit = new { nodes = job.Nodes, elements = job.Elements.Select(element => Element(element, job.Options)).ToArray() },
             analysis = Analysis(job)
         });
         return await ExchangeAsync(request, json => ParseCircuit(json, job), 32 * 1024 * 1024, cancellation);
     }
 
-    private static Dictionary<string, object> Element(CircuitElement element)
+    private static Dictionary<string, object> Element(CircuitElement element, BridgeOptions options)
     {
+        if (element.Kind is Kind.Nmos or Kind.Pmos)
+        {
+            var binding = FindModel(options.Mos1, element.Id, model => model.Id)
+                ?? throw new RcSolverException("MOS level 1 requires a model binding.");
+            return new()
+            {
+                ["kind"] = "mos1_channel", ["id"] = element.Id, ["p"] = element.P, ["n"] = element.N,
+                ["gate"] = element.Gate, ["bulk"] = element.Bulk,
+                ["model"] = new
+                {
+                    p_channel = element.Kind == Kind.Pmos, threshold_volts = binding.ThresholdVolts,
+                    beta_amps_per_volt_squared = binding.Beta, body_effect_sqrt_volts = binding.Gamma,
+                    surface_potential_volts = binding.Phi, channel_length_modulation_per_volt = binding.Lambda
+                }
+            };
+        }
         var (kind, parameter) = element.Kind switch
         {
             Kind.Resistor => ("resistor", "ohms"),
@@ -52,9 +68,17 @@ public sealed partial class NativeRcSolver
         }
         if (element.Kind is Kind.Cccs or Kind.Ccvs)
             result["control_id"] = element.ControlId ?? throw new RcSolverException("A current control is missing.");
-        if (element.Kind == Kind.Diode) result["thermal_volts"] = 8.617333262145e-5 * 300.15;
+        if (element.Kind == Kind.Diode)
+        {
+            var binding = FindModel(options.Diodes, element.Id, model => model.Id);
+            result["saturation_amps"] = binding?.SaturationAmps ?? 1e-14;
+            result["thermal_volts"] = binding?.ThermalVolts ?? 8.617333262145e-5 * 300.15;
+        }
         return result;
     }
+
+    private static T? FindModel<T>(T[]? models, string id, Func<T, string> identify) where T : class =>
+        models?.FirstOrDefault(model => model is not null && identify(model) == id);
 
     private static object Analysis(CircuitJob job)
     {
@@ -89,7 +113,9 @@ public sealed partial class NativeRcSolver
             options = new
             {
                 stop_s = options.StopSeconds, max_step_s = options.StepSeconds, max_steps = 8192,
-                method = "trapezoidal",
+                // The native nonlinear profile is restricted to backward Euler.
+                method = job.Elements.Any(e => e.Kind is Kind.Diode or Kind.Nmos or Kind.Pmos)
+                    ? "backward_euler" : "trapezoidal",
                 sources = pulses.Concat(defaults).Select(p => new { id = p.Id, waveform = new
                 {
                     kind = "pulse", low = p.Low, high = p.High, delay_s = p.Delay,

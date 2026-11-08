@@ -7,15 +7,20 @@ public sealed record SourcePhasor(string Id, double Magnitude, double PhaseDegre
 /// <summary>Independent-source pulse levels in volts or amperes and times in seconds.</summary>
 public sealed record SourcePulse(string Id, double Low, double High, double Delay, double Rise,
     double Fall, double Width, double Period);
+/// <summary>Effective conduction-only diode parameters at the evaluation temperature.</summary>
+public sealed record DiodeBinding(string Id, double SaturationAmps, double ThermalVolts);
+/// <summary>Effective MOS level 1 channel parameters in SI units. Beta includes W/L.</summary>
+public sealed record Mos1Binding(string Id, double ThresholdVolts, double Beta, double Gamma, double Phi, double Lambda);
 public sealed record CurrentControl(string Id, string VoltageSourceId);
 public sealed record BridgeOptions(BridgeAnalysis Analysis, string ProbeId, double[]? FrequenciesHz = null,
     double StopSeconds = .005, double StepSeconds = .00001, SourcePhasor[]? Phasors = null,
-    SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null);
+    SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null, DiodeBinding[]? Diodes = null, Mos1Binding[]? Mos1 = null);
 
 public sealed record RunBridge(DocumentVersion Expected, BridgeOptions Options) : DocumentCommand(Expected);
 public sealed record LoadBridgeDemo(DocumentVersion Expected) : DocumentCommand(Expected);
+public sealed record LoadModelDemo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record CircuitElement(Kind Kind, string Id, int P, int N, double Value, int Cp = 0, int Cn = 0,
-    string? ControlId = null);
+    string? ControlId = null, int Gate = 0, int Bulk = 0);
 /// <summary>Bounded circuit transport with explicit ground and an observable node.</summary>
 public sealed record CircuitJob(string[] Nodes, CircuitElement[] Elements, string ProbeNode, BridgeOptions Options);
 public sealed record BridgeSample(double Axis, double Real, double Imaginary = 0);
@@ -51,16 +56,20 @@ public sealed partial class Board
         {
             if (part.Kind is Kind.Ground or Kind.Probe) continue;
             if (part.Kind is not (Kind.Resistor or Kind.Capacitor or Kind.Inductor or Kind.Supply or
-                Kind.Current or Kind.PulseVoltage or Kind.Vcvs or Kind.Vccs or Kind.Ccvs or Kind.Cccs or Kind.Diode))
+                Kind.Current or Kind.PulseVoltage or Kind.Vcvs or Kind.Vccs or Kind.Ccvs or Kind.Cccs or Kind.Diode or Kind.Nmos or Kind.Pmos))
                 return null;
+            var mos = part.Kind is Kind.Nmos or Kind.Pmos;
+            if (mos && options.Mos1?.Any(binding => binding.Id == part.Id) != true) return null;
             var p = assignments[new(part.Id, 0)];
-            var n = assignments[new(part.Id, 1)];
+            var n = assignments[new(part.Id, mos ? 2 : 1)];
             if (p == n || !ValidPartValue(part.Kind, part.Value)) return null;
             var control = options.Controls?.SingleOrDefault(binding => binding.Id == part.Id)?.VoltageSourceId;
             if (part.Kind is Kind.Ccvs or Kind.Cccs && control is null) return null;
-            var cp = part.PinCount == 4 ? assignments[new(part.Id, 2)] : 0;
-            var cn = part.PinCount == 4 ? assignments[new(part.Id, 3)] : 0;
-            elements.Add(new(part.Kind, part.Id, p, n, part.Value, cp, cn, control));
+            var cp = !mos && part.PinCount == 4 ? assignments[new(part.Id, 2)] : 0;
+            var cn = !mos && part.PinCount == 4 ? assignments[new(part.Id, 3)] : 0;
+            var gate = mos ? assignments[new(part.Id, 1)] : 0;
+            var bulk = mos ? assignments[new(part.Id, 3)] : 0;
+            elements.Add(new(part.Kind, part.Id, p, n, part.Value, cp, cn, control, gate, bulk));
         }
         return new(nodes.ToArray(), elements.ToArray(), nodes[assignments[probe]], options);
     }
@@ -81,12 +90,13 @@ public sealed partial class LessonSession
             if (command.Options is not { } options)
                 return Result(CommandCode.InvalidInput, "Supply analysis options.");
             options = options with { FrequenciesHz = options.FrequenciesHz?.ToArray(), Phasors = options.Phasors?.ToArray(),
-                Pulses = options.Pulses?.ToArray(), Controls = options.Controls?.ToArray() };
+                Pulses = options.Pulses?.ToArray(), Controls = options.Controls?.ToArray(),
+                Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray() };
             if (!ValidBridgeOptions(options))
                 return Result(CommandCode.InvalidInput, "Check the probe, analysis settings, and source bindings.");
             var compiled = board.CompileBridge(options);
             if (compiled is null) return Result(CommandCode.UnsupportedCircuit,
-                "Use supported parts and connected terminals. Current-controlled sources require a voltage-source branch.");
+                "Use supported parts and connected terminals. Current controls and MOS level 1 devices require explicit bindings.");
             job = compiled;
         }
 
@@ -123,7 +133,17 @@ public sealed partial class LessonSession
         var phasors = options.Phasors ?? [];
         var pulses = options.Pulses ?? [];
         var controls = options.Controls ?? [];
-        return phasors.Length <= 64 && pulses.Length <= 64 && controls.Length <= 64 &&
+        var diodes = options.Diodes ?? [];
+        var mos = options.Mos1 ?? [];
+        return diodes.Length <= 64 && mos.Length <= 64 &&
+            diodes.All(d => d is not null && FindPart(d.Id)?.Kind == Kind.Diode &&
+                Positive(d.SaturationAmps) && Positive(d.ThermalVolts)) &&
+            mos.All(m => m is not null && FindPart(m.Id)?.Kind is Kind.Nmos or Kind.Pmos &&
+                double.IsFinite(m.ThresholdVolts) && Positive(m.Beta) && Positive(m.Phi) &&
+                double.IsFinite(m.Gamma) && m.Gamma >= 0 && double.IsFinite(m.Lambda) && m.Lambda >= 0) &&
+            diodes.Select(d => d.Id).Distinct().Count() == diodes.Length &&
+            mos.Select(m => m.Id).Distinct().Count() == mos.Length &&
+            phasors.Length <= 64 && pulses.Length <= 64 && controls.Length <= 64 &&
             phasors.All(p => p is not null && Independent(p.Id) && double.IsFinite(p.Magnitude) &&
                 p.Magnitude >= 0 && double.IsFinite(p.PhaseDegrees)) &&
             pulses.All(p => p is not null && Independent(p.Id) && double.IsFinite(p.Low) && double.IsFinite(p.High) &&

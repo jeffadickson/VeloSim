@@ -28,3 +28,30 @@ malformed source rows (seed 110825). The isolated mutation removing
 current-control branch IDs was caught. Stryker and coverage for the web,
 MCP, transport and native code were outside this run. StrictDoc parsed
 12 documents and found 246 unique IDs.
+
+## Semiconductor checkpoint
+
+Run the same oracle command with a fresh empty output directory and append
+`diode` or `mos1`. The fixture is a resistor-loaded diode at P1 and a
+resistor-loaded NMOS level 1 channel at P2. Both browser and MCP ran all
+three analyses for both probes. The browser result view was inspected.
+
+| Probe | DC error | Maximum AC component error | Maximum transient error |
+| --- | ---: | ---: | ---: |
+| P1 diode | 1.28105988e-7 V | 2.22408265e-7 V | 5.53986483e-5 V |
+| P2 NMOS | 2.64602207e-9 V | 8.73991879e-10 V | 2.63112365e-6 V |
+
+Each probe used one DC point, two AC frequencies, and 1,001 native
+transient samples to 1 ms. The native nonlinear solver required backward
+Euler, so the bridge selects it automatically. The initial diode comparison
+on the coarser 1 us ngspice grid exceeded 0.5 mV after interpolation.
+Refining the ngspice maximum step to 0.25 us produced 4,011 points and
+passed the original tolerance. DC and AC used 10 microvolts for both
+semiconductor observables. These examples cover conduction at the
+demonstrated biases. They do not measure junction storage, intrinsic MOS
+charge, PMOS behavior, BJT or BSIM.
+
+The final Core suite passed 28 tests. Coverlet counted 3,486 of 3,949 lines
+and 957 of 1,438 branches, including generated code. An isolated mutant
+that mapped the gate to the bulk terminal was caught. StrictDoc parsed
+12 documents with 247 unique IDs.

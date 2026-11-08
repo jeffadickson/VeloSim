@@ -200,6 +200,16 @@ const server = http.createServer((req, res) => {
       await analysis.scrollIntoViewIfNeeded();
       await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-bridge.png")});
       console.log("Browser ran mixed RLC and controlled sources in DC, AC and transient.");
+      await button("Open semiconductor example").click();
+      for (const probe of ["P1", "P2"]) {
+        await analysis.getByLabel("Probe ID", {exact:true}).fill(probe);
+        for (const kind of ["Dc", "Ac", "Transient"]) {
+          await analysis.getByRole("button", {name:"Analyze " + kind, exact:true}).click();
+          await analysis.getByTestId("bridge-count").filter({hasText:probe + " · " + kind}).waitFor();
+        }
+      }
+      await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-models.png")});
+      console.log("Browser ran the diode and MOS1 channel in all three analyses.");
     }
     if (!rcHost) await page.screenshot({path:path.resolve(process.argv[4])});
     assert.deepEqual(errors, []);

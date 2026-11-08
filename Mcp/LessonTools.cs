@@ -145,6 +145,11 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
     public CommandResult LoadMixed(Guid documentId, long revision, CancellationToken cancellationToken) =>
         session.Execute(new LoadBridgeDemo(new(documentId, revision)), cancellationToken);
 
+    [McpServerTool(Name = "schematic_load_model_demo", UseStructuredContent = true)]
+    [Description("Load a diode and MOS level 1 example with two voltage probes.")]
+    public CommandResult LoadModels(Guid documentId, long revision, CancellationToken cancellationToken) =>
+        session.Execute(new LoadModelDemo(new(documentId, revision)), cancellationToken);
+
     [McpServerTool(Name = "schematic_run_circuit", UseStructuredContent = true)]
     [Description("Run DC operating point, AC frequencies or a transient with typed source settings and a selected probe.")]
     public Task<CommandResult> RunCircuit(Guid documentId, long revision, BridgeOptions options,

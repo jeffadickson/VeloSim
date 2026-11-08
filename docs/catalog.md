@@ -1,11 +1,11 @@
 # Component catalog
 
-The current browser catalog has 20 generic symbols. It follows the upstream distinction between drawing a part and binding a simulation model. This project's names, terminal metadata and original artwork are independently maintained. No RSpice or LTspice component library assets are redistributed.
+The current browser catalog has 22 generic symbols. It follows the upstream distinction between drawing a part and binding a simulation model. This project's names, terminal metadata and original artwork are independently maintained. No RSpice or LTspice component library assets are redistributed.
 
 | Group | Available as generic symbols | Further library work |
 | --- | --- | --- |
 | Passives | Resistor, capacitor, polarized capacitor, inductor | Coupled inductors, transmission lines and model-specific passives |
-| Sources | DC voltage and current, pulse voltage, VCVS, VCCS | Waveform families, current-controlled sources and behavioral expressions |
+| Sources | DC voltage and current, pulse voltage, VCVS, VCCS, CCCS, CCVS | Additional waveform families and behavioral expressions |
 | Semiconductors | Diode, NPN, PNP, four-terminal NMOS and PMOS, N- and P-channel JFET | Extra-terminal BJT variants, SOI, VDMOS, MESFET and model-specific parameters |
 | Analog | Voltage-controlled switch and five-pin op amp | Current-controlled switches, additional analog primitives and vendor subcircuits |
 | Sheet | Ground, voltage probe | Hierarchical ports and bus entry |
@@ -18,19 +18,19 @@ RSpice groups built-in components by purpose, and LTspice has both generic primi
 
 ## Executable catalog expansion
 
-The existing typed editor and native solver are the reuse path for expanding
-coverage. The current bridge sends a fixed RC request. Extending this bridge
-to netlist a typed circuit and dispatch supported device and analysis
-combinations is a prerequisite for broad catalog execution. For each
-family, track symbol and terminal order, instance parameters, model binding,
-analyses and a reference case separately. The existing device, source,
-behavioral, digital and compact-model StrictDoc catalogs hold those cases.
+The general bridge compiles the typed editor's nets into the native JSON
+request. It supports RLC, independent voltage and current sources, linear
+E/F/G/H controlled sources, diode conduction and an explicit MOS1 channel
+binding. Availability is bounded by the native public API and qualification
+fixtures. The diode and MOS1 profiles cover conduction. Junction charge,
+MOS terminal charge and advanced families require separate bindings and
+evidence. The existing StrictDoc catalogs track those cases.
 
 | Scope | Capability to qualify |
 | --- | --- |
-| Primitive circuit | Compile shared nets and ground into a native request, then check arbitrary RLC with DC, AC and transient analyses. |
-| Independent and controlled sources | Map waveform parameters and current-sense branches, then compare signed DC, AC phase, breakpoints and gain. |
-| Semiconductor and special models | Bind exact model families and levels, qualify terminals and parameter defaults, and compare representative DC, AC and transient decks per family. |
+| Primitive circuit | Ground-first RLC and linear sources are compared in DC operating point, AC and transient on the mixed reference fixture. |
+| Independent and controlled sources | Complex AC phasors, transient pulses and current-sense bindings run. Other waveform and behavioral forms remain open. |
+| Semiconductor and special models | Conduction diode and MOS1 channel are the first bindings. BJT, JFET and BSIM families need public solver contracts and reference decks. |
 | Vendor parts | Resolve user-supplied symbol and model libraries with explicit port mapping, provenance and redistribution terms. |
 
 Reference scope comes from the [RSpice technical catalog](https://rspice.app/reference)

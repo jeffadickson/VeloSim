@@ -6,10 +6,14 @@ using System.Globalization;
 using SchematicLab.Core;
 using SchematicLab.Solver;
 
-if (args.Length != 3 || !File.Exists(args[0]) || !File.Exists(args[1]) || !Directory.Exists(args[2]))
-    throw new ArgumentException("Pass ngspice, the native solver and an existing artifact directory.");
+if (args.Length is not (3 or 4) || !File.Exists(args[0]) || !File.Exists(args[1]) || !Directory.Exists(args[2]))
+    throw new ArgumentException("Pass ngspice, the native solver, an empty artifact directory and optionally mixed, diode or mos1.");
 
 var directory = Path.GetFullPath(args[2]);
+if (Directory.EnumerateFileSystemEntries(directory).Any())
+    throw new ArgumentException("Use an empty artifact directory to prevent stale oracle data.");
+var fixture = args.Length == 3 ? "mixed" : args[3];
+if (fixture is not ("mixed" or "diode" or "mos1")) throw new ArgumentException("Unknown fixture.");
 var deck = """
     Mixed RLC and controlled-source reference
     V1 in 0 DC 1 AC 1 30 PULSE(0 1 0 10u 10u 10m 20m)
@@ -39,14 +43,35 @@ var deck = """
     .endc
     .end
     """;
-await File.WriteAllTextAsync(Path.Combine(directory, "mixed.cir"), deck);
+if (fixture != "mixed")
+{
+    var observable = fixture == "diode" ? "diode" : "drain";
+    deck = """
+        Diode and MOS1 conduction reference
+        V1 vdd 0 3
+        V2 gate 0 DC 1.5 AC 1 PULSE(1.2 1.6 0 20u 20u 5m 10m)
+        V3 vd 0 DC 1 AC 1 PULSE(.2 1 0 20u 20u 5m 10m)
+        R1 vdd drain 1k
+        R2 vd diode 1k
+        M1 drain gate 0 0 MN W=10u L=10u
+        D1 diode 0 JD
+        .model MN NMOS(LEVEL=1 VTO=.7 KP=1m LAMBDA=.02 GAMMA=0 PHI=.6 IS=1e-30)
+        .model JD D(IS=1e-14 N=1 RS=0 TT=0 CJO=0)
+        .temp 27
+        .options tnom=27
+        """ + Environment.NewLine +
+        deck[deck.IndexOf(".control", StringComparison.Ordinal)..]
+            .Replace("v(sum)", $"v({observable})", StringComparison.Ordinal)
+            .Replace("tran 2u 3m 0 2u", "tran .25u 1m 0 .25u", StringComparison.Ordinal);
+}
+await File.WriteAllTextAsync(Path.Combine(directory, "reference.cir"), deck);
 var info = new ProcessStartInfo(Path.GetFullPath(args[0]))
 {
     WorkingDirectory = directory, UseShellExecute = false, CreateNoWindow = true,
     RedirectStandardOutput = true, RedirectStandardError = true
 };
 info.ArgumentList.Add("-b");
-info.ArgumentList.Add("mixed.cir");
+info.ArgumentList.Add("reference.cir");
 using var process = Process.Start(info) ?? throw new IOException("Unable to launch ngspice.");
 var stdout = process.StandardOutput.ReadToEndAsync();
 var stderr = process.StandardError.ReadToEndAsync();
@@ -62,10 +87,12 @@ if (process.ExitCode != 0) throw new IOException($"ngspice exited with {process.
 
 var solver = new NativeRcSolver(Path.GetFullPath(args[1]));
 var session = new LessonSession();
-session.Execute(new LoadBridgeDemo(session.Version));
+session.Execute(fixture == "mixed" ? new LoadBridgeDemo(session.Version) : new LoadModelDemo(session.Version));
 foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
 {
-    var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, BridgeDemo.Options(analysis)),
+    var options = fixture == "mixed" ? BridgeDemo.Options(analysis)
+        : BridgeDemo.ModelOptions(analysis, fixture == "diode" ? "P1" : "P2");
+    var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options),
         solver.SolveCircuitAsync);
     var run = result.Bridge ?? throw new InvalidOperationException($"{analysis}: {result.Message}");
     var referenceFiles = analysis == BridgeAnalysis.Ac ? new[] { "ac-low.dat", "ac-high.dat" }
@@ -88,9 +115,9 @@ foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
         return Math.Max(Math.Abs(sample.Real - row[1]),
             analysis == BridgeAnalysis.Ac ? Math.Abs(sample.Imaginary - row[2]) : 0);
     }).Max();
-    var tolerance = analysis == BridgeAnalysis.Transient ? 5e-4 : 1e-9;
+    var tolerance = analysis == BridgeAnalysis.Transient ? 5e-4 : fixture == "mixed" ? 1e-9 : 1e-5;
     Console.WriteLine(FormattableString.Invariant(
-        $"{analysis}: native {run.Samples.Count}, ngspice {reference.Length}, max component error {maximum:G9} V, tolerance {tolerance:G9} V."));
+        $"{fixture} {analysis}: native {run.Samples.Count}, ngspice {reference.Length}, max component error {maximum:G9} V, tolerance {tolerance:G9} V."));
     if (!double.IsFinite(maximum) || maximum > tolerance) Environment.ExitCode = 1;
 }
 

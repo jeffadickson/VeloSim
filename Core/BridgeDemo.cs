@@ -10,10 +10,29 @@ public static class BridgeDemo
                  new("I1", 0, .0002, 0, .00002, .00001, .01, .02)],
         Controls: [new("F1", "V1"), new("H1", "V1")]);
 
-    internal static Board Build()
-    {
-        var board = new Board();
-        (Kind Kind, int X, int Y, double Value, string[] Nets)[] parts =
+    public static BridgeOptions ModelOptions(BridgeAnalysis analysis, string probeId) => new(analysis, probeId,
+        FrequenciesHz: [100, 1000], StopSeconds: .001, StepSeconds: .000001,
+        Phasors: [new("V2", 1, 0), new("V3", 1, 0)],
+        Pulses: [new("V2", 1.2, 1.6, 0, .00002, .00002, .005, .01),
+                 new("V3", .2, 1, 0, .00002, .00002, .005, .01)],
+        Diodes: [new("D1", 1e-14, 8.617333262145e-5 * 300.15)],
+        Mos1: [new("M1", .7, .001, 0, .6, .02)]);
+
+    internal static Board BuildModels() => Build(
+    [
+        (Kind.Ground, 320, 330, 0, ["0"]),
+        (Kind.Supply, 90, 100, 3, ["drain-supply", "0"]),
+        (Kind.Supply, 90, 235, 1.5, ["gate", "0"]),
+        (Kind.Supply, 385, 105, 1, ["diode-supply", "0"]),
+        (Kind.Resistor, 220, 95, 1000, ["drain-supply", "drain"]),
+        (Kind.Resistor, 490, 95, 1000, ["diode-supply", "diode"]),
+        (Kind.Nmos, 235, 235, 0, ["drain", "gate", "0", "0"]),
+        (Kind.Diode, 485, 240, 0, ["diode", "0"]),
+        (Kind.Probe, 575, 160, 0, ["diode"]),
+        (Kind.Probe, 310, 165, 0, ["drain"])
+    ]);
+
+    internal static Board Build() => Build(
         [
             (Kind.Ground, 310, 345, 0, ["0"]),
             (Kind.Supply, 65, 160, 1, ["in", "0"]),
@@ -29,7 +48,11 @@ public static class BridgeDemo
             (Kind.Resistor, 485, 280, 1000, ["sum", "0"]),
             (Kind.Current, 95, 275, .0002, ["0", "sum"]),
             (Kind.Probe, 575, 175, 0, ["sum"])
-        ];
+        ]);
+
+    private static Board Build((Kind Kind, int X, int Y, double Value, string[] Nets)[] parts)
+    {
+        var board = new Board();
         foreach (var entry in parts)
         {
             var part = board.Place(entry.Kind, entry.X, entry.Y);
