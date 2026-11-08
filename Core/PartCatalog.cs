@@ -31,6 +31,8 @@ public static class PartCatalog
         [Kind.Ground] = new("Ground", "Sheet", "G", "M0 -20V0M-14 0H14M-9 5H9M-4 10H4", Pins(new Terminal("Reference", 0, -20)), true),
         [Kind.Probe] = new("Voltage probe", "Sheet", "P", "M-22 0H-10M-10 0L8 -10L8 10Z", Pins(new Terminal("Measured node", -22, 0)), true),
         [Kind.Capacitor] = new("Capacitor", "Passives", "C", "M0 -32V-5M-13 -5H13M-13 5H13M0 5V32", Two, DefaultValue: 1e-6),
+        [Kind.PolarizedCapacitor] = new("Polarized capacitor", "Passives", "C",
+            "M0 -32V-5M-13 -5H13M-13 8Q0 2 13 8M0 5V32M9 -19H17M13 -23V-15", Two, DefaultValue: 1e-6),
         [Kind.PulseVoltage] = new("Pulse voltage", "Sources", "V", Circle + "M-10 6H-5V-6H5V6H10", Two, DefaultValue: 5),
         [Kind.Inductor] = new("Inductor", "Passives", "L", "M0 -32V-20Q18 -15 0 -10Q18 -5 0 0Q18 5 0 10Q18 15 0 20V32", Two),
         [Kind.Current] = new("DC current", "Sources", "I", Circle + "M0 10V-10M-5 -4L0 -10L5 -4", Two),

@@ -4,7 +4,7 @@ namespace SchematicLab.Core;
 public enum Kind
 {
     Supply, Resistor, Ground, Probe, Capacitor, Inductor, Current, Diode,
-    Npn, Pnp, Nmos, Pmos, Njfet, Pjfet, Vcvs, Vccs, Switch, OpAmp, PulseVoltage
+    Npn, Pnp, Nmos, Pmos, Njfet, Pjfet, Vcvs, Vccs, Switch, OpAmp, PulseVoltage, PolarizedCapacitor
 }
 
 /// <summary>Stable electrical endpoint, independent of artwork and screen position.</summary>
@@ -87,7 +87,7 @@ public sealed partial class Board
 
     public bool SetValue(string id, double value)
     {
-        var index = parts.FindIndex(p => p.Id == id && p.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PulseVoltage);
+        var index = parts.FindIndex(p => p.Id == id && p.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PolarizedCapacitor or Kind.PulseVoltage);
         if (index < 0 || !double.IsFinite(value) || value <= 0) return false;
         parts[index] = parts[index] with { Value = value };
         return true;
@@ -201,7 +201,7 @@ public sealed partial class Board
         if (parts.Count != 5) return null;
         var source = parts.Find(p => p.Kind == Kind.PulseVoltage);
         var resistor = parts.Find(p => p.Kind == Kind.Resistor);
-        var capacitor = parts.Find(p => p.Kind == Kind.Capacitor);
+        var capacitor = parts.Find(p => p.Kind is Kind.Capacitor or Kind.PolarizedCapacitor);
         var ground = parts.Find(p => p.Kind == Kind.Ground);
         var probe = parts.Find(p => p.Kind == Kind.Probe && p.Id == probeId);
         if (source is null || resistor is null || capacitor is null || ground is null || probe is null)
@@ -212,12 +212,18 @@ public sealed partial class Board
         var output = new Pin(probe.Id, 0);
         if (!Connected(low, new(source.Id, 1)) || Connected(high, low) ||
             Connected(high, output) || Connected(low, output) ||
-            !Spans(resistor, high, output) || !Spans(capacitor, output, low))
+            !Spans(resistor, high, output) || !CapacitorSpans(capacitor, output, low))
             return null;
 
         var input = new RcInput(resistor.Value, capacitor.Value, source.Value);
         return input.IsValid ? input : null;
     }
+
+    // The bounded charge profile never models reverse bias or electrolytic parasitics.
+    private bool CapacitorSpans(Part capacitor, Pin output, Pin low) =>
+        capacitor.Kind == Kind.PolarizedCapacitor
+            ? Connected(new(capacitor.Id, 0), output) && Connected(new(capacitor.Id, 1), low)
+            : Spans(capacitor, output, low);
 
     internal static Board ChargingCircuit()
     {

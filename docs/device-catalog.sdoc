@@ -28,7 +28,7 @@ STATEMENT: >>>
 The catalog shall provide polarized capacitor support with explicit polarity, capacitance and optional model binding.
 <<<
 COMMENT: >>>
-Catalog target. Verify artwork polarity matches netlist order and reverse bias is handled per model.
+The forward ideal-capacitance RC profile is implemented. Positive goes to the measured node and negative goes to reference. Reverse placement is rejected by that profile before solving. Model binding and model-specific reverse behavior remain open. Verify the bounded implementation through CatalogTests and the browser and MCP native smoke tests.
 <<<
 
 [REQUIREMENT]

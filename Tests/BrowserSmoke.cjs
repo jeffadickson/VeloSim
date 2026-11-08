@@ -7,7 +7,7 @@ const root = path.resolve(process.argv[3]);
 const rcHost = process.argv[5];
 const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".wasm": "application/wasm", ".json": "application/json" };
 const server = http.createServer((req, res) => {
-  if (req.url === "/article") { res.setHeader("Content-Type", "text/html"); res.end(`<iframe title="lesson" src="${rcHost || "/"}" style="width:100%;height:1570px;border:0"></iframe>`); return; }
+  if (req.url === "/article") { res.setHeader("Content-Type", "text/html"); res.end(`<iframe title="lesson" src="${rcHost || "/"}" style="width:100%;height:1770px;border:0"></iframe>`); return; }
   const name = path.resolve(root, "." + new URL(req.url, "http://localhost").pathname);
   const file = name === root ? path.join(root, "index.html") : name;
   if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404).end(); return; }
@@ -18,7 +18,7 @@ const server = http.createServer((req, res) => {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const browser = await chromium.launch({ executablePath: process.argv[2], headless: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1160, height: 1600 } });
+    const page = await browser.newPage({ viewport: { width: 1160, height: 1800 } });
     const errors = [];
     page.on("pageerror", error => { errors.push(error.message); console.error(error.message); });
     page.on("console", message => { if (message.type() === "error") console.error(message.text()); });
@@ -164,9 +164,27 @@ const server = http.createServer((req, res) => {
       assert.deepEqual((await rc.locator("polyline").getAttribute("points")).split(" ")
         .map(point => point.split(",").map(Number)), points);
       assert.match(await voltage.textContent(), /4\.966 V/);
+      await page.screenshot({path:path.resolve(process.argv[4])});
       console.log("Browser restored the highlighted RC net, view and exact native waveform without rerunning.");
+      await button("Select C1").click();
+      await button("Delete C1").click();
+      await lesson.getByLabel("Find a generic symbol").fill("polarized");
+      await button("Polarized capacitor").click();
+      await button("Place PolarizedCapacitor at 320, 250").click();
+      await lesson.getByRole("button", {name:/^C2 terminal 1 /}).click();
+      await lesson.getByRole("button", {name:/^R1 terminal 2 /}).click();
+      await lesson.getByRole("button", {name:/^C2 terminal 2 /}).click();
+      await lesson.getByRole("button", {name:/^G1 terminal 1 /}).click();
+      await button("Select P1").click();
+      await button("Run RC transient").click();
+      await lesson.getByText("RC transient completed.", {exact:true}).waitFor();
+      assert.deepEqual((await rc.locator("polyline").getAttribute("points")).split(" ")
+        .map(point => point.split(",").map(Number)), points);
+      const polarScreenshot = path.parse(path.resolve(process.argv[4]));
+      await page.screenshot({path:path.join(polarScreenshot.dir, polarScreenshot.name + "-polarized.png")});
+      console.log("Browser verified the forward polarized capacitor with the native solver.");
     }
-    await page.screenshot({path:path.resolve(process.argv[4])});
+    if (!rcHost) await page.screenshot({path:path.resolve(process.argv[4])});
     assert.deepEqual(errors, []);
     console.log("Embedded lesson: edit, plot, reject stale draft, delete, place, reconnect and reset passed.");
   } finally { await browser.close(); }

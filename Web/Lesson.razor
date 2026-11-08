@@ -200,9 +200,9 @@
             {
                 <div class="inspector"><strong>@active.Id · @PartCatalog.Get(active.Kind).Name</strong>
                     <small>@(PartReadiness(active.Kind))</small>
-                    @if (active.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PulseVoltage)
+                    @if (active.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PolarizedCapacitor or Kind.PulseVoltage)
                     {
-                        <label for="value">Value (@(active.Kind == Kind.Capacitor ? "F" : active.Kind == Kind.Resistor ? "Ω" : "V"))</label>
+                        <label for="value">Value (@(active.Kind is Kind.Capacitor or Kind.PolarizedCapacitor ? "F" : active.Kind == Kind.Resistor ? "Ω" : "V"))</label>
                         <input id="value" type="number" step="any" value="@session.DraftValue" @oninput="e => Dispatch(new SetDraftValue(Input(e)), announce: false)" />
                         <button @onclick="Apply">Apply value</button>
                     }
@@ -430,6 +430,7 @@
 
     private static string PartReadiness(Kind kind) => kind switch
     {
+        Kind.PolarizedCapacitor => "Ideal capacitance in the forward RC lesson",
         Kind.PulseVoltage or Kind.Capacitor => "Native RC lesson supported",
         Kind.Resistor or Kind.Ground or Kind.Probe => "Divider and native RC lessons supported",
         Kind.Supply => "Divider lesson supported",
@@ -567,7 +568,7 @@
     private static string ValueLabel(Part part) => part.Kind switch
     {
         Kind.PulseVoltage => $"0–{part.Value:G4} V",
-        Kind.Capacitor => $"{part.Value * 1e6:G4} µF",
+        Kind.Capacitor or Kind.PolarizedCapacitor => $"{part.Value * 1e6:G4} µF",
         Kind.Supply => $"{part.Value:0.##} V",
         Kind.Resistor => part.Value >= 1000 ? $"{part.Value / 1000:0.##} kΩ" : $"{part.Value:0.##} Ω",
         Kind.Probe => "V probe",

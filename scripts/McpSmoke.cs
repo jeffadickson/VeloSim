@@ -21,7 +21,7 @@ Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
 var catalog = await Call(client, "read_catalog");
-Require(catalog.Catalog?.Count == 19, "Catalog incomplete.");
+Require(catalog.Catalog?.Count == 20, "Catalog incomplete.");
 var initial = (await Call(client, "read_circuit")).Version;
 var reset = await Call(client, "reset_lesson", Edit(initial));
 Require(reset.Code == CommandCode.Ok, "Reset refused.");
@@ -99,6 +99,19 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
     Require(history.Current.Contains(waveform.Id) && replay.Version == waveform.Version &&
         replay.Samples.SequenceEqual(waveform.Samples), "Reload changed RC history or provenance.");
     Console.WriteLine("MCP restored the whole net and exact RC history into a second session.");
+    var removedCap = await Change("delete_part", charging.Version, ("partId", "C1"));
+    var polar = await Change("place_part", removedCap.Version, ("kind", "PolarizedCapacitor"), ("x", 350), ("y", 215));
+    var polarId = polar.Part!.Id;
+    var polarIn = await Change("connect_pins", polar.Version, ("firstPart", polarId), ("firstPin", 0),
+        ("secondPart", "R1"), ("secondPin", 1));
+    var polarOut = await Change("connect_pins", polarIn.Version, ("firstPart", polarId), ("firstPin", 1),
+        ("secondPart", "G1"), ("secondPin", 0));
+    rcArgs = Edit(polarOut.Version);
+    rcArgs["probeId"] = "P1";
+    var polarRun = (await Call(client, "run_transient", rcArgs)).Transient;
+    Require(polarRun is not null && polarRun.Samples.SequenceEqual(waveform.Samples),
+        "Forward polarized capacitor changed the ideal RC waveform.");
+    Console.WriteLine("MCP verified the forward polarized capacitor with the native solver.");
     rcArgs["probeId"] = "missing";
     Require((await Call(client, "run_transient", rcArgs)).Code == CommandCode.UnsupportedCircuit,
         "A missing probe was accepted.");

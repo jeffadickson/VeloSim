@@ -139,7 +139,7 @@ public sealed partial class Board
                 number <= 0 || number > candidate.next.GetValueOrDefault(prefix) ||
                 part.Id != prefix + number.ToString(CultureInfo.InvariantCulture))
                 return null;
-            if (part.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PulseVoltage && part.Value <= 0)
+            if (part.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PolarizedCapacitor or Kind.PulseVoltage && part.Value <= 0)
                 return null;
             candidate.parts.Add(part);
         }

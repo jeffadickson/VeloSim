@@ -17,7 +17,7 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
         session.Execute(new ReadCatalog(), cancellationToken);
 
     [McpServerTool(Name = "schematic_set_value", UseStructuredContent = true)]
-    [Description("Set a resistor in ohms, a capacitor in farads or a supported source in volts at the expected revision.")]
+    [Description("Set a resistor in ohms, a capacitor or polarized capacitor in farads or a supported source in volts at the expected revision.")]
     public CommandResult SetValue(Guid documentId, long revision, string partId, double value,
         CancellationToken cancellationToken) =>
         session.Execute(new SetPartValue(new(documentId, revision), partId, value), cancellationToken);

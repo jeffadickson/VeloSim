@@ -21,6 +21,31 @@ public sealed class CatalogTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PolarizedCapacitorRequiresForwardOrientationInTheNativeRcProfile(bool reversed)
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadRc(session.Version));
+        session.Execute(new DeletePart(session.Version, "C1"));
+        var placed = session.Execute(new PlacePart(session.Version, Kind.PolarizedCapacitor, 350, 215));
+        var id = placed.Part!.Id;
+        Assert.Equal(new[] { "Positive", "Negative" }, PartCatalog.Get(Kind.PolarizedCapacitor).Terminals.Select(pin => pin.Name));
+        Assert.Equal(CommandCode.Ok, session.Execute(new SetPartValue(session.Version, id, 2e-6)).Code);
+        session.Execute(new ConnectPins(session.Version, new(id, reversed ? 1 : 0), new("R1", 1)));
+        session.Execute(new ConnectPins(session.Version, new(id, reversed ? 0 : 1), new("G1", 0)));
+        var called = false;
+        var run = await session.ExecuteTransientAsync(new RunTransient(session.Version, "P1"), (input, _) =>
+        {
+            called = true;
+            Assert.Equal(2e-6, input.Farads);
+            return Task.FromResult<IReadOnlyList<TransientSample>>([new(0, 0), new(input.StopSeconds, 4.96)]);
+        });
+        Assert.Equal(reversed ? CommandCode.UnsupportedCircuit : CommandCode.Ok, run.Code);
+        Assert.Equal(!reversed, called);
+    }
+
     [Fact]
     public void SemiconductorTerminalsRetainSpiceOrder()
     {
