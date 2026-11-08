@@ -9,6 +9,11 @@ public sealed class LessonSession
     private readonly Guid documentId = Guid.NewGuid();
     private readonly Queue<SweepRun> runs = new();
     private readonly Queue<TransientRun> transients = new();
+    private const int HistoryLimit = 32;
+    private readonly LinkedList<Board> undo = new();
+    private readonly LinkedList<Board> redo = new();
+    public bool CanUndo { get { lock (gate) return undo.Count > 0; } }
+    public bool CanRedo { get { lock (gate) return redo.Count > 0; } }
     private Board board = Board.Divider();
     private long revision;
     public DocumentVersion Version { get { lock (gate) return new(documentId, revision); } }
@@ -16,12 +21,15 @@ public sealed class LessonSession
     public IReadOnlyList<Wire> Wires { get { lock (gate) return Array.AsReadOnly(board.Wires.ToArray()); } }
     public double? Probe { get { lock (gate) return board.Output(); } }
 
+    public Pin? FocusedTerminal { get; private set; }
     public string? Selected { get; private set; }
     public string DraftValue { get; private set; } = "";
     public DocumentVersion DraftVersion { get; private set; }
     public Pin? PendingPin { get; private set; }
     public DocumentVersion PendingVersion { get; private set; }
     public Kind? Placement { get; private set; }
+    public ArmMove? MoveGesture { get; private set; }
+    public DocumentVersion MoveVersion { get; private set; }
     public string Filter { get; private set; } = "";
     public bool CatalogOpen { get; private set; }
 
@@ -38,8 +46,19 @@ public sealed class LessonSession
                     return Result(CommandCode.StaleRevision, "The document changed. Reselect the part or retry with the current revision.");
             }
 
+            // Successful edits record the prior board. Failed edits preserve both history stacks.
+            var before = command is PlacePart or SetPartValue or DeletePart or ConnectPins or
+                LoadRc or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart ? board.Copy() : null;
             switch (command)
             {
+                case CheckCircuit:
+                    return Result(CommandCode.Ok, "Circuit checked.") with { Findings = board.Check() };
+                case FocusTerminal focus:
+                    if (!board.Connected(focus.Terminal, focus.Terminal))
+                        return Result(CommandCode.NotFound, "Terminal not found.");
+                    Select(FindPart(focus.Terminal.Part)!);
+                    FocusedTerminal = focus.Terminal;
+                    return Result(CommandCode.Ok, "Terminal highlighted.");
                 case ReadCircuit:
                     return Result(CommandCode.Ok, "Circuit inspected.") with
                     {
@@ -59,7 +78,7 @@ public sealed class LessonSession
                 case RunSweep:
                     var points = board.Sweep();
                     if (points.Count == 0)
-                        return Result(CommandCode.UnsupportedCircuit, "Connect a valid divider to plot the probe voltage.");
+                        return Result(CommandCode.UnsupportedCircuit, "Connect a valid divider to plot the probe voltage.") with { Findings = board.Check() };
                     var run = new SweepRun(Guid.NewGuid(), Version,
                         Array.AsReadOnly(points.Select(p => new SweepSample(p.Input, p.Probe)).ToArray()));
                     if (runs.Count == 16) runs.Dequeue();
@@ -71,39 +90,84 @@ public sealed class LessonSession
                         return Result(CommandCode.InvalidInput, "Choose an unoccupied position on the sheet.");
                     if (board.Parts.Count >= 64) return Result(CommandCode.LimitReached, "The sheet allows 64 parts.");
                     var part = board.Place(place.Kind, place.X, place.Y);
-                    revision++;
+                    RecordEdit(before!);
                     Select(part);
                     return Result(CommandCode.Ok, $"Placed {part.Id}.") with { Part = part };
                 case SetPartValue change:
                     if (!board.SetValue(change.PartId, change.Value))
                         return Result(CommandCode.InvalidInput, "Select an editable part and enter a finite value greater than zero.");
-                    revision++;
+                    RecordEdit(before!);
                     if (Selected == change.PartId) DraftVersion = Version;
                     return Result(CommandCode.Ok, $"Updated {change.PartId}.");
                 case DeletePart delete:
                     if (!board.Remove(delete.PartId)) return Result(CommandCode.NotFound, "Part not found.");
                     if (Selected == delete.PartId) ClearSelection();
                     ClearGesture();
-                    revision++;
+                    RecordEdit(before!);
                     return Result(CommandCode.Ok, $"Deleted {delete.PartId} and its incident wires.");
                 case ConnectPins connect:
                     ClearGesture();
                     if (!board.Connect(connect.First, connect.Second))
                         return Result(CommandCode.InvalidInput, "Choose two valid terminals on different nets.");
-                    revision++;
+                    RecordEdit(before!);
                     return Result(CommandCode.Ok, "Wire added.");
                 case LoadRc:
                     board = Board.ChargingCircuit();
                     ClearSelection();
                     ClearGesture();
-                    revision++;
+                    RecordEdit(before!);
                     return Result(CommandCode.Ok, "RC charging example loaded.");
                 case ResetLesson:
                     board = Board.Divider();
                     ClearSelection();
                     ClearGesture();
-                    revision++;
+                    RecordEdit(before!);
                     return Result(CommandCode.Ok, "Example restored.");
+                case MovePart move:
+                    var moving = FindPart(move.PartId);
+                    if (moving is null) return Result(CommandCode.NotFound, "Part not found.");
+                    if (!PositionAvailable(move.X, move.Y, moving.Id))
+                        return Result(CommandCode.InvalidInput, "Choose an unoccupied position on the sheet.");
+                    board.Replace(moving with { X = move.X, Y = move.Y });
+                    RecordEdit(before!);
+                    Select(FindPart(moving.Id)!);
+                    return Result(CommandCode.Ok, $"Moved {moving.Id}.");
+                case RotatePart rotate:
+                    var rotating = FindPart(rotate.PartId);
+                    if (rotating is null) return Result(CommandCode.NotFound, "Part not found.");
+                    var rotated = rotating with { QuarterTurns = (rotating.QuarterTurns + 1) % 4 };
+                    board.Replace(rotated);
+                    RecordEdit(before!);
+                    Select(rotated);
+                    return Result(CommandCode.Ok, $"Rotated {rotated.Id} clockwise.");
+                case MirrorPart mirror:
+                    var mirroring = FindPart(mirror.PartId);
+                    if (mirroring is null) return Result(CommandCode.NotFound, "Part not found.");
+                    var mirrored = mirroring with { Mirrored = !mirroring.Mirrored };
+                    board.Replace(mirrored);
+                    RecordEdit(before!);
+                    Select(mirrored);
+                    return Result(CommandCode.Ok, $"Mirrored {mirrored.Id}.");
+                case DuplicatePart duplicate:
+                    var original = FindPart(duplicate.PartId);
+                    if (original is null) return Result(CommandCode.NotFound, "Part not found.");
+                    if (board.Parts.Count >= 64) return Result(CommandCode.LimitReached, "The sheet allows 64 parts.");
+                    if (!PositionAvailable(duplicate.X, duplicate.Y))
+                        return Result(CommandCode.InvalidInput, "Choose an unoccupied position on the sheet.");
+                    var copy = board.Duplicate(original, duplicate.X, duplicate.Y);
+                    RecordEdit(before!);
+                    Select(copy);
+                    return Result(CommandCode.Ok, $"Duplicated {original.Id} as {copy.Id}.") with { Part = copy };
+                case UndoEdit:
+                    return Restore(undo, redo, "Edit undone.");
+                case RedoEdit:
+                    return Restore(redo, undo, "Edit redone.");
+                case ArmMove armMove:
+                    if (FindPart(armMove.PartId) is null) return Result(CommandCode.NotFound, "Part not found.");
+                    ClearGesture();
+                    MoveGesture = armMove;
+                    MoveVersion = Version;
+                    return Result(CommandCode.Ok, "Choose a destination on the sheet.");
                 case SelectPart select:
                     var target = board.Parts.FirstOrDefault(p => p.Id == select.PartId);
                     if (target is null) return Result(CommandCode.NotFound, "Part not found.");
@@ -153,7 +217,7 @@ public sealed class LessonSession
             if (command.Expected.Revision != revision)
                 return Result(CommandCode.StaleRevision, "The document changed. Run the current revision.");
             if (board.ChargingInput(command.ProbeId) is not { } charging)
-                return Result(CommandCode.UnsupportedCircuit, "Wire the selected probe to a valid RC charging circuit.");
+                return Result(CommandCode.UnsupportedCircuit, "Wire the selected probe to a valid RC charging circuit.") with { Findings = board.Check() };
             input = charging;
         }
 
@@ -198,6 +262,32 @@ public sealed class LessonSession
         return true;
     }
 
+    private Part? FindPart(string id) => board.Parts.FirstOrDefault(part => part.Id == id);
+
+    private bool PositionAvailable(int x, int y, string? except = null) =>
+        x is >= 0 and <= 640 && y is >= 0 and <= 370 &&
+        !board.Parts.Any(part => part.Id != except && Math.Abs(part.X - x) < 64 && Math.Abs(part.Y - y) < 55);
+
+    private void RecordEdit(Board before)
+    {
+        if (undo.Count == HistoryLimit) undo.RemoveFirst();
+        undo.AddLast(before);
+        redo.Clear();
+        revision++;
+    }
+
+    private CommandResult Restore(LinkedList<Board> source, LinkedList<Board> destination, string message)
+    {
+        if (source.Last is not { } snapshot) return Result(CommandCode.NotFound, "No edit is available.");
+        destination.AddLast(board);
+        board = snapshot.Value;
+        source.RemoveLast();
+        revision++;
+        ClearSelection();
+        ClearGesture();
+        return Result(CommandCode.Ok, message);
+    }
+
     private CommandResult Result(CommandCode code, string message) => new(code, Version, message);
 
     private void Select(Part part)
@@ -216,6 +306,8 @@ public sealed class LessonSession
 
     private void ClearGesture()
     {
+        FocusedTerminal = null;
+        MoveGesture = null;
         PendingPin = null;
         Placement = null;
     }

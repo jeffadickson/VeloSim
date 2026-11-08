@@ -11,6 +11,9 @@
                     <button aria-pressed="@(placing == kind ? "true" : "false")" @onclick="() => Choose(kind)">+ @kind</button>
                 }
                 <button @onclick="Reset">Reset example</button>
+                <button disabled="@(!session.CanUndo)" @onclick="() => Dispatch(new UndoEdit(session.Version))">Undo</button>
+                <button @onclick="() => Dispatch(new CheckCircuit())">Check circuit</button>
+                <button disabled="@(!session.CanRedo)" @onclick="() => Dispatch(new RedoEdit(session.Version))">Redo</button>
                 <button @onclick="() => Dispatch(new LoadRc(session.Version))">Open RC example</button>
                 <div class="catalog">
                     <button type="button" aria-expanded="@(session.CatalogOpen ? "true" : "false")" @onclick="() => Dispatch(new ToggleCatalog())">Parts library</button>
@@ -54,19 +57,30 @@
                     <g transform="translate(@part.X @part.Y)" class="@(selected == part.Id ? "part selected" : "part")">
                         <rect class="hit" x="-25" y="-24" width="50" height="48" rx="6" tabindex="0" role="button"
                               aria-label="Select @part.Id" @onclick="() => Select(part.Id)" @onkeydown="e => Key(e, () => Select(part.Id))" />
-                        <path class="art" d="@PartCatalog.Get(part.Kind).Artwork" />
+                        <path class="art" transform="@Orientation(part)" d="@PartCatalog.Get(part.Kind).Artwork" />
                         <foreignObject x="40" y="-20" width="90" height="40">
                             <span class="label @(part.Kind == Kind.Probe ? "probe-label" : "")">@part.Id @ValueLabel(part)</span>
                         </foreignObject>
                         @for (var i = 0; i < part.PinCount; i++)
                         {
                             var pin = new Pin(part.Id, i);
-                            var offset = PartCatalog.Get(part.Kind).Terminals[i];
-                            <circle class="@(pending == pin ? "pin pending" : "pin")" cx="@offset.X" cy="@offset.Y" r="7"
+                            var anchor = part.PinPosition(i);
+                            <circle class="@(pending == pin || session.FocusedTerminal == pin ? "pin pending" : "pin")" cx="@(anchor.X - part.X)" cy="@(anchor.Y - part.Y)" r="7"
                                     tabindex="0" role="button" aria-label="@PinLabel(part, i)"
                                     @onclick="() => TapPin(pin)" @onkeydown="e => Key(e, () => TapPin(pin))" />
                         }
                     </g>
+                }
+                @if (session.MoveGesture is { } move)
+                {
+                    @foreach (var slot in Slots)
+                    {
+                        if (session.Parts.Any(p => (move.Duplicate || p.Id != move.PartId) &&
+                            Math.Abs(p.X - slot.X) < 64 && Math.Abs(p.Y - slot.Y) < 55)) continue;
+                        <circle class="slot" cx="@slot.X" cy="@slot.Y" r="10" tabindex="0" role="button"
+                                aria-label="Destination @slot.X, @slot.Y" @onclick="() => MoveTo(move, slot)"
+                                @onkeydown="e => Key(e, () => MoveTo(move, slot))" />
+                    }
                 }
                 @if (placing is Kind kindToPlace)
                 {
@@ -80,6 +94,24 @@
                 }
             </svg>
             <p class="status" role="status">@status</p>
+            @if (preflight is { Findings: { } findings } checkedCircuit && checkedCircuit.Version == session.Version)
+            {
+                <section class="status" aria-label="Circuit findings">
+                    @if (findings.Count == 0)
+                    {
+                        <p>No circuit findings.</p>
+                    }
+                    @foreach (var finding in findings)
+                    {
+                        <p><strong>@(finding.Blocking ? "Error" : "Warning")</strong> @finding.Message
+                            @if (finding.Terminal is Pin terminal)
+                            {
+                                <button @onclick="() => Dispatch(new FocusTerminal(terminal))">Highlight @terminal.Part pin @(terminal.Index + 1)</button>
+                            }
+                        </p>
+                    }
+                </section>
+            }
         </div>
         <aside>
             <p class="eyebrow">VOLTAGE PROBE · @(session.Parts.FirstOrDefault(p => p.Kind == Kind.Probe)?.Id ?? "none")</p>
@@ -107,6 +139,10 @@
                     {
                         <button disabled="@transientRunning" @onclick="() => RunRc(active.Id)">Run RC transient</button>
                     }
+                    <button @onclick="() => Dispatch(new ArmMove(active.Id))">Move part</button>
+                    <button @onclick="() => Dispatch(new RotatePart(session.Version, active.Id))">Rotate clockwise</button>
+                    <button @onclick="() => Dispatch(new MirrorPart(session.Version, active.Id))">Mirror part</button>
+                    <button @onclick="() => Dispatch(new ArmMove(active.Id, Duplicate: true))">Duplicate part</button>
                     <button class="remove" @onclick="Remove">Delete @active.Id</button>
                 </div>
             }
@@ -192,6 +228,7 @@
     private string? selected => session.Selected;
     private Pin? pending => session.PendingPin;
     private Kind? placing => session.Placement;
+    private CommandResult? preflight;
     private CommandResult? sweepResult;
     private CommandResult? transientResult;
     private bool transientRunning;
@@ -206,6 +243,7 @@
         {
             transientResult = await session.ExecuteTransientAsync(new RunTransient(session.Version, probeId), RcSolver.SolveAsync);
             status = transientResult.Message;
+            if (transientResult.Findings is not null) preflight = transientResult;
         }
         finally { transientRunning = false; }
     }
@@ -256,13 +294,14 @@
 
     private void CancelOnEscape(KeyboardEventArgs e)
     {
-        if (e.Key == "Escape" && (placing is not null || pending is not null))
+        if (e.Key == "Escape" && (placing is not null || pending is not null || session.MoveGesture is not null))
             Dispatch(new CancelGesture());
     }
 
     private CommandResult Dispatch(LessonCommand command, bool announce = true)
     {
         var result = session.Execute(command);
+        if (result.Findings is not null) preflight = result;
         if (announce || result.Code != CommandCode.Ok) status = result.Message;
         return result;
     }
@@ -273,13 +312,16 @@
         if (e.Key is "Enter" or " ") action();
     }
 
-    private (int X, int Y) PinPosition(Pin pin)
-    {
-        var part = session.Parts.First(p => p.Id == pin.Part);
-        var offset = PartCatalog.Get(part.Kind).Terminals[pin.Index];
-        return (part.X + offset.X, part.Y + offset.Y);
-    }
+    private void MoveTo(ArmMove move, (int X, int Y) slot) =>
+        Dispatch(move.Duplicate
+            ? new DuplicatePart(session.MoveVersion, move.PartId, slot.X, slot.Y)
+            : new MovePart(session.MoveVersion, move.PartId, slot.X, slot.Y));
 
+    private (int X, int Y) PinPosition(Pin pin) =>
+        session.Parts.First(p => p.Id == pin.Part).PinPosition(pin.Index);
+
+    private static string Orientation(Part part) =>
+        $"rotate({part.QuarterTurns * 90}) scale({(part.Mirrored ? -1 : 1)} 1)";
     private static readonly Kind[] QuickParts = [Kind.Supply, Kind.Resistor, Kind.Ground, Kind.Probe];
 
 

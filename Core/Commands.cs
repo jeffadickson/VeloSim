@@ -32,4 +32,17 @@ public sealed record SweepRun(Guid Id, DocumentVersion Version, IReadOnlyList<Sw
 public sealed record CatalogEntry(Kind Kind, PartDefinition Definition);
 public sealed record CommandResult(CommandCode Code, DocumentVersion Version, string Message,
     Part? Part = null, CircuitSnapshot? Circuit = null, SweepRun? Run = null,
-    IReadOnlyList<CatalogEntry>? Catalog = null, TransientRun? Transient = null);
+    IReadOnlyList<CatalogEntry>? Catalog = null, TransientRun? Transient = null, IReadOnlyList<CircuitFinding>? Findings = null);
+
+public sealed record MovePart(DocumentVersion Expected, string PartId, int X, int Y) : DocumentCommand(Expected);
+public sealed record RotatePart(DocumentVersion Expected, string PartId) : DocumentCommand(Expected);
+public sealed record MirrorPart(DocumentVersion Expected, string PartId) : DocumentCommand(Expected);
+public sealed record DuplicatePart(DocumentVersion Expected, string PartId, int X, int Y) : DocumentCommand(Expected);
+public sealed record UndoEdit(DocumentVersion Expected) : DocumentCommand(Expected);
+public sealed record RedoEdit(DocumentVersion Expected) : DocumentCommand(Expected);
+public sealed record ArmMove(string PartId, bool Duplicate = false) : LessonCommand;
+
+public sealed record CheckCircuit : LessonCommand;
+public sealed record FocusTerminal(Pin Terminal) : LessonCommand;
+public enum FindingCode { MissingGround, DanglingTerminal, UnsupportedTopology }
+public sealed record CircuitFinding(FindingCode Code, bool Blocking, string Message, Pin? Terminal = null);

@@ -16,7 +16,7 @@ options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
 var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
-    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient" };
+    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
@@ -64,6 +64,26 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
         "A missing probe was accepted.");
     Console.WriteLine($"Native RC probe returned {waveform.Samples.Count} samples with maximum error {maxError:G6} V.");
 }
+var current = (await Call(client, "read_circuit")).Version;
+var geometry = Edit(current);
+geometry["partId"] = "R1";
+geometry["x"] = 200;
+geometry["y"] = 75;
+var moved = await Call(client, "move_part", geometry);
+Require(moved.Code == CommandCode.Ok, "Move refused.");
+var undone = await Call(client, "undo_edit", Edit(moved.Version));
+Require(undone.Code == CommandCode.Ok && undone.Version.Revision == moved.Version.Revision + 1, "Undo failed.");
+Require((await Call(client, "redo_edit", Edit(moved.Version))).Code == CommandCode.StaleRevision, "Stale redo accepted.");
+var redone = await Call(client, "redo_edit", Edit(undone.Version));
+Require(redone.Code == CommandCode.Ok, "Redo refused.");
+var removeGround = Edit(redone.Version);
+removeGround["partId"] = "G1";
+var deleted = await Call(client, "delete_part", removeGround);
+Require(deleted.Code == CommandCode.Ok, "Ground deletion refused.");
+var findings = (await Call(client, "check_circuit")).Findings!;
+Require(findings.Any(f => f.Code == FindingCode.MissingGround && f.Blocking) &&
+    findings.Any(f => f.Terminal == new Pin("V1", 1)), "Preflight findings missing.");
+Console.WriteLine("MCP geometry, history, stale redo and preflight passed.");
 Console.WriteLine("MCP tools discovered. Divider returned 3.75 V. Stale, invalid and cross-session edits refused.");
 
 async Task<McpClient> Open() => await McpClient.CreateAsync(new StdioClientTransport(new()

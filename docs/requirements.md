@@ -27,7 +27,7 @@ This index describes the product in its own terms. Each ID maps to a StrictDoc r
 
 | [SCH-RC-001 and SCH-RC-002](rc-transient.sdoc) | Edit and wire the RC charging lesson, run the native transient solver, and retain voltage samples for the chosen probe. | Compare the browser and MCP output with the analytical ramp response. |
 
-The initial command contract uses zero-based terminal indices and explicit document revisions. Every accepted edit increments the revision once. Inspection, view changes, rejected edits and analysis runs leave the circuit revision unchanged. A stale draft can be recovered by reselecting the part and applying a fresh value. The current host retains the last 16 successful analytical sweeps per session. Undo and redo remain tracked by SCH-TXN-001.
+The initial command contract uses zero-based terminal indices and explicit document revisions. Every accepted edit increments the revision once. Inspection, view changes, rejected edits and analysis runs leave the circuit revision unchanged. A stale draft can be recovered by reselecting the part and applying a fresh value. The current host retains the last 16 successful analytical sweeps per session. Undo and redo retain 32 prior edit states in memory. Geometry, history and bounded preflight acceptance are detailed in [editing requirements](editing-requirements.sdoc).
 
 The prototype supports the analytical divider, a native RC charging lesson and a generic symbol catalog. Routed wiring, model-backed analyses, cross-probing, general document persistence and hierarchy remain open. The browser and local stdio MCP host each own an independent session.
 

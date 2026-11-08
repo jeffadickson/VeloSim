@@ -24,7 +24,7 @@ Serve the published `wwwroot` over HTTP. The template uses `<base href="/">` for
 
 ## Boundaries
 
-The prototype supports one sheet, 19 generic symbols, terminal-to-terminal wiring and an analytical unloaded voltage divider. It keeps edits in browser memory. The native RC charging lesson is available with the loopback solver host. Project files, undo/redo, hierarchy, symbol import and general-purpose wire routing are later work.
+The prototype supports one sheet, 19 generic symbols, terminal-to-terminal wiring and an analytical unloaded voltage divider. It keeps edits in browser memory. Select a part to move, rotate, mirror or duplicate it. Undo and redo restore earlier edits, and Check circuit identifies the terminals that need attention. The native RC charging lesson is available with the loopback solver host. Project files, hierarchy, symbol import and general-purpose wire routing are later work.
 
 See [requirements](docs/requirements.sdoc), [design notes](docs/design.md), [catalog](docs/catalog.md), and [RSpice comparison](docs/rspice-requirements-scrub.md).
 
