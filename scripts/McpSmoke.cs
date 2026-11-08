@@ -16,7 +16,7 @@ options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
 var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
-    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document" };
+    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
@@ -83,6 +83,22 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
         : waveform.Input.Volts * (1 - (tau / rise) * (1 - Math.Exp(-rise / tau)) * Math.Exp(-(t - rise) / tau));
     var maxError = waveform.Samples.Max(s => Math.Abs(s.Volts - Expected(s.Seconds)));
     Require(waveform.Samples.Count > 400 && maxError < 0.01, "The RC waveform differs from the analytical response.");
+    var highlight = await Call(client, "highlight_net", new() { ["terminal"] = new Pin("P1", 0) });
+    Require(highlight.Net?.Terminals.Count == 3 && highlight.Net.Wires.Count == 1,
+        "The labeled probe did not highlight the full output net.");
+    var sessionJson = (await Call(client, "save_document")).Document;
+    var import = Edit(independent.Version);
+    import["document"] = sessionJson;
+    Require((await Call(other, "load_document", import)).Code == CommandCode.Ok, "Session import failed.");
+    var restoredView = await Call(other, "read_view");
+    Require(restoredView.View?.Highlight == new Pin("P1", 0) &&
+        restoredView.Net!.Terminals.OrderBy(pin => pin.Part).SequenceEqual(new[]
+            { new Pin("C1", 0), new Pin("P1", 0), new Pin("R1", 1) }), "Reloaded net differed.");
+    var history = (await Call(other, "read_analysis_history")).History!;
+    var replay = (await Call(other, "read_run", new() { ["runId"] = waveform.Id })).Transient!;
+    Require(history.Current.Contains(waveform.Id) && replay.Version == waveform.Version &&
+        replay.Samples.SequenceEqual(waveform.Samples), "Reload changed RC history or provenance.");
+    Console.WriteLine("MCP restored the whole net and exact RC history into a second session.");
     rcArgs["probeId"] = "missing";
     Require((await Call(client, "run_transient", rcArgs)).Code == CommandCode.UnsupportedCircuit,
         "A missing probe was accepted.");

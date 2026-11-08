@@ -5,7 +5,7 @@ namespace SchematicLab.Core;
 
 public sealed partial class Board
 {
-    private const int MaxDocumentLength = 512 * 1024;
+    private const int MaxDocumentLength = 2 * 1024 * 1024;
     private readonly List<NetLabel> labels = [];
     private readonly List<WireRoute> routes = [];
     private readonly List<Junction> junctions = [];
@@ -88,17 +88,32 @@ public sealed partial class Board
         }
     }
 
-    internal string Save() => JsonSerializer.Serialize(
-        new SheetDocument(1, parts.ToArray(), wires.ToArray(), labels.ToArray(),
-            routes.ToArray(), junctions.ToArray(), next), SheetJson.Default.SheetDocument);
-
-    internal static Board? Load(string? json)
+    internal NetHighlight? TraceNet(Pin anchor)
     {
+        if (!Exists(anchor)) return null;
+        var visited = new HashSet<Pin> { anchor };
+        var pending = new Queue<Pin>();
+        pending.Enqueue(anchor);
+        while (pending.TryDequeue(out var pin))
+            foreach (var neighbor in Neighbors(pin))
+                if (visited.Add(neighbor)) pending.Enqueue(neighbor);
+        return new(anchor, Array.AsReadOnly(visited.ToArray()),
+            Array.AsReadOnly(wires.Where(wire => visited.Contains(wire.A)).ToArray()),
+            Array.AsReadOnly(junctions.Where(j => visited.Contains(j.First.A)).Select(j => j.Id).ToArray()));
+    }
+
+    internal string Save(SavedSession session) => JsonSerializer.Serialize(
+        new SheetDocument(2, parts.ToArray(), wires.ToArray(), labels.ToArray(),
+            routes.ToArray(), junctions.ToArray(), next, session), SheetJson.Default.SheetDocument);
+
+    internal static Board? Load(string? json, out SavedSession? session)
+    {
+        session = null;
         if (json is null || json.Length > MaxDocumentLength) return null;
         SheetDocument? document;
         try { document = JsonSerializer.Deserialize(json, SheetJson.Default.SheetDocument); }
         catch (JsonException) { return null; }
-        if (document is not { SchemaVersion: 1, Parts.Length: <= 64, Wires.Length: <= 320,
+        if (document is not { SchemaVersion: 1 or 2, Parts.Length: <= 64, Wires.Length: <= 320,
             Labels.Length: <= 320, Routes.Length: <= 320, Junctions.Length: <= 256, Next.Count: <= 32 })
             return null;
 
@@ -153,6 +168,8 @@ public sealed partial class Board
         foreach (var junction in document.Junctions)
             if (junction is null || !candidate.AddJunction(junction))
                 return null;
+        if ((document.SchemaVersion == 2) != (document.Session is not null)) return null;
+        session = document.Session;
         return candidate;
     }
 }

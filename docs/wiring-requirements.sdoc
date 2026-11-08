@@ -25,8 +25,28 @@ SetWireRoute, JoinRoutes, DeleteJunction, DeleteWire and Board.Neighbors. Verify
 UID: SCH-SHEET-JSON-001
 TITLE: Validate and restore a versioned circuit sheet
 STATEMENT: >>>
-Saving shall export schema version 1, the parts and their values and geometry, terminal wires, labels, bends, junctions and part identifier counters without changing the revision. Loading shall validate the entire document before replacing the board, reject unsupported versions, invalid references and stale revisions, and record a successful replacement as one undoable edit.
+Saving shall export schema version 2, the parts and their values and geometry, terminal wires, labels, bends, junctions and part identifier counters without changing the revision. Loading shall validate the entire document before replacing the board, reject unsupported versions, invalid references and stale revisions, and record a successful replacement as one undoable edit.
 <<<
 COMMENT: >>>
-SaveDocument, LoadDocument and Board.Load. The browser stores one sheet per origin. MCP returns or accepts the same JSON for client-managed storage. Browser view state, undo history and analysis runs are outside this schema.
+SaveDocument, LoadDocument and Board.Load. The browser stores one sheet per origin. MCP returns or accepts the same JSON for client-managed storage. Version 1 remains readable. The following requirements define the version 2 session payload. The undo stack stays in memory.
+<<<
+
+[REQUIREMENT]
+UID: SCH-WIRING-HIGHLIGHT-001
+TITLE: Highlight the complete electrical net
+STATEMENT: >>>
+Highlighting a valid terminal shall identify all terminals, physical wires and explicit junctions in its connected component, including connections through equal labels. The browser shall distinguish these members visually. Clear shall remove the highlight. A refused request shall preserve the previous highlight and highlighting shall preserve the circuit revision.
+<<<
+COMMENT: >>>
+HighlightNet, Board.TraceNet, SessionPersistenceTests, browser and MCP smoke tests.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SHEET-SESSION-001
+TITLE: Restore view settings and completed analysis history
+STATEMENT: >>>
+A version 2 sheet shall preserve the selected part, parts catalog visibility and filter, the highlighted terminal, and up to 16 completed runs of each supported analysis type. Reload shall validate the full session before changing the board. It shall preserve each run ID, original document version and samples, distinguish current results from historical results, and restore the previous view and run history on undo. A version 1 sheet shall restore an empty view and run history.
+<<<
+COMMENT: >>>
+SaveDocument, LoadDocument, ReadView, ReadAnalysisHistory, ReadRun, SessionPersistenceTests and cross-session RC smoke verification.
 <<<

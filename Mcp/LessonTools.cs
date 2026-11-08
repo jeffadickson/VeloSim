@@ -140,6 +140,21 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
         CancellationToken cancellationToken) =>
         session.Execute(new LoadDocument(new(documentId, revision), document), cancellationToken);
 
+    [McpServerTool(Name = "schematic_highlight_net", UseStructuredContent = true)]
+    [Description("Highlight the complete electrical net from one terminal, or clear it with null.")]
+    public CommandResult Highlight(Pin? terminal, CancellationToken cancellationToken) =>
+        session.Execute(new HighlightNet(terminal), cancellationToken);
+
+    [McpServerTool(Name = "schematic_read_view", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Inspect the saved view settings and the highlighted net membership.")]
+    public CommandResult View(CancellationToken cancellationToken) =>
+        session.Execute(new ReadView(), cancellationToken);
+
+    [McpServerTool(Name = "schematic_read_analysis_history", ReadOnly = true, UseStructuredContent = true)]
+    [Description("List retained sweeps and transients with original revisions and current run IDs.")]
+    public CommandResult History(CancellationToken cancellationToken) =>
+        session.Execute(new ReadAnalysisHistory(), cancellationToken);
+
     [McpServerTool(Name = "schematic_save_document", ReadOnly = true, UseStructuredContent = true)]
     [Description("Export the current sheet as versioned JSON for client-controlled storage.")]
     public CommandResult Save(CancellationToken cancellationToken) =>

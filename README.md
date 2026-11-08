@@ -83,5 +83,15 @@ wires at point**. Crossings remain separate until joined.
 replaces the active sheet and can be undone. In MCP, use
 `schematic_save_document` to get the same JSON and `schematic_load_document`
 to load it at the expected revision. The client controls where the JSON is
-stored. The file contains the circuit and probe connections. View settings,
-analysis results and undo history are session data.
+stored. The file contains the circuit, probe connections, selected part, catalog
+visibility and filter, and net highlight. It retains the last 16 completed
+runs of each analysis type with their original IDs, revisions and samples.
+Version 1 sheets open with an empty view and analysis history. Pending edits
+and the undo stack are local to the session.
+
+Choose a terminal and select **Highlight net** to mark its connected
+terminals, wires, junctions and labels. **Analysis history** lets you view
+retained runs for the displayed lesson. Reload initially shows its latest
+run. MCP exposes the same state via `schematic_highlight_net`,
+`schematic_read_view`, `schematic_read_analysis_history` and
+`schematic_read_run`.

@@ -145,7 +145,26 @@ const server = http.createServer((req, res) => {
       const atTau = points.reduce((a,b) => Math.abs(b[0] - 146.67) < Math.abs(a[0] - 146.67) ? b : a);
       assert.ok(Math.abs((174 - atTau[1]) * 5 / 149 - 5 * (1 - Math.exp(-1))) < 0.04);
       assert.match(await lesson.getByTestId("rc-final").textContent(), /4\.96\d\d V/);
-      console.log("Native browser RC probe plotted the expected charging waveform.");
+      await select("Net terminal", "P1:0");
+      await button("Highlight net").click();
+      assert.equal(await lesson.locator("svg .pin.net-highlight").count(), 3);
+      assert.equal(await lesson.locator("svg .wire.net-highlight").count(), 1);
+      await button("Parts library").click();
+      await lesson.getByLabel("Find a generic symbol").fill("resistor");
+      await button("Save sheet").click();
+      await page.reload();
+      await button("Reload sheet").click();
+      await rc.waitFor();
+      assert.equal(await lesson.locator("svg .pin.net-highlight").count(), 3);
+      assert.equal(await lesson.locator("svg .wire.net-highlight").count(), 1);
+      assert.equal(await lesson.locator("svg .net-name.net-highlight").count(), 2);
+      assert.equal(await lesson.getByLabel("Find a generic symbol").inputValue(), "resistor");
+      assert.equal(await button("Run RC transient").count(), 1);
+      assert.equal(await lesson.getByLabel("Analysis history").locator("option").count(), 2);
+      assert.deepEqual((await rc.locator("polyline").getAttribute("points")).split(" ")
+        .map(point => point.split(",").map(Number)), points);
+      assert.match(await voltage.textContent(), /4\.966 V/);
+      console.log("Browser restored the highlighted RC net, view and exact native waveform without rerunning.");
     }
     await page.screenshot({path:path.resolve(process.argv[4])});
     assert.deepEqual(errors, []);

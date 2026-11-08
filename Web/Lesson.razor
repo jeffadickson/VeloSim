@@ -15,9 +15,9 @@
                 <button @onclick="Reset">Reset example</button>
                 <button @onclick="SaveSheet">Save sheet</button>
                 <button @onclick="ReloadSheet">Reload sheet</button>
-                <button disabled="@(!session.CanUndo)" @onclick="() => Dispatch(new UndoEdit(session.Version))">Undo</button>
+                <button disabled="@(!session.CanUndo)" @onclick="() => RestoreEdit(new UndoEdit(session.Version))">Undo</button>
                 <button @onclick="() => Dispatch(new CheckCircuit())">Check circuit</button>
-                <button disabled="@(!session.CanRedo)" @onclick="() => Dispatch(new RedoEdit(session.Version))">Redo</button>
+                <button disabled="@(!session.CanRedo)" @onclick="() => RestoreEdit(new RedoEdit(session.Version))">Redo</button>
                 <button @onclick="() => Dispatch(new LoadRc(session.Version))">Open RC example</button>
                 <div class="catalog">
                     <button type="button" aria-expanded="@(session.CatalogOpen ? "true" : "false")" @onclick="() => Dispatch(new ToggleCatalog())">Parts library</button>
@@ -36,6 +36,7 @@
                     }
                 </div>
             </nav>
+            @{ var highlighted = session.HighlightedNet; }
             <svg viewBox="0 0 640 370" role="group" aria-label="Interactive circuit schematic">
                 <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
                     <circle cx="0" cy="0" r="1" fill="#cad3cb" />
@@ -56,16 +57,16 @@
                     };
                     @if (session.Routes.FirstOrDefault(route => route.Wire == wire) is { } route)
                     {
-                        <polyline class="wire" points="@WirePoints(a, b, route.Bends)" />
+                        <polyline class="wire @(highlighted?.Wires.Contains(wire) == true ? "net-highlight" : "")" points="@WirePoints(a, b, route.Bends)" />
                     }
                     else
                     {
-                        <path class="wire" d="M @a.X @a.Y V @bend H @b.X V @b.Y" />
+                        <path class="wire @(highlighted?.Wires.Contains(wire) == true ? "net-highlight" : "")" d="M @a.X @a.Y V @bend H @b.X V @b.Y" />
                     }
                 }
                 @foreach (var junction in session.Junctions)
                 {
-                    <circle cx="@junction.At.X" cy="@junction.At.Y" r="5" fill="#216851" />
+                    <circle class="@(highlighted?.Junctions.Contains(junction.Id) == true ? "net-highlight" : "")" cx="@junction.At.X" cy="@junction.At.Y" r="5" fill="#216851" />
                 }
                 @foreach (var part in session.Parts)
                 {
@@ -80,7 +81,7 @@
                         {
                             var pin = new Pin(part.Id, i);
                             var anchor = part.PinPosition(i);
-                            <circle class="@(pending == pin || session.FocusedTerminal == pin ? "pin pending" : "pin")" cx="@(anchor.X - part.X)" cy="@(anchor.Y - part.Y)" r="7"
+                            <circle class="@(pending == pin || session.FocusedTerminal == pin ? "pin pending" : "pin") @(highlighted?.Terminals.Contains(pin) == true ? "net-highlight" : "")" cx="@(anchor.X - part.X)" cy="@(anchor.Y - part.Y)" r="7"
                                     tabindex="0" role="button" aria-label="@PinLabel(part, i)"
                                     @onclick="() => TapPin(pin)" @onkeydown="e => Key(e, () => TapPin(pin))" />
                         }
@@ -90,7 +91,7 @@
                 {
                     var anchor = PinPosition(label.Terminal);
                     <foreignObject x="@(anchor.X + 8)" y="@(Math.Max(0, anchor.Y - 38))" width="110" height="24">
-                        <span class="label net-name">@label.Name</span>
+                        <span class="label net-name @(highlighted?.Terminals.Contains(label.Terminal) == true ? "net-highlight" : "")">@label.Name</span>
                     </foreignObject>
                 }
                 @if (session.MoveGesture is { } move)
@@ -131,7 +132,10 @@
                 </select>
                 <label for="net-name">Net name</label>
                 <input id="net-name" maxlength="48" value="@session.Wiring.Name" @oninput="e => Draft(session.Wiring with { Name = Input(e) })" />
-                <div class="wiring-actions"><button disabled="@(session.Wiring.Terminal is null)" @onclick="ApplyLabel">Apply net label</button></div>
+                <div class="wiring-actions"><button disabled="@(session.Wiring.Terminal is null)" @onclick="ApplyLabel">Apply net label</button>
+                    <button disabled="@(session.Wiring.Terminal is null)" @onclick="() => Dispatch(new HighlightNet(session.Wiring.Terminal))">Highlight net</button>
+                    <button disabled="@(highlighted is null)" @onclick="() => Dispatch(new HighlightNet(null))">Clear net highlight</button>
+                </div>
                 <label for="wire-one">Wire</label>
                 <select id="wire-one" value="@WireKey(session.Wiring.First)" @onchange="e => ChooseWire(e, false)">
                     <option value="">Select wire</option>
@@ -215,6 +219,26 @@
             }
         </aside>
     </section>
+    @{
+        var history = session.History;
+        var choices = IsRc
+            ? history.Transients.Select((run, index) => (run.Id, Label: $"RC transient {index + 1}")).ToArray()
+            : history.Sweeps.Select((run, index) => (run.Id, Label: $"DC sweep {index + 1}")).ToArray();
+        var displayed = IsRc ? transientResult?.Transient?.Id : sweepResult?.Run?.Id;
+    }
+    @if (choices.Length > 0)
+    {
+        <div class="history-picker">
+            <label for="analysis-history">Analysis history</label>
+            <select id="analysis-history" value="@(displayed?.ToString() ?? "")" @onchange="ChooseRun">
+                <option value="" disabled>Select a run</option>
+                @foreach (var choice in choices)
+                {
+                    <option value="@choice.Id">@choice.Label</option>
+                }
+            </select>
+        </div>
+    }
     @if (!IsRc)
     {
     <section class="results" aria-label="Simulation results">
@@ -232,7 +256,7 @@
             {
                 var sweep = latestRun.Samples;
                 var limit = sweep[^1].Input;
-                @if (latestRun.Version != session.Version)
+                @if (!session.IsCurrent(latestRun.Id, latestRun.Version))
                 {
                     <p role="status">The circuit changed. Run the sweep again to update this trace.</p>
                 }
@@ -261,7 +285,7 @@
                 {
                     <p>Probe @measured.ProbeId · R × C = @((measured.Input.TimeConstant * 1000).ToString("G4")) ms</p>
                     <p data-testid="rc-final">Final @measured.Samples[^1].Volts.ToString("F4") V</p>
-                    @if (measured.Version != session.Version)
+                    @if (!session.IsCurrent(measured.Id, measured.Version))
                     {
                         <p role="status">The circuit changed. Run the transient again to update this trace.</p>
                     }
@@ -300,7 +324,7 @@
     private CommandResult? transientResult;
     private bool transientRunning;
     private bool IsRc => session.Parts.Any(part => part.Kind == Kind.PulseVoltage);
-    private double? ProbeVoltage => transientResult?.Transient is { } run && run.Version == session.Version
+    private double? ProbeVoltage => transientResult?.Transient is { } run && session.IsCurrent(run.Id, run.Version)
         ? run.Samples[^1].Volts : session.Probe;
 
     private async Task RunRc(string probeId)
@@ -433,9 +457,32 @@
         {
             var document = await Browser.InvokeAsync<string?>("localStorage.getItem", StorageKey);
             if (document is null) status = "No saved sheet in this browser.";
-            else Dispatch(new LoadDocument(expected, document));
+            else if (Dispatch(new LoadDocument(expected, document)).Code == CommandCode.Ok) RestorePlots();
         }
         catch (JSException) { status = "Browser storage is unavailable."; }
+    }
+
+    private void RestoreEdit(DocumentCommand edit)
+    {
+        if (Dispatch(edit).Code == CommandCode.Ok) RestorePlots();
+    }
+
+    private void RestorePlots()
+    {
+        var history = session.History;
+        var sweep = history.Sweeps.LastOrDefault();
+        var transient = history.Transients.LastOrDefault();
+        sweepResult = sweep is null ? null : session.Execute(new ReadRun(sweep.Id));
+        transientResult = transient is null ? null : session.Execute(new ReadRun(transient.Id));
+        preflight = null;
+    }
+
+    private void ChooseRun(ChangeEventArgs change)
+    {
+        if (!Guid.TryParse(Input(change), out var id)) return;
+        var result = Dispatch(new ReadRun(id));
+        if (result.Transient is not null) transientResult = result;
+        if (result.Run is not null) sweepResult = result;
     }
 
     private void Draft(WiringDraft draft) => Dispatch(new UpdateWiringDraft(draft), announce: false);

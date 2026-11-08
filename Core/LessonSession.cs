@@ -3,15 +3,15 @@ using System.Globalization;
 namespace SchematicLab.Core;
 
 /// <summary>Owns one in-memory document. All commands run serially against this session.</summary>
-public sealed class LessonSession
+public sealed partial class LessonSession
 {
     private readonly object gate = new();
     private readonly Guid documentId = Guid.NewGuid();
     private readonly Queue<SweepRun> runs = new();
     private readonly Queue<TransientRun> transients = new();
     private const int HistoryLimit = 32;
-    private readonly LinkedList<Board> undo = new();
-    private readonly LinkedList<Board> redo = new();
+    private readonly LinkedList<EditState> undo = new();
+    private readonly LinkedList<EditState> redo = new();
     public bool CanUndo { get { lock (gate) return undo.Count > 0; } }
     public bool CanRedo { get { lock (gate) return redo.Count > 0; } }
     private Board board = Board.Divider();
@@ -57,15 +57,15 @@ public sealed class LessonSession
             switch (command)
             {
                 case SaveDocument:
-                    return Result(CommandCode.Ok, "Document serialized.") with { Document = board.Save() };
+                    return Result(CommandCode.Ok, "Document serialized.") with { Document = board.Save(CaptureSession()) };
                 case LoadDocument load:
-                    var loaded = Board.Load(load.Json);
-                    if (loaded is null) return Result(CommandCode.InvalidInput, "The saved sheet is invalid or uses an unsupported format.");
+                    var loaded = Board.Load(load.Json, out var saved);
+                    if (loaded is null || (saved is not null && !ValidateSession(loaded, saved)))
+                        return Result(CommandCode.InvalidInput, "The saved sheet is invalid or uses an unsupported format.");
+                    var previous = CaptureSession();
                     board = loaded;
-                    Wiring = new();
-                    ClearSelection();
-                    ClearGesture();
-                    RecordEdit(before!);
+                    RecordEdit(before!, previous);
+                    ApplySession(saved ?? EmptySession);
                     return Result(CommandCode.Ok, "Document reloaded.");
                 case SetNetLabel label:
                     if (!board.Label(label.Terminal, label.Name))
@@ -95,6 +95,16 @@ public sealed class LessonSession
                 case UpdateWiringDraft wiring when wiring.Draft is { Name.Length: <= 48, Bends.Length: <= 256 }:
                     Wiring = wiring.Draft;
                     return Result(CommandCode.Ok, "Wiring selection updated.");
+                case HighlightNet highlight:
+                    var net = highlight.Terminal is Pin anchor ? board.TraceNet(anchor) : null;
+                    if (highlight.Terminal is not null && net is null)
+                        return Result(CommandCode.NotFound, "Terminal not found.");
+                    highlightAnchor = highlight.Terminal;
+                    return Result(CommandCode.Ok, net is null ? "Net highlight cleared." : "Net highlighted.") with { Net = net };
+                case ReadView:
+                    return Result(CommandCode.Ok, "View inspected.") with { View = View, Net = HighlightedNet };
+                case ReadAnalysisHistory:
+                    return Result(CommandCode.Ok, "History inspected.") with { History = CaptureSession().History };
                 case CheckCircuit:
                     return Result(CommandCode.Ok, "Circuit checked.") with { Findings = board.Check() };
                 case FocusTerminal focus:
@@ -125,7 +135,7 @@ public sealed class LessonSession
                         return Result(CommandCode.UnsupportedCircuit, "Connect a valid divider to plot the probe voltage.") with { Findings = board.Check() };
                     var run = new SweepRun(Guid.NewGuid(), Version,
                         Array.AsReadOnly(points.Select(p => new SweepSample(p.Input, p.Probe)).ToArray()));
-                    if (runs.Count == 16) runs.Dequeue();
+                    if (runs.Count == RunLimit) runs.Dequeue();
                     runs.Enqueue(run);
                     return Result(CommandCode.Ok, "Sweep completed.") with { Run = run };
                 case PlacePart place:
@@ -156,6 +166,7 @@ public sealed class LessonSession
                     RecordEdit(before!);
                     return Result(CommandCode.Ok, "Wire added.");
                 case LoadRc:
+                    highlightAnchor = null;
                     board = Board.ChargingCircuit();
                     Wiring = new();
                     ClearSelection();
@@ -163,6 +174,7 @@ public sealed class LessonSession
                     RecordEdit(before!);
                     return Result(CommandCode.Ok, "RC charging example loaded.");
                 case ResetLesson:
+                    highlightAnchor = null;
                     board = Board.Divider();
                     Wiring = new();
                     ClearSelection();
@@ -255,6 +267,7 @@ public sealed class LessonSession
         CancellationToken cancellation = default)
     {
         RcInput input;
+        long generation;
         lock (gate)
         {
             if (cancellation.IsCancellationRequested) return Result(CommandCode.Cancelled, "Command cancelled.");
@@ -265,6 +278,7 @@ public sealed class LessonSession
             if (board.ChargingInput(command.ProbeId) is not { } charging)
                 return Result(CommandCode.UnsupportedCircuit, "Wire the selected probe to a valid RC charging circuit.") with { Findings = board.Check() };
             input = charging;
+            generation = sessionGeneration;
         }
 
         IReadOnlyList<TransientSample> samples;
@@ -284,10 +298,12 @@ public sealed class LessonSession
         lock (gate)
         {
             if (cancellation.IsCancellationRequested) return Result(CommandCode.Cancelled, "Command cancelled.");
+            if (generation != sessionGeneration)
+                return Result(CommandCode.StaleRevision, "The document was replaced while analysis was running.");
             if (!IsComplete(input, samples))
                 return new(CommandCode.SolverFailed, command.Expected, "The solver returned an incomplete waveform.");
             var run = new TransientRun(Guid.NewGuid(), command.Expected, command.ProbeId, input, samples);
-            if (transients.Count == 16) transients.Dequeue();
+            if (transients.Count == RunLimit) transients.Dequeue();
             transients.Enqueue(run);
             return new(CommandCode.Ok, command.Expected, "RC transient completed.", Transient: run);
         }
@@ -314,24 +330,27 @@ public sealed class LessonSession
         x is >= 0 and <= 640 && y is >= 0 and <= 370 &&
         !board.Parts.Any(part => part.Id != except && Math.Abs(part.X - x) < 64 && Math.Abs(part.Y - y) < 55);
 
-    private void RecordEdit(Board before)
+    private void RecordEdit(Board before, SavedSession? saved = null)
     {
         if (undo.Count == HistoryLimit) undo.RemoveFirst();
-        undo.AddLast(before);
+        undo.AddLast(new EditState(before, saved));
         redo.Clear();
         revision++;
+        if (highlightAnchor is Pin pin && !board.Connected(pin, pin)) highlightAnchor = null;
     }
 
-    private CommandResult Restore(LinkedList<Board> source, LinkedList<Board> destination, string message)
+    private CommandResult Restore(LinkedList<EditState> source, LinkedList<EditState> destination, string message)
     {
         if (source.Last is not { } snapshot) return Result(CommandCode.NotFound, "No edit is available.");
-        destination.AddLast(board);
-        board = snapshot.Value;
+        destination.AddLast(new EditState(board, snapshot.Value.Session is null ? null : CaptureSession()));
+        board = snapshot.Value.Board;
         Wiring = new();
         source.RemoveLast();
         revision++;
         ClearSelection();
         ClearGesture();
+        if (snapshot.Value.Session is { } saved) ApplySession(saved);
+        else if (highlightAnchor is Pin pin && !board.Connected(pin, pin)) highlightAnchor = null;
         return Result(CommandCode.Ok, message);
     }
 
