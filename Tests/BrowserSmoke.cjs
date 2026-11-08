@@ -183,6 +183,23 @@ const server = http.createServer((req, res) => {
       const polarScreenshot = path.parse(path.resolve(process.argv[4]));
       await page.screenshot({path:path.join(polarScreenshot.dir, polarScreenshot.name + "-polarized.png")});
       console.log("Browser verified the forward polarized capacitor with the native solver.");
+      await button("Open mixed RLC example").click();
+      const analysis = lesson.getByRole("region", {name:"General circuit analysis"});
+      const samples = analysis.getByRole("table", {name:"Probe samples"});
+      for (const [kind, count] of [["Dc", 1], ["Ac", 2], ["Transient", 1500]]) {
+        await analysis.getByRole("button", {name:"Analyze " + kind, exact:true}).click();
+        await analysis.getByTestId("bridge-count").filter({hasText:kind}).waitFor();
+        assert.ok(Number((await analysis.getByTestId("bridge-count").textContent()).split(" ")[0]) >= count);
+        if (kind === "Ac") {
+          const cells = await samples.locator("tbody tr").first().locator("td").allTextContents();
+          assert.equal(Number(cells[0]), 100);
+          assert.notEqual(Number(cells[2]), 0);
+        }
+      }
+      const bridgeScreenshot = path.parse(path.resolve(process.argv[4]));
+      await analysis.scrollIntoViewIfNeeded();
+      await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-bridge.png")});
+      console.log("Browser ran mixed RLC and controlled sources in DC, AC and transient.");
     }
     if (!rcHost) await page.screenshot({path:path.resolve(process.argv[4])});
     assert.deepEqual(errors, []);

@@ -4,7 +4,7 @@ namespace SchematicLab.Core;
 public enum Kind
 {
     Supply, Resistor, Ground, Probe, Capacitor, Inductor, Current, Diode,
-    Npn, Pnp, Nmos, Pmos, Njfet, Pjfet, Vcvs, Vccs, Switch, OpAmp, PulseVoltage, PolarizedCapacitor
+    Npn, Pnp, Nmos, Pmos, Njfet, Pjfet, Vcvs, Vccs, Switch, OpAmp, PulseVoltage, PolarizedCapacitor, Cccs, Ccvs
 }
 
 /// <summary>Stable electrical endpoint, independent of artwork and screen position.</summary>
@@ -87,11 +87,14 @@ public sealed partial class Board
 
     public bool SetValue(string id, double value)
     {
-        var index = parts.FindIndex(p => p.Id == id && p.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PolarizedCapacitor or Kind.PulseVoltage);
-        if (index < 0 || !double.IsFinite(value) || value <= 0) return false;
+        var index = parts.FindIndex(p => p.Id == id && PartCatalog.ValueUnit(p.Kind) is not null);
+        if (index < 0 || !ValidPartValue(parts[index].Kind, value)) return false;
         parts[index] = parts[index] with { Value = value };
         return true;
     }
+
+    private static bool ValidPartValue(Kind kind, double value) => double.IsFinite(value) &&
+        (kind is not (Kind.Resistor or Kind.Capacitor or Kind.PolarizedCapacitor or Kind.Inductor or Kind.PulseVoltage) || value > 0);
 
     public bool Connect(Pin a, Pin b)
     {
@@ -159,7 +162,7 @@ public sealed partial class Board
         var ground = parts.FirstOrDefault(p => p.Kind == Kind.Ground);
         var probe = parts.FirstOrDefault(p => p.Kind == Kind.Probe);
         var resistors = parts.Where(p => p.Kind == Kind.Resistor).ToArray();
-        if (supply is null || ground is null || probe is null || resistors.Length != 2) return null;
+        if (supply is null || supply.Value <= 0 || ground is null || probe is null || resistors.Length != 2) return null;
         var high = new Pin(supply.Id, 0);
         var low = new Pin(ground.Id, 0);
         var output = new Pin(probe.Id, 0);

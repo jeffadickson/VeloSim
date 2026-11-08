@@ -16,12 +16,12 @@ options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
 var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
-    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history" };
+    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "run_circuit" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
 var catalog = await Call(client, "read_catalog");
-Require(catalog.Catalog?.Count == 20, "Catalog incomplete.");
+Require(catalog.Catalog?.Count == 22, "Catalog incomplete.");
 var initial = (await Call(client, "read_circuit")).Version;
 var reset = await Call(client, "reset_lesson", Edit(initial));
 Require(reset.Code == CommandCode.Ok, "Reset refused.");
@@ -116,6 +116,21 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
     Require((await Call(client, "run_transient", rcArgs)).Code == CommandCode.UnsupportedCircuit,
         "A missing probe was accepted.");
     Console.WriteLine($"Native RC probe returned {waveform.Samples.Count} samples with maximum error {maxError:G6} V.");
+}
+if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH")))
+{
+    var separate = (await Call(other, "read_circuit")).Version;
+    var demo = await Call(other, "load_bridge_demo", Edit(separate));
+    foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
+    {
+        var arguments = Edit(demo.Version);
+        arguments["options"] = BridgeDemo.Options(analysis);
+        var solved = await Call(other, "run_circuit", arguments);
+        var bridge = solved.Bridge ?? throw new InvalidOperationException($"{analysis}: {solved.Message}");
+        Require(bridge.Version == demo.Version && bridge.Analysis == analysis &&
+            (analysis != BridgeAnalysis.Ac || bridge.Samples.Any(point => point.Imaginary != 0)), "Wrong circuit run.");
+        Console.WriteLine($"MCP mixed {analysis}: {bridge.Samples.Count} samples, final {bridge.Samples[^1]}.");
+    }
 }
 var current = (await Call(client, "read_circuit")).Version;
 var geometry = Edit(current);

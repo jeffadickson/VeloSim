@@ -19,6 +19,7 @@
                 <button @onclick="() => Dispatch(new CheckCircuit())">Check circuit</button>
                 <button disabled="@(!session.CanRedo)" @onclick="() => RestoreEdit(new RedoEdit(session.Version))">Redo</button>
                 <button @onclick="() => Dispatch(new LoadRc(session.Version))">Open RC example</button>
+                <button @onclick="OpenBridgeDemo">Open mixed RLC example</button>
                 <div class="catalog">
                     <button type="button" aria-expanded="@(session.CatalogOpen ? "true" : "false")" @onclick="() => Dispatch(new ToggleCatalog())">Parts library</button>
                     @if (session.CatalogOpen)
@@ -200,9 +201,9 @@
             {
                 <div class="inspector"><strong>@active.Id · @PartCatalog.Get(active.Kind).Name</strong>
                     <small>@(PartReadiness(active.Kind))</small>
-                    @if (active.Kind is Kind.Supply or Kind.Resistor or Kind.Capacitor or Kind.PolarizedCapacitor or Kind.PulseVoltage)
+                    @if (PartCatalog.ValueUnit(active.Kind) is { } unit)
                     {
-                        <label for="value">Value (@(active.Kind is Kind.Capacitor or Kind.PolarizedCapacitor ? "F" : active.Kind == Kind.Resistor ? "Ω" : "V"))</label>
+                        <label for="value">Value (@unit)</label>
                         <input id="value" type="number" step="any" value="@session.DraftValue" @oninput="e => Dispatch(new SetDraftValue(Input(e)), announce: false)" />
                         <button @onclick="Apply">Apply value</button>
                     }
@@ -277,6 +278,7 @@
         }
     </section>
     }
+    <BridgePanel Session="session" />
     @if (IsRc && transientResult is { } rc)
     {
         <section class="results" aria-label="RC transient results">
@@ -316,6 +318,7 @@
 
 @code {
     private readonly LessonSession session = new();
+    private void OpenBridgeDemo() => Dispatch(new LoadBridgeDemo(session.Version));
     private string? selected => session.Selected;
     private Pin? pending => session.PendingPin;
     private Kind? placing => session.Placement;

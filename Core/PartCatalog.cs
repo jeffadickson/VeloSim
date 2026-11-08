@@ -22,6 +22,19 @@ public static class PartCatalog
 
     public static PartDefinition Get(Kind kind) => Definitions[kind];
 
+    /// <summary>SI unit for the editable primary parameter, if present.</summary>
+    public static string? ValueUnit(Kind kind) => kind switch
+    {
+        Kind.Supply or Kind.PulseVoltage => "V",
+        Kind.Current => "A",
+        Kind.Resistor or Kind.Ccvs => "Ω",
+        Kind.Capacitor or Kind.PolarizedCapacitor => "F",
+        Kind.Inductor => "H",
+        Kind.Vccs => "S",
+        Kind.Vcvs or Kind.Cccs => "gain",
+        _ => null
+    };
+
     private static IReadOnlyList<Terminal> Pins(params Terminal[] terminals) => Array.AsReadOnly(terminals);
 
     private static readonly Dictionary<Kind, PartDefinition> Definitions = new()
@@ -34,7 +47,7 @@ public static class PartCatalog
         [Kind.PolarizedCapacitor] = new("Polarized capacitor", "Passives", "C",
             "M0 -32V-5M-13 -5H13M-13 8Q0 2 13 8M0 5V32M9 -19H17M13 -23V-15", Two, DefaultValue: 1e-6),
         [Kind.PulseVoltage] = new("Pulse voltage", "Sources", "V", Circle + "M-10 6H-5V-6H5V6H10", Two, DefaultValue: 5),
-        [Kind.Inductor] = new("Inductor", "Passives", "L", "M0 -32V-20Q18 -15 0 -10Q18 -5 0 0Q18 5 0 10Q18 15 0 20V32", Two),
+        [Kind.Inductor] = new("Inductor", "Passives", "L", "M0 -32V-20Q18 -15 0 -10Q18 -5 0 0Q18 5 0 10Q18 15 0 20V32", Two, DefaultValue: .01),
         [Kind.Current] = new("DC current", "Sources", "I", Circle + "M0 10V-10M-5 -4L0 -10L5 -4", Two),
         [Kind.Diode] = new("Diode", "Semiconductors", "D", "M0 -32V-10M-10 -10H10L0 9ZM-11 9H11M0 9V32",
             Pins(new("Anode", 0, -32), new("Cathode", 0, 32))),
@@ -44,8 +57,12 @@ public static class PartCatalog
         [Kind.Pmos] = new("PMOS", "Semiconductors", "M", MosBody + "M-2 -4L4 0L-2 4", Mos),
         [Kind.Njfet] = new("N-channel JFET", "Semiconductors", "J", "M-32 0H1M-6 -5L1 0L-6 5M1 -18V18M1 -13H12V-32M1 13H12V32", Fet),
         [Kind.Pjfet] = new("P-channel JFET", "Semiconductors", "J", "M-32 0H1M-3 -5L-10 0L-3 5M1 -18V18M1 -13H12V-32M1 13H12V32", Fet),
-        [Kind.Vcvs] = new("Voltage-controlled voltage", "Sources", "E", Diamond + "M-4 -7H4M0 -11V-3M-4 7H4", Controlled),
-        [Kind.Vccs] = new("Voltage-controlled current", "Sources", "G", Diamond + "M0 10V-10M-5 -4L0 -10L5 -4", Controlled),
+        [Kind.Vcvs] = new("Voltage-controlled voltage", "Sources", "E", Diamond + "M-4 -7H4M0 -11V-3M-4 7H4", Controlled, DefaultValue: 1),
+        [Kind.Vccs] = new("Voltage-controlled current", "Sources", "G", Diamond + "M0 10V-10M-5 -4L0 -10L5 -4", Controlled, DefaultValue: .001),
+        [Kind.Cccs] = new("Current-controlled current", "Sources", "F",
+            "M0 -32V-20L18 0L0 20L-18 0L0 -20M0 20V32M0 10V-10M-5 -4L0 -10L5 -4", Two, DefaultValue: 1),
+        [Kind.Ccvs] = new("Current-controlled voltage", "Sources", "H",
+            "M0 -32V-20L18 0L0 20L-18 0L0 -20M0 20V32M-4 -7H4M0 -11V-3M-4 7H4", Two, DefaultValue: 1),
         [Kind.Switch] = new("Voltage-controlled switch", "Analog", "S", "M0 -32V-14M0 14V32M0 14L12 -12M-32 -11H-17M-32 11H-17", Controlled),
         [Kind.OpAmp] = new("Five-pin op amp", "Analog", "X", "M-32 -11H-14M-32 11H-14M-14 -20V20L20 0ZM20 0H32M0 -12V-32M0 12V32",
             Pins(new("Noninverting", -32, -11), new("Inverting", -32, 11), new("Positive rail", 0, -32), new("Negative rail", 0, 32), new("Output", 32, 0)))

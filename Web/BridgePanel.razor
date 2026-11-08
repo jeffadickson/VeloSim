@@ -1,0 +1,73 @@
+@using System.Globalization
+@inject RcBrowserSolver Solver
+<section class="results" aria-label="General circuit analysis">
+    <div>
+        <h2>Circuit analysis</h2>
+        <p>Read a voltage probe in DC, AC or transient analysis.</p>
+        @foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
+        {
+            <button disabled="@running" @onclick="() => Run(analysis)">Analyze @analysis</button>
+        }
+    </div>
+    <div class="inspector">
+        @foreach (var field in fields)
+        {
+            <label for="@field.Key">@field.Label</label>
+            <input id="@field.Key" value="@Session.BridgeDraft[field.Key]" maxlength="4096" @onchange="e => Set(field.Key, e)" />
+        }
+        @if (result is { } response)
+        {
+            <p role="status" data-testid="bridge-status">@response.Message</p>
+            @if (response.Bridge is { } run)
+            {
+                <p data-testid="bridge-count">@run.Samples.Count samples · @run.ProbeId · @run.Analysis</p>
+                @if (run.Version != Session.Version) { <p>These samples are from an earlier revision.</p> }
+                <table aria-label="Probe samples">
+                    <thead><tr><th>@AxisLabel(run.Analysis)</th><th>Real (V)</th><th>Imaginary (V)</th></tr></thead>
+                    <tbody>
+                    @foreach (var sample in run.Samples.Count <= 8 ? run.Samples : new[] { run.Samples[0], run.Samples[^1] })
+                    {
+                        <tr><td>@Number(sample.Axis)</td><td>@Number(sample.Real)</td><td>@Number(sample.Imaginary)</td></tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public LessonSession Session { get; set; } = default!;
+    private CommandResult? result;
+    private bool running;
+    private static readonly (BridgeField Key, string Label)[] fields =
+    [
+        (BridgeField.Probe, "Probe ID"), (BridgeField.Frequencies, "AC frequencies (Hz)"),
+        (BridgeField.Stop, "Transient stop (s)"), (BridgeField.Step, "Maximum step (s)"),
+        (BridgeField.Phasors, "AC sources (ID magnitude phase°)"),
+        (BridgeField.Pulses, "Pulse sources (ID low high delay rise fall width period)"),
+        (BridgeField.Controls, "Current controls (ID voltage-source ID)")
+    ];
+
+    private void Set(BridgeField field, ChangeEventArgs change) =>
+        Session.Execute(new SetBridgeDraft(field, change.Value?.ToString() ?? ""));
+
+    private async Task Run(BridgeAnalysis analysis)
+    {
+        if (running) return;
+        running = true;
+        try
+        {
+            result = Session.BridgeDraft.Parse(analysis) is { } options
+                ? await Session.ExecuteBridgeAsync(new RunBridge(Session.Version, options), Solver.SolveCircuitAsync)
+                : new(CommandCode.InvalidInput, Session.Version, "Use spaces within each source row and semicolons between rows.");
+        }
+        finally { running = false; }
+    }
+
+    private static string AxisLabel(BridgeAnalysis analysis) => analysis switch
+    {
+        BridgeAnalysis.Ac => "Frequency (Hz)", BridgeAnalysis.Transient => "Time (s)", _ => "Operating point"
+    };
+    private static string Number(double value) => value.ToString("G9", CultureInfo.InvariantCulture);
+}

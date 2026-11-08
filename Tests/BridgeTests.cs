@@ -1,0 +1,58 @@
+using SchematicLab.Core;
+using Xunit;
+
+public sealed class BridgeTests
+{
+    [Fact]
+    public async Task GeneralCommandCapturesWiredCircuitAndRejectsInvalidOptionsBeforeSolving()
+    {
+        var session = new LessonSession();
+        var original = session.Version;
+        Assert.Equal(CommandCode.Ok, session.Execute(new LoadBridgeDemo(original)).Code);
+        var options = BridgeDemo.Options(BridgeAnalysis.Ac);
+        var stale = await session.ExecuteBridgeAsync(new RunBridge(original, options), Never);
+        Assert.Equal(CommandCode.StaleRevision, stale.Code);
+        var bad = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options with { FrequenciesHz = [-1] }), Never);
+        Assert.Equal(CommandCode.InvalidInput, bad.Code);
+        var run = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options), (job, _) =>
+        {
+            Assert.Equal("0", job.Nodes[0]);
+            Assert.Contains(job.Elements, e => e.Kind == Kind.Inductor);
+            Assert.Contains(job.Elements, e => e.Kind == Kind.Ccvs && e.ControlId == "V1");
+            Assert.Contains(job.Elements, e => e.Kind == Kind.Cccs && e.ControlId == "V1");
+            Assert.NotEqual("0", job.ProbeNode);
+            return Task.FromResult<IReadOnlyList<BridgeSample>>([new(100, 2, -1), new(1000, 0.5, -0.25)]);
+        });
+        Assert.Equal(CommandCode.Ok, run.Code);
+        Assert.Equal(-1, run.Bridge!.Samples[0].Imaginary);
+        Assert.Equal(session.Version, run.Bridge.Version);
+    }
+
+    [Fact]
+    public async Task DraftAndSourceBindingsRejectMalformedInputsWithoutAdvancingRevision()
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadBridgeDemo(session.Version));
+        var version = session.Version;
+        var random = new Random(110825);
+        for (var i = 0; i < 64; i++)
+        {
+            session.Execute(new SetBridgeDraft(BridgeField.Phasors, $"V1 invalid{random.Next()} 0"));
+            Assert.Null(session.BridgeDraft.Parse(BridgeAnalysis.Ac));
+        }
+        var options = BridgeDemo.Options(BridgeAnalysis.Ac);
+        var result = await session.ExecuteBridgeAsync(new RunBridge(version,
+            options with { Controls = [new("F1", "I1")] }), Never);
+        Assert.Equal(CommandCode.InvalidInput, result.Code);
+        result = await session.ExecuteBridgeAsync(new RunBridge(version,
+            options with { Controls = [] }), Never);
+        Assert.Equal(CommandCode.UnsupportedCircuit, result.Code);
+        result = await session.ExecuteBridgeAsync(new RunBridge(version, options), (_, _) =>
+            Task.FromResult<IReadOnlyList<BridgeSample>>([new(100, 2)]));
+        Assert.Equal(CommandCode.SolverFailed, result.Code);
+        Assert.Equal(version, session.Version);
+    }
+
+    private static Task<IReadOnlyList<BridgeSample>> Never(CircuitJob job, CancellationToken token) =>
+        throw new InvalidOperationException("Invalid input reached the solver.");
+}

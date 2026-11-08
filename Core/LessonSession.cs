@@ -24,6 +24,7 @@ public sealed partial class LessonSession
     public IReadOnlyList<NetLabel> Labels { get { lock (gate) return Array.AsReadOnly(board.Labels.ToArray()); } }
     public IReadOnlyList<WireRoute> Routes { get { lock (gate) return Array.AsReadOnly(board.Routes.ToArray()); } }
     public IReadOnlyList<Junction> Junctions { get { lock (gate) return Array.AsReadOnly(board.Junctions.ToArray()); } }
+    public BridgeDraft BridgeDraft { get; } = new();
     public WiringDraft Wiring { get; private set; } = new();
     public Pin? FocusedTerminal { get; private set; }
     public string? Selected { get; private set; }
@@ -52,7 +53,7 @@ public sealed partial class LessonSession
 
             // Successful edits record the prior board. Failed edits preserve both history stacks.
             var before = command is PlacePart or SetPartValue or DeletePart or ConnectPins or
-                LoadRc or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart or
+                LoadRc or LoadBridgeDemo or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart or
                 SetNetLabel or SetWireRoute or DeleteWire or JoinRoutes or DeleteJunction or LoadDocument ? board.Copy() : null;
             switch (command)
             {
@@ -95,6 +96,10 @@ public sealed partial class LessonSession
                 case UpdateWiringDraft wiring when wiring.Draft is { Name.Length: <= 48, Bends.Length: <= 256 }:
                     Wiring = wiring.Draft;
                     return Result(CommandCode.Ok, "Wiring selection updated.");
+                case SetBridgeDraft draftChange:
+                    return BridgeDraft.Set(draftChange.Field, draftChange.Text)
+                        ? Result(CommandCode.Ok, "Analysis draft updated.")
+                        : Result(CommandCode.InvalidInput, "Invalid analysis draft.");
                 case HighlightNet highlight:
                     var net = highlight.Terminal is Pin anchor ? board.TraceNet(anchor) : null;
                     if (highlight.Terminal is not null && net is null)
@@ -149,7 +154,7 @@ public sealed partial class LessonSession
                     return Result(CommandCode.Ok, $"Placed {part.Id}.") with { Part = part };
                 case SetPartValue change:
                     if (!board.SetValue(change.PartId, change.Value))
-                        return Result(CommandCode.InvalidInput, "Select an editable part and enter a finite value greater than zero.");
+                        return Result(CommandCode.InvalidInput, "Select an editable part and enter a finite value in its allowed range.");
                     RecordEdit(before!);
                     if (Selected == change.PartId) DraftVersion = Version;
                     return Result(CommandCode.Ok, $"Updated {change.PartId}.");
@@ -165,6 +170,15 @@ public sealed partial class LessonSession
                         return Result(CommandCode.InvalidInput, "Choose two valid terminals on different nets.");
                     RecordEdit(before!);
                     return Result(CommandCode.Ok, "Wire added.");
+                case LoadBridgeDemo:
+                    highlightAnchor = null;
+                    board = BridgeDemo.Build();
+                    BridgeDraft.LoadDemo();
+                    Wiring = new();
+                    ClearSelection();
+                    ClearGesture();
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "Mixed RLC example loaded.");
                 case LoadRc:
                     highlightAnchor = null;
                     board = Board.ChargingCircuit();

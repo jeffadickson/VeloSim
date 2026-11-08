@@ -140,6 +140,17 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
         CancellationToken cancellationToken) =>
         session.Execute(new LoadDocument(new(documentId, revision), document), cancellationToken);
 
+    [McpServerTool(Name = "schematic_load_bridge_demo", UseStructuredContent = true)]
+    [Description("Load a mixed RLC schematic with all four linear controlled source types.")]
+    public CommandResult LoadMixed(Guid documentId, long revision, CancellationToken cancellationToken) =>
+        session.Execute(new LoadBridgeDemo(new(documentId, revision)), cancellationToken);
+
+    [McpServerTool(Name = "schematic_run_circuit", UseStructuredContent = true)]
+    [Description("Run DC operating point, AC frequencies or a transient with typed source settings and a selected probe.")]
+    public Task<CommandResult> RunCircuit(Guid documentId, long revision, BridgeOptions options,
+        CancellationToken cancellationToken) =>
+        session.ExecuteBridgeAsync(new RunBridge(new(documentId, revision), options), solver.SolveCircuitAsync, cancellationToken);
+
     [McpServerTool(Name = "schematic_highlight_net", UseStructuredContent = true)]
     [Description("Highlight the complete electrical net from one terminal, or clear it with null.")]
     public CommandResult Highlight(Pin? terminal, CancellationToken cancellationToken) =>

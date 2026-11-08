@@ -1,0 +1,22 @@
+[DOCUMENT]
+TITLE: General schematic simulation bridge
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-NETS-001
+TITLE: Compile the electrical graph for the native solver
+STATEMENT: >>>
+The shared command shall compile the captured schematic revision into a ground-first circuit using terminal wires, equal labels and explicit junctions. Drawing coordinates shall have no effect. Ground symbols shall represent the common reference. R, L, C, independent voltage and current sources and linear E, F, G and H sources shall retain terminal order and SI values. F and H shall bind explicitly to a voltage source branch. Unsupported parts, open terminals, shorted device terminals and invalid bindings shall be refused.
+<<<
+COMMENT: >>>
+CircuitBridge, NativeCircuitSolver and BridgeTests. Native API input is bounded and never executes user commands or source text.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-RUN-001
+TITLE: Execute and verify probe analyses
+STATEMENT: >>>
+The browser and MCP shall dispatch the same revisioned command for DC operating point, explicit AC frequency points and transient with stop and maximum step settings. AC independent-source excitation shall use explicit magnitude and phase. Transient shall support explicit bounded voltage and current pulse settings. Results shall include the original revision, probe, analysis and finite samples on the requested axis, with real and imaginary components for AC. Unavailable or incomplete results shall fail explicitly.
+<<<
+COMMENT: >>>
+BrowserSmoke, McpSmoke, BridgeTests and BridgeNgspice compare the same mixed RLC lesson with an independently authored deck. General run history persistence and additional waveform forms remain separate requirements.
+<<<
