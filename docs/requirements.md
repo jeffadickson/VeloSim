@@ -42,3 +42,5 @@ The detailed catalog adds 214 individually identified targets.
 | [Compact models](compact-model-catalog.sdoc) | 43 | Individually identified model bindings and per-analysis qualification |
 
 Catalog targets describe scope and verification. The executable catalog currently has 19 generic symbols, and the analytical divider uses a bounded subset. Vendor-specific packs require their own manifests with exact identity, provenance, pin mapping and verified capabilities.
+
+The bounded named-net, wire route, junction and sheet JSON contracts are detailed in [wiring requirements](wiring-requirements.sdoc).

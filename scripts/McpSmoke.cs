@@ -16,7 +16,7 @@ options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
 var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
-    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit" };
+    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
@@ -42,9 +42,33 @@ var independent = (await Call(other, "read_circuit")).Circuit!;
 Require(independent.Version.DocumentId != initial.DocumentId && independent.Probe == 2.5, "Sessions share state.");
 var wrong = await Call(other, "set_value", Edit(changed.Version, 9000));
 Require(wrong.Code == CommandCode.WrongDocument, "Another session accepted the edit.");
+
+var sourceWire = new Wire(new("V1", 0), new("R1", 0));
+var groundWire = new Wire(new("V1", 1), new("G1", 0));
+var bend = new SheetPoint(250, 145);
+var route1 = await Change("set_wire_route", changed.Version, ("wire", sourceWire), ("bends", new[] { bend }));
+var route2 = await Change("set_wire_route", route1.Version, ("wire", groundWire), ("bends", new[] { bend }));
+Require((await Call(client, "read_circuit")).Circuit?.Probe == 3.75, "Crossing joined implicitly.");
+var joined = await Change("join_routes", route2.Version, ("first", sourceWire), ("second", groundWire), ("at", bend));
+var joinedCircuit = (await Call(client, "read_circuit")).Circuit!;
+Require(joinedCircuit is { Probe: null, Junctions.Count: 1 }, "Explicit join did not change connectivity.");
+var split = await Change("delete_junction", joined.Version, ("junctionId", joinedCircuit.Junctions![0].Id));
+Require((await Call(client, "read_circuit")).Circuit?.Probe == 3.75, "Deleting a junction did not restore connectivity.");
+
 if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH")))
 {
-    var charging = await Call(client, "load_rc", Edit(changed.Version));
+    var charging = await Call(client, "load_rc", Edit(split.Version));
+    var labeled = await Change("set_net_label", charging.Version, ("terminal", new Pin("R1", 1)), ("name", "output"));
+    labeled = await Change("set_net_label", labeled.Version, ("terminal", new Pin("P1", 0)), ("name", "OUTPUT"));
+    var rewired = await Change("delete_wire", labeled.Version, ("wire", new Wire(new("R1", 1), new("P1", 0))));
+    var saved = await Call(client, "save_document");
+    Require(saved.Document is not null && saved.Version == rewired.Version, "Save changed the revision.");
+    var cleared = await Call(client, "reset_lesson", Edit(rewired.Version));
+    var staleLoad = Edit(rewired.Version);
+    staleLoad["document"] = saved.Document;
+    Require((await Call(client, "load_document", staleLoad)).Code == CommandCode.StaleRevision, "Stale load accepted.");
+    charging = await Change("load_document", cleared.Version, ("document", saved.Document));
+    Require((await Call(client, "save_document")).Document == saved.Document, "MCP sheet round trip differed.");
     var rcArgs = Edit(charging.Version);
     rcArgs["probeId"] = "P1";
     var solved = await Call(client, "run_transient", rcArgs);
@@ -99,6 +123,15 @@ async Task<CommandResult> Call(McpClient connection, string name, Dictionary<str
     if (result.IsError == true || result.StructuredContent is not { } body)
         throw new InvalidOperationException($"Tool {name} failed: {JsonSerializer.Serialize(result)}");
     return body.Deserialize<CommandResult>(options) ?? throw new InvalidOperationException("Missing command result.");
+}
+
+async Task<CommandResult> Change(string name, DocumentVersion version, params (string Key, object? Value)[] values)
+{
+    var arguments = Edit(version);
+    foreach (var (key, value) in values) arguments[key] = value;
+    var result = await Call(client, name, arguments);
+    Require(result.Code == CommandCode.Ok, $"{name} refused: {result.Message}");
+    return result;
 }
 
 static Dictionary<string, object?> Edit(DocumentVersion version, double? value = null)

@@ -21,6 +21,10 @@ public sealed class LessonSession
     public IReadOnlyList<Wire> Wires { get { lock (gate) return Array.AsReadOnly(board.Wires.ToArray()); } }
     public double? Probe { get { lock (gate) return board.Output(); } }
 
+    public IReadOnlyList<NetLabel> Labels { get { lock (gate) return Array.AsReadOnly(board.Labels.ToArray()); } }
+    public IReadOnlyList<WireRoute> Routes { get { lock (gate) return Array.AsReadOnly(board.Routes.ToArray()); } }
+    public IReadOnlyList<Junction> Junctions { get { lock (gate) return Array.AsReadOnly(board.Junctions.ToArray()); } }
+    public WiringDraft Wiring { get; private set; } = new();
     public Pin? FocusedTerminal { get; private set; }
     public string? Selected { get; private set; }
     public string DraftValue { get; private set; } = "";
@@ -48,9 +52,49 @@ public sealed class LessonSession
 
             // Successful edits record the prior board. Failed edits preserve both history stacks.
             var before = command is PlacePart or SetPartValue or DeletePart or ConnectPins or
-                LoadRc or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart ? board.Copy() : null;
+                LoadRc or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart or
+                SetNetLabel or SetWireRoute or DeleteWire or JoinRoutes or DeleteJunction or LoadDocument ? board.Copy() : null;
             switch (command)
             {
+                case SaveDocument:
+                    return Result(CommandCode.Ok, "Document serialized.") with { Document = board.Save() };
+                case LoadDocument load:
+                    var loaded = Board.Load(load.Json);
+                    if (loaded is null) return Result(CommandCode.InvalidInput, "The saved sheet is invalid or uses an unsupported format.");
+                    board = loaded;
+                    Wiring = new();
+                    ClearSelection();
+                    ClearGesture();
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "Document reloaded.");
+                case SetNetLabel label:
+                    if (!board.Label(label.Terminal, label.Name))
+                        return Result(CommandCode.InvalidInput, "Choose a valid terminal and a name of up to 48 letters, digits, dots, hyphens or underscores.");
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "Net label updated.");
+                case SetWireRoute route:
+                    if (!board.Route(route.Wire, route.Bends))
+                        return Result(CommandCode.InvalidInput, "Use up to 16 distinct sheet points and preserve all junction points.");
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "Wire route updated.");
+                case DeleteWire wire:
+                    if (!board.RemoveWire(wire.Wire)) return Result(CommandCode.NotFound, "Wire not found.");
+                    Wiring = new();
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "Wire and its junctions removed.");
+                case JoinRoutes join:
+                    if (!board.Join(join.First, join.Second, join.At))
+                        return Result(CommandCode.InvalidInput, "Select two distinct wires with a bend at the junction point.");
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "Junction added.");
+                case DeleteJunction junction:
+                    if (!board.RemoveJunction(junction.JunctionId))
+                        return Result(CommandCode.NotFound, "Junction not found.");
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "Junction removed.");
+                case UpdateWiringDraft wiring when wiring.Draft is { Name.Length: <= 48, Bends.Length: <= 256 }:
+                    Wiring = wiring.Draft;
+                    return Result(CommandCode.Ok, "Wiring selection updated.");
                 case CheckCircuit:
                     return Result(CommandCode.Ok, "Circuit checked.") with { Findings = board.Check() };
                 case FocusTerminal focus:
@@ -62,7 +106,7 @@ public sealed class LessonSession
                 case ReadCircuit:
                     return Result(CommandCode.Ok, "Circuit inspected.") with
                     {
-                        Circuit = new(Version, Parts, Wires, Probe)
+                        Circuit = new(Version, Parts, Wires, Probe, Labels, Routes, Junctions)
                     };
                 case ReadCatalog:
                     return Result(CommandCode.Ok, "Catalog inspected.") with
@@ -113,12 +157,14 @@ public sealed class LessonSession
                     return Result(CommandCode.Ok, "Wire added.");
                 case LoadRc:
                     board = Board.ChargingCircuit();
+                    Wiring = new();
                     ClearSelection();
                     ClearGesture();
                     RecordEdit(before!);
                     return Result(CommandCode.Ok, "RC charging example loaded.");
                 case ResetLesson:
                     board = Board.Divider();
+                    Wiring = new();
                     ClearSelection();
                     ClearGesture();
                     RecordEdit(before!);
@@ -281,6 +327,7 @@ public sealed class LessonSession
         if (source.Last is not { } snapshot) return Result(CommandCode.NotFound, "No edit is available.");
         destination.AddLast(board);
         board = snapshot.Value;
+        Wiring = new();
         source.RemoveLast();
         revision++;
         ClearSelection();

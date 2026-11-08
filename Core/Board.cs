@@ -33,7 +33,7 @@ public sealed record Part(string Id, Kind Kind, int X, int Y, double Value, int 
 public readonly record struct Wire(Pin A, Pin B);
 
 /// <summary>Owns the editable lesson and evaluates its supported electrical topology.</summary>
-public sealed class Board
+public sealed partial class Board
 {
     private readonly List<Part> parts = [];
     private readonly List<Wire> wires = [];
@@ -58,6 +58,9 @@ public sealed class Board
         var copy = new Board();
         copy.parts.AddRange(parts);
         copy.wires.AddRange(wires);
+        copy.routes.AddRange(routes);
+        copy.labels.AddRange(labels);
+        copy.junctions.AddRange(junctions);
         foreach (var entry in next) copy.next.Add(entry.Key, entry.Value);
         return copy;
     }
@@ -77,7 +80,8 @@ public sealed class Board
     public bool Remove(string id)
     {
         if (parts.RemoveAll(p => p.Id == id) == 0) return false;
-        wires.RemoveAll(w => w.A.Part == id || w.B.Part == id);
+        foreach (var wire in wires.Where(w => w.A.Part == id || w.B.Part == id).ToArray()) RemoveWire(wire);
+        labels.RemoveAll(label => label.Terminal.Part == id);
         return true;
     }
 
@@ -91,7 +95,7 @@ public sealed class Board
 
     public bool Connect(Pin a, Pin b)
     {
-        if (!Exists(a) || !Exists(b) || Connected(a, b)) return false;
+        if (wires.Count >= 320 || !Exists(a) || !Exists(b) || Connected(a, b)) return false;
         wires.Add(new(a, b));
         return true;
     }
@@ -105,11 +109,8 @@ public sealed class Board
         while (pending.TryDequeue(out var pin))
         {
             if (pin == b) return true;
-            foreach (var wire in wires)
-            {
-                if (wire.A == pin && visited.Add(wire.B)) pending.Enqueue(wire.B);
-                if (wire.B == pin && visited.Add(wire.A)) pending.Enqueue(wire.A);
-            }
+            foreach (var neighbor in Neighbors(pin))
+                if (visited.Add(neighbor)) pending.Enqueue(neighbor);
         }
         return false;
     }
@@ -119,13 +120,12 @@ public sealed class Board
         var findings = new List<CircuitFinding>();
         if (!parts.Any(part => part.Kind == Kind.Ground))
             findings.Add(new(FindingCode.MissingGround, true, "Place ground and connect the reference terminal."));
-        var connected = wires.SelectMany(wire => new[] { wire.A, wire.B }).ToHashSet();
         foreach (var part in parts)
         {
             for (var index = 0; index < part.PinCount; index++)
             {
                 var pin = new Pin(part.Id, index);
-                if (connected.Contains(pin)) continue;
+                if (Neighbors(pin).Any()) continue;
                 var name = PartCatalog.Get(part.Kind).Terminals[index].Name;
                 findings.Add(new(FindingCode.DanglingTerminal, false, $"Connect {part.Id} · {name}.", pin));
             }

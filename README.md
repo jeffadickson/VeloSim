@@ -70,3 +70,18 @@ Open http://127.0.0.1:5087/, choose **Open RC example**, select **P1**, and run
 the transient. In MCP, inspect the circuit, call `schematic_load_rc` at the
 current revision, then call `schematic_run_transient` with the new revision and
 probe ID `P1`. Use `schematic_read_run` to fetch the retained waveform.
+## Wiring and saved sheets
+
+In **Wiring tools**, select a terminal and enter a net name. Labels with the
+same name, ignoring case, connect their terminals. Clear the name to remove a
+label. To edit a route, select its wire and enter a space-separated list of
+sheet coordinates such as `250,145 300,145`. To add a junction, give both
+wires the same bend, select both wires, enter that one point and choose **Join
+wires at point**. Crossings remain separate until joined.
+
+**Save sheet** stores one sheet for the browser origin. **Reload sheet**
+replaces the active sheet and can be undone. In MCP, use
+`schematic_save_document` to get the same JSON and `schematic_load_document`
+to load it at the expected revision. The client controls where the JSON is
+stored. The file contains the circuit and probe connections. View settings,
+analysis results and undo history are session data.

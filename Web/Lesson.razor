@@ -1,3 +1,5 @@
+@using Microsoft.JSInterop
+@inject IJSRuntime Browser
 @inject RcBrowserSolver RcSolver
 
 <main @onkeydown="CancelOnEscape">
@@ -11,6 +13,8 @@
                     <button aria-pressed="@(placing == kind ? "true" : "false")" @onclick="() => Choose(kind)">+ @kind</button>
                 }
                 <button @onclick="Reset">Reset example</button>
+                <button @onclick="SaveSheet">Save sheet</button>
+                <button @onclick="ReloadSheet">Reload sheet</button>
                 <button disabled="@(!session.CanUndo)" @onclick="() => Dispatch(new UndoEdit(session.Version))">Undo</button>
                 <button @onclick="() => Dispatch(new CheckCircuit())">Check circuit</button>
                 <button disabled="@(!session.CanRedo)" @onclick="() => Dispatch(new RedoEdit(session.Version))">Redo</button>
@@ -50,7 +54,18 @@
                         _ when wire.A.Index == 0 && wire.B.Index == 0 => Math.Min(a.Y, b.Y) - 20,
                         _ => (a.Y + b.Y) / 2
                     };
-                    <path class="wire" d="M @a.X @a.Y V @bend H @b.X V @b.Y" />
+                    @if (session.Routes.FirstOrDefault(route => route.Wire == wire) is { } route)
+                    {
+                        <polyline class="wire" points="@WirePoints(a, b, route.Bends)" />
+                    }
+                    else
+                    {
+                        <path class="wire" d="M @a.X @a.Y V @bend H @b.X V @b.Y" />
+                    }
+                }
+                @foreach (var junction in session.Junctions)
+                {
+                    <circle cx="@junction.At.X" cy="@junction.At.Y" r="5" fill="#216851" />
                 }
                 @foreach (var part in session.Parts)
                 {
@@ -70,6 +85,13 @@
                                     @onclick="() => TapPin(pin)" @onkeydown="e => Key(e, () => TapPin(pin))" />
                         }
                     </g>
+                }
+                @foreach (var label in session.Labels)
+                {
+                    var anchor = PinPosition(label.Terminal);
+                    <foreignObject x="@(anchor.X + 8)" y="@(Math.Max(0, anchor.Y - 38))" width="110" height="24">
+                        <span class="label net-name">@label.Name</span>
+                    </foreignObject>
                 }
                 @if (session.MoveGesture is { } move)
                 {
@@ -94,6 +116,51 @@
                 }
             </svg>
             <p class="status" role="status">@status</p>
+            <section class="status wiring" aria-label="Wiring tools">
+                <label for="net-terminal">Net terminal</label>
+                <select id="net-terminal" value="@TerminalKey(session.Wiring.Terminal)" @onchange="ChooseTerminal">
+                    <option value="">Select terminal</option>
+                    @foreach (var part in session.Parts)
+                    {
+                        @for (var index = 0; index < part.PinCount; index++)
+                        {
+                            var pin = new Pin(part.Id, index);
+                            <option value="@TerminalKey(pin)">@part.Id pin @(index + 1)</option>
+                        }
+                    }
+                </select>
+                <label for="net-name">Net name</label>
+                <input id="net-name" maxlength="48" value="@session.Wiring.Name" @oninput="e => Draft(session.Wiring with { Name = Input(e) })" />
+                <div class="wiring-actions"><button disabled="@(session.Wiring.Terminal is null)" @onclick="ApplyLabel">Apply net label</button></div>
+                <label for="wire-one">Wire</label>
+                <select id="wire-one" value="@WireKey(session.Wiring.First)" @onchange="e => ChooseWire(e, false)">
+                    <option value="">Select wire</option>
+                    @foreach (var wire in session.Wires)
+                    {
+                        <option value="@WireKey(wire)">@WireName(wire)</option>
+                    }
+                </select>
+                <label for="wire-points">Bends or junction point (x,y)</label>
+                <input id="wire-points" maxlength="256" placeholder="250,145 280,160" value="@session.Wiring.Bends"
+                       @oninput="e => Draft(session.Wiring with { Bends = Input(e) })" />
+                <div class="wiring-actions"><button disabled="@(session.Wiring.First is null)" @onclick="ApplyRoute">Apply route</button>
+                <button disabled="@(session.Wiring.First is null)" @onclick="RemoveWire">Delete wire</button></div>
+                <label for="wire-two">Second wire for junction</label>
+                <select id="wire-two" value="@WireKey(session.Wiring.Second)" @onchange="e => ChooseWire(e, true)">
+                    <option value="">Select second wire</option>
+                    @foreach (var wire in session.Wires)
+                    {
+                        <option value="@WireKey(wire)">@WireName(wire)</option>
+                    }
+                </select>
+                <div class="wiring-actions">                <button disabled="@(session.Wiring.First is null || session.Wiring.Second is null)" @onclick="JoinAtPoint">Join wires at point</button></div>
+                @foreach (var junction in session.Junctions)
+                {
+                    <button @onclick="() => Dispatch(new DeleteJunction(session.Version, junction.Id))">
+                        Delete junction @junction.At.X,@junction.At.Y
+                    </button>
+                }
+            </section>
             @if (preflight is { Findings: { } findings } checkedCircuit && checkedCircuit.Version == session.Version)
             {
                 <section class="status" aria-label="Circuit findings">
@@ -344,6 +411,111 @@
         Kind.Supply => "Divider lesson supported",
         _ => "Placement and wiring only"
     };
+
+    private const string StorageKey = "schematiclab.sheet.v1";
+
+    private async Task SaveSheet()
+    {
+        var result = Dispatch(new SaveDocument());
+        if (result.Document is null) return;
+        try
+        {
+            await Browser.InvokeVoidAsync("localStorage.setItem", StorageKey, result.Document);
+            status = "Sheet saved in this browser.";
+        }
+        catch (JSException) { status = "Browser storage is unavailable."; }
+    }
+
+    private async Task ReloadSheet()
+    {
+        var expected = session.Version;
+        try
+        {
+            var document = await Browser.InvokeAsync<string?>("localStorage.getItem", StorageKey);
+            if (document is null) status = "No saved sheet in this browser.";
+            else Dispatch(new LoadDocument(expected, document));
+        }
+        catch (JSException) { status = "Browser storage is unavailable."; }
+    }
+
+    private void Draft(WiringDraft draft) => Dispatch(new UpdateWiringDraft(draft), announce: false);
+
+    private static string TerminalKey(Pin? terminal) => terminal is { } pin ? $"{pin.Part}:{pin.Index}" : "";
+    private static string WireKey(Wire? wire) => wire is { } value
+        ? $"{TerminalKey(value.A)}|{TerminalKey(value.B)}" : "";
+    private static string WireName(Wire wire) =>
+        $"{wire.A.Part} pin {wire.A.Index + 1} to {wire.B.Part} pin {wire.B.Index + 1}";
+
+    private void ChooseTerminal(ChangeEventArgs change)
+    {
+        var key = Input(change);
+        Pin? selectedPin = null;
+        foreach (var part in session.Parts)
+            for (var i = 0; i < part.PinCount; i++)
+                if (TerminalKey(new Pin(part.Id, i)) == key) selectedPin = new(part.Id, i);
+        Draft(session.Wiring with
+        {
+            Terminal = selectedPin,
+            Name = session.Labels.FirstOrDefault(label => label.Terminal == selectedPin)?.Name ?? ""
+        });
+    }
+
+    private void ChooseWire(ChangeEventArgs change, bool second)
+    {
+        var key = Input(change);
+        Wire? wire = session.Wires.Where(value => WireKey(value) == key).Select(value => (Wire?)value).FirstOrDefault();
+        if (second) Draft(session.Wiring with { Second = wire });
+        else
+        {
+            var route = session.Routes.FirstOrDefault(value => value.Wire == wire);
+            Draft(session.Wiring with { First = wire, Bends = route is null ? "" :
+                string.Join(" ", route.Bends.Select(point => $"{point.X},{point.Y}")) });
+        }
+    }
+
+    private void ApplyLabel()
+    {
+        if (session.Wiring.Terminal is Pin pin)
+            Dispatch(new SetNetLabel(session.Version, pin, session.Wiring.Name.Length == 0 ? null : session.Wiring.Name));
+    }
+
+    private void ApplyRoute()
+    {
+        if (session.Wiring.First is Wire wire && ReadPoints() is { } points)
+            Dispatch(new SetWireRoute(session.Version, wire, points));
+    }
+
+    private void RemoveWire()
+    {
+        if (session.Wiring.First is Wire wire) Dispatch(new DeleteWire(session.Version, wire));
+    }
+
+    private void JoinAtPoint()
+    {
+        if (session.Wiring.First is not Wire first || session.Wiring.Second is not Wire second) return;
+        if (ReadPoints() is [var point]) Dispatch(new JoinRoutes(session.Version, first, second, point));
+        else status = "Enter one junction point shared by the two routes.";
+    }
+
+    private List<SheetPoint>? ReadPoints()
+    {
+        var points = new List<SheetPoint>();
+        foreach (var token in session.Wiring.Bends.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = token.Split(',');
+            if (pair.Length != 2 || !int.TryParse(pair[0], CultureInfo.InvariantCulture, out var x) ||
+                !int.TryParse(pair[1], CultureInfo.InvariantCulture, out var y))
+            {
+                status = "Use x,y pairs separated by spaces.";
+                return null;
+            }
+            points.Add(new(x, y));
+        }
+        return points;
+    }
+
+    private static string WirePoints((int X, int Y) a, (int X, int Y) b, IReadOnlyList<SheetPoint> bends) =>
+        string.Join(" ", bends.Prepend(new(a.X, a.Y)).Append(new(b.X, b.Y)).Select(point => $"{point.X},{point.Y}"));
 
     private static string ValueLabel(Part part) => part.Kind switch
     {

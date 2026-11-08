@@ -26,13 +26,14 @@ public sealed record SetCatalogFilter(string Value) : LessonCommand;
 public sealed record ToggleCatalog : LessonCommand;
 
 public sealed record CircuitSnapshot(DocumentVersion Version, IReadOnlyList<Part> Parts,
-    IReadOnlyList<Wire> Wires, double? Probe);
+    IReadOnlyList<Wire> Wires, double? Probe, IReadOnlyList<NetLabel>? Labels = null,
+    IReadOnlyList<WireRoute>? Routes = null, IReadOnlyList<Junction>? Junctions = null);
 public sealed record SweepSample(double Input, double Probe);
 public sealed record SweepRun(Guid Id, DocumentVersion Version, IReadOnlyList<SweepSample> Samples);
 public sealed record CatalogEntry(Kind Kind, PartDefinition Definition);
 public sealed record CommandResult(CommandCode Code, DocumentVersion Version, string Message,
     Part? Part = null, CircuitSnapshot? Circuit = null, SweepRun? Run = null,
-    IReadOnlyList<CatalogEntry>? Catalog = null, TransientRun? Transient = null, IReadOnlyList<CircuitFinding>? Findings = null);
+    IReadOnlyList<CatalogEntry>? Catalog = null, TransientRun? Transient = null, IReadOnlyList<CircuitFinding>? Findings = null, string? Document = null);
 
 public sealed record MovePart(DocumentVersion Expected, string PartId, int X, int Y) : DocumentCommand(Expected);
 public sealed record RotatePart(DocumentVersion Expected, string PartId) : DocumentCommand(Expected);

@@ -103,4 +103,46 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
     [Description("Check the current schematic for missing ground, dangling terminals and supported topology.")]
     public CommandResult Check(CancellationToken cancellationToken) =>
         session.Execute(new CheckCircuit(), cancellationToken);
+
+    [McpServerTool(Name = "schematic_set_net_label", UseStructuredContent = true)]
+    [Description("Set or clear a case-insensitive electrical net label on one terminal.")]
+    public CommandResult Label(Guid documentId, long revision, Pin terminal, string? name,
+        CancellationToken cancellationToken) =>
+        session.Execute(new SetNetLabel(new(documentId, revision), terminal, name), cancellationToken);
+
+    [McpServerTool(Name = "schematic_set_wire_route", UseStructuredContent = true)]
+    [Description("Replace the ordered bends of a wire without changing its terminal endpoints.")]
+    public CommandResult Route(Guid documentId, long revision, Wire wire, SheetPoint[] bends,
+        CancellationToken cancellationToken) =>
+        session.Execute(new SetWireRoute(new(documentId, revision), wire, bends), cancellationToken);
+
+    [McpServerTool(Name = "schematic_delete_wire", UseStructuredContent = true)]
+    [Description("Remove a wire, its route and its incident junctions.")]
+    public CommandResult RemoveWire(Guid documentId, long revision, Wire wire,
+        CancellationToken cancellationToken) =>
+        session.Execute(new DeleteWire(new(documentId, revision), wire), cancellationToken);
+
+    [McpServerTool(Name = "schematic_join_routes", UseStructuredContent = true)]
+    [Description("Connect two wires at an explicit bend shared by their routes.")]
+    public CommandResult Join(Guid documentId, long revision, Wire first, Wire second, SheetPoint at,
+        CancellationToken cancellationToken) =>
+        session.Execute(new JoinRoutes(new(documentId, revision), first, second, at), cancellationToken);
+
+    [McpServerTool(Name = "schematic_delete_junction", UseStructuredContent = true)]
+    [Description("Remove an explicit electrical junction while preserving the wire routes.")]
+    public CommandResult RemoveJunction(Guid documentId, long revision, Guid junctionId,
+        CancellationToken cancellationToken) =>
+        session.Execute(new DeleteJunction(new(documentId, revision), junctionId), cancellationToken);
+
+    [McpServerTool(Name = "schematic_load_document", UseStructuredContent = true)]
+    [Description("Validate and replace the current sheet with a versioned JSON document.")]
+    public CommandResult Load(Guid documentId, long revision, string document,
+        CancellationToken cancellationToken) =>
+        session.Execute(new LoadDocument(new(documentId, revision), document), cancellationToken);
+
+    [McpServerTool(Name = "schematic_save_document", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Export the current sheet as versioned JSON for client-controlled storage.")]
+    public CommandResult Save(CancellationToken cancellationToken) =>
+        session.Execute(new SaveDocument(), cancellationToken);
+
 }

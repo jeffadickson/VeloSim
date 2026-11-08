@@ -7,7 +7,7 @@ const root = path.resolve(process.argv[3]);
 const rcHost = process.argv[5];
 const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".wasm": "application/wasm", ".json": "application/json" };
 const server = http.createServer((req, res) => {
-  if (req.url === "/article") { res.setHeader("Content-Type", "text/html"); res.end(`<iframe title="lesson" src="${rcHost || "/"}" style="width:100%;height:1320px;border:0"></iframe>`); return; }
+  if (req.url === "/article") { res.setHeader("Content-Type", "text/html"); res.end(`<iframe title="lesson" src="${rcHost || "/"}" style="width:100%;height:1570px;border:0"></iframe>`); return; }
   const name = path.resolve(root, "." + new URL(req.url, "http://localhost").pathname);
   const file = name === root ? path.join(root, "index.html") : name;
   if (!file.startsWith(root + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) { res.writeHead(404).end(); return; }
@@ -18,7 +18,7 @@ const server = http.createServer((req, res) => {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   const browser = await chromium.launch({ executablePath: process.argv[2], headless: true });
   try {
-    const page = await browser.newPage({ viewport: { width: 1160, height: 1390 } });
+    const page = await browser.newPage({ viewport: { width: 1160, height: 1600 } });
     const errors = [];
     page.on("pageerror", error => { errors.push(error.message); console.error(error.message); });
     page.on("console", message => { if (message.type() === "error") console.error(message.text()); });
@@ -94,8 +94,46 @@ const server = http.createServer((req, res) => {
     await lesson.getByRole("button", {name:"Check circuit"}).click();
     assert.match(await findings.textContent(), /No circuit findings/);
     console.log("Browser geometry, history and actionable preflight passed.");
+
+    const button = name => lesson.getByRole("button", {name, exact:true});
+    const select = (name, value) => lesson.getByLabel(name, {exact:true}).selectOption(value);
+    const bends = lesson.getByLabel("Bends or junction point (x,y)", {exact:true});
+    await button("Reset example").click();
+    await select("Wire", "V1:0|R1:0");
+    await bends.fill("250,145");
+    await button("Apply route").click();
+    await select("Wire", "V1:1|G1:0");
+    await bends.fill("250,145");
+    await button("Apply route").click();
+    assert.equal(await voltage.textContent(), "2.5 V");
+    await select("Second wire for junction", "V1:0|R1:0");
+    await button("Join wires at point").click();
+    assert.equal(await voltage.textContent(), "—");
+    await button("Save sheet").click();
+    await button("Reset example").click();
+    await button("Reload sheet").click();
+    await lesson.getByRole("button", {name:/Delete junction/}).waitFor();
+    assert.equal(await voltage.textContent(), "—");
+    await lesson.getByRole("button", {name:/Delete junction/}).click();
+    assert.equal(await voltage.textContent(), "2.5 V");
+    console.log("Browser crossing, junction and junction round trip passed.");
+
     if (rcHost) {
       await lesson.getByRole("button", {name:"Open RC example"}).click();
+      await select("Net terminal", "R1:1");
+      await lesson.getByLabel("Net name", {exact:true}).fill("output");
+      await button("Apply net label").click();
+      await select("Net terminal", "P1:0");
+      await lesson.getByLabel("Net name", {exact:true}).fill("OUTPUT");
+      await button("Apply net label").click();
+      await select("Wire", "R1:1|P1:0");
+      await button("Delete wire").click();
+      await button("Save sheet").click();
+      await page.reload();
+      await button("Reload sheet").click();
+      await lesson.locator("svg .net-name").first().waitFor();
+      assert.deepEqual((await lesson.locator("svg .net-name").allTextContents()).sort(), ["OUTPUT","output"]);
+
       await lesson.getByRole("button", {name:"Select P1", exact:true}).press("Enter");
       await lesson.getByRole("button", {name:"Run RC transient"}).click();
       const rc = lesson.getByRole("img", {name:"RC probe voltage against time"});
