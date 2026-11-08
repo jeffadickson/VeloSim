@@ -71,8 +71,22 @@ public sealed partial class NativeRcSolver
         if (element.Kind == Kind.Diode)
         {
             var binding = FindModel(options.Diodes, element.Id, model => model.Id);
-            result["saturation_amps"] = binding?.SaturationAmps ?? 1e-14;
-            result["thermal_volts"] = binding?.ThermalVolts ?? 8.617333262145e-5 * 300.15;
+            if (binding is { } d && (d.JunctionFarads != 0 || d.TransitSeconds != 0))
+            {
+                result.Remove("saturation_amps");
+                result["kind"] = "spice_diode";
+                result["model"] = new
+                {
+                    saturation_amps = d.SaturationAmps, thermal_volts = d.ThermalVolts,
+                    junction_farads = d.JunctionFarads, junction_volts = d.JunctionVolts,
+                    grading = d.Grading, forward_coefficient = d.ForwardCoefficient, transit_seconds = d.TransitSeconds
+                };
+            }
+            else
+            {
+                result["saturation_amps"] = binding?.SaturationAmps ?? 1e-14;
+                result["thermal_volts"] = binding?.ThermalVolts ?? 8.617333262145e-5 * 300.15;
+            }
         }
         return result;
     }

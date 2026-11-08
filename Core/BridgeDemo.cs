@@ -11,11 +11,11 @@ public static class BridgeDemo
         Controls: [new("F1", "V1"), new("H1", "V1")]);
 
     public static BridgeOptions ModelOptions(BridgeAnalysis analysis, string probeId) => new(analysis, probeId,
-        FrequenciesHz: [100, 1000], StopSeconds: .001, StepSeconds: .000001,
+        FrequenciesHz: [100, 1000], StopSeconds: .0001, StepSeconds: .00000005,
         Phasors: [new("V2", 1, 0), new("V3", 1, 0)],
         Pulses: [new("V2", 1.2, 1.6, 0, .00002, .00002, .005, .01),
                  new("V3", .2, 1, 0, .00002, .00002, .005, .01)],
-        Diodes: [new("D1", 1e-14, 8.617333262145e-5 * 300.15)],
+        Diodes: [new("D1", 1e-14, 8.617333262145e-5 * 300.15, 2e-9, .7, .5, .5, 1e-8)],
         Mos1: [new("M1", .7, .001, 0, .6, .02)]);
 
     internal static Board BuildModels() => Build(

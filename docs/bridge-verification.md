@@ -55,3 +55,16 @@ The final Core suite passed 28 tests. Coverlet counted 3,486 of 3,949 lines
 and 957 of 1,438 branches, including generated code. An isolated mutant
 that mapped the gate to the bulk terminal was caught. StrictDoc parsed
 12 documents with 247 unique IDs.
+
+## Diode depletion and diffusion
+
+The 2 nF CJO and 10 ns TT example passed browser, MCP and the independent
+ngspice 47+ comparison. Maximum probe errors were 0.128 microvolts in DC,
+0.222 microvolts for two complex AC points, and 0.359 mV for 2,001 native
+samples against 4,011 ngspice samples. Transient used 50 ns maximum native
+step and 25 ns maximum oracle step. The tolerance was 0.5 mV.
+
+The Core suite passed 29 tests. Coverlet measured 3,494 of 3,957 lines and
+976 of 1,458 branches, including generated code. An isolated grading-boundary
+mutant was caught. Browser, MCP, transport and Rust coverage were unmeasured.
+See E:/Artifacts/SchematicLab-charge-a5c5329 for local logs and screenshots.

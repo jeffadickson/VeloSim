@@ -77,6 +77,25 @@ public sealed class BridgeTests
         Assert.Equal(CommandCode.Ok, result.Code);
     }
 
+    [Fact]
+    public async Task ChargedDiodeBindingRejectsInvalidDepletionAndRetainsTransportCharge()
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadModelDemo(session.Version));
+        var options = BridgeDemo.ModelOptions(BridgeAnalysis.Dc, "P1");
+        var diode = options.Diodes![0] with { JunctionFarads = 2e-9, TransitSeconds = 1e-8 };
+        var invalid = await session.ExecuteBridgeAsync(new RunBridge(session.Version,
+            options with { Diodes = [diode with { Grading = 1 }] }), Never);
+        Assert.Equal(CommandCode.InvalidInput, invalid.Code);
+        var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version,
+            options with { Diodes = [diode] }), (job, _) =>
+        {
+            Assert.Equal(diode, Assert.Single(job.Options.Diodes!));
+            return Task.FromResult<IReadOnlyList<BridgeSample>>([new(0, .6)]);
+        });
+        Assert.Equal(CommandCode.Ok, result.Code);
+    }
+
     private static Task<IReadOnlyList<BridgeSample>> Never(CircuitJob job, CancellationToken token) =>
         throw new InvalidOperationException("Invalid input reached the solver.");
 }

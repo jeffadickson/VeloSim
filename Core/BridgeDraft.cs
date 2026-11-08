@@ -35,12 +35,12 @@ public sealed class BridgeDraft
         fields[BridgeField.Diodes] = "";
         fields[BridgeField.Mos1] = "";
         if (!models) return;
-        fields[BridgeField.Stop] = ".001";
-        fields[BridgeField.Step] = ".000001";
+        fields[BridgeField.Stop] = ".0001";
+        fields[BridgeField.Step] = ".00000005";
         fields[BridgeField.Phasors] = "V2 1 0; V3 1 0";
         fields[BridgeField.Pulses] = "V2 1.2 1.6 0 .00002 .00002 .005 .01; V3 .2 1 0 .00002 .00002 .005 .01";
         fields[BridgeField.Controls] = "";
-        fields[BridgeField.Diodes] = "D1 1e-14 " + (8.617333262145e-5 * 300.15).ToString("R", CultureInfo.InvariantCulture);
+        fields[BridgeField.Diodes] = "D1 1e-14 " + (8.617333262145e-5 * 300.15).ToString("R", CultureInfo.InvariantCulture) + " 2e-9 .7 .5 .5 1e-8";
         fields[BridgeField.Mos1] = "M1 .7 .001 0 .6 .02";
     }
 
@@ -49,7 +49,10 @@ public sealed class BridgeDraft
         try
         {
             var controls = Rows(BridgeField.Controls, 2).Select(row => new CurrentControl(row[0], row[1])).ToArray();
-            var diodes = Rows(BridgeField.Diodes, 3).Select(row => new DiodeBinding(row[0], Number(row[1]), Number(row[2]))).ToArray();
+            var diodes = Rows(BridgeField.Diodes, 3, 8).Select(row => row.Length == 3
+                ? new DiodeBinding(row[0], Number(row[1]), Number(row[2]))
+                : new DiodeBinding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]),
+                    Number(row[5]), Number(row[6]), Number(row[7]))).ToArray();
             var mos = Rows(BridgeField.Mos1, 6).Select(row => new Mos1Binding(row[0], Number(row[1]), Number(row[2]),
                 Number(row[3]), Number(row[4]), Number(row[5]))).ToArray();
             var options = new BridgeOptions(analysis, this[BridgeField.Probe], Controls: controls, Diodes: diodes, Mos1: mos);
@@ -69,12 +72,12 @@ public sealed class BridgeDraft
         catch (FormatException) { return null; }
     }
 
-    private IEnumerable<string[]> Rows(BridgeField field, int count)
+    private IEnumerable<string[]> Rows(BridgeField field, int count, int alternate = -1)
     {
         foreach (var text in this[field].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var row = Tokens(text);
-            if (row.Length != count) throw new FormatException("Wrong source row length.");
+            if (row.Length != count && row.Length != alternate) throw new FormatException("Wrong source row length.");
             yield return row;
         }
     }

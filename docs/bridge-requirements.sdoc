@@ -30,3 +30,13 @@ The schematic bridge shall bind a diode to effective saturation current and ther
 COMMENT: >>>
 BridgeTests verifies binding and terminal identity. BrowserSmoke, McpSmoke and BridgeNgspice exercise the diode and NMOS fixtures. Junction and channel charge, other model levels, and broader polarity and bias coverage remain open.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-DIODE-Q-001
+TITLE: Bind diode depletion and diffusion charge
+STATEMENT: >>>
+A diode binding shall carry optional effective junction capacitance, junction potential, grading coefficient, forward coefficient and transit time. Valid nonzero storage parameters shall map to the native depletion and diffusion model for operating point, complex AC and backward Euler transient. Invalid parameter domains shall be refused before solving.
+<<<
+COMMENT: >>>
+ChargedDiodeBinding, BridgeNgspice diode-charge fixture, BrowserSmoke and McpSmoke. Avalanche, series resistance and temperature scaling are outside this profile.
+<<<

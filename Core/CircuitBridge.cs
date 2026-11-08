@@ -7,8 +7,10 @@ public sealed record SourcePhasor(string Id, double Magnitude, double PhaseDegre
 /// <summary>Independent-source pulse levels in volts or amperes and times in seconds.</summary>
 public sealed record SourcePulse(string Id, double Low, double High, double Delay, double Rise,
     double Fall, double Width, double Period);
-/// <summary>Effective conduction-only diode parameters at the evaluation temperature.</summary>
-public sealed record DiodeBinding(string Id, double SaturationAmps, double ThermalVolts);
+/// <summary>Effective diode conduction and optional depletion/diffusion parameters in SI units.</summary>
+public sealed record DiodeBinding(string Id, double SaturationAmps, double ThermalVolts,
+    double JunctionFarads = 0, double JunctionVolts = 1, double Grading = .5,
+    double ForwardCoefficient = .5, double TransitSeconds = 0);
 /// <summary>Effective MOS level 1 channel parameters in SI units. Beta includes W/L.</summary>
 public sealed record Mos1Binding(string Id, double ThresholdVolts, double Beta, double Gamma, double Phi, double Lambda);
 public sealed record CurrentControl(string Id, string VoltageSourceId);
@@ -137,7 +139,9 @@ public sealed partial class LessonSession
         var mos = options.Mos1 ?? [];
         return diodes.Length <= 64 && mos.Length <= 64 &&
             diodes.All(d => d is not null && FindPart(d.Id)?.Kind == Kind.Diode &&
-                Positive(d.SaturationAmps) && Positive(d.ThermalVolts)) &&
+                Positive(d.SaturationAmps) && Positive(d.ThermalVolts) && Nonnegative(d.JunctionFarads) &&
+                Positive(d.JunctionVolts) && d.Grading is >= 0 and < 1 &&
+                d.ForwardCoefficient is >= 0 and < 1 && Nonnegative(d.TransitSeconds)) &&
             mos.All(m => m is not null && FindPart(m.Id)?.Kind is Kind.Nmos or Kind.Pmos &&
                 double.IsFinite(m.ThresholdVolts) && Positive(m.Beta) && Positive(m.Phi) &&
                 double.IsFinite(m.Gamma) && m.Gamma >= 0 && double.IsFinite(m.Lambda) && m.Lambda >= 0) &&
@@ -157,6 +161,7 @@ public sealed partial class LessonSession
     }
 
     private bool Independent(string id) => FindPart(id)?.Kind is Kind.Supply or Kind.PulseVoltage or Kind.Current;
+    private static bool Nonnegative(double value) => value >= 0 && double.IsFinite(value);
     private static bool Positive(double value) => value > 0 && double.IsFinite(value);
 
     private static bool ValidBridgeSamples(BridgeOptions options, BridgeSample[] samples)
