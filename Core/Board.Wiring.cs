@@ -104,9 +104,10 @@ public sealed partial class Board
 
     internal string Save(SavedSession session) => JsonSerializer.Serialize(
         new SheetDocument(2, parts.ToArray(), wires.ToArray(), labels.ToArray(),
-            routes.ToArray(), junctions.ToArray(), next, session), SheetJson.Default.SheetDocument);
+            routes.ToArray(), junctions.ToArray(), next, session,
+            childSheets.Count == 0 ? null : childSheets.ToDictionary(e => e.Key, e => e.Value.Definition)), SheetJson.Default.SheetDocument);
 
-    internal static Board? Load(string? json, out SavedSession? session)
+    internal static Board? Load(string? json, out SavedSession? session, int depth = 0)
     {
         session = null;
         if (json is null || json.Length > MaxDocumentLength) return null;
@@ -167,6 +168,9 @@ public sealed partial class Board
             if (junction is null || !candidate.AddJunction(junction))
                 return null;
         if ((document.SchemaVersion == 2) != (document.Session is not null)) return null;
+        if (document.Children is { } children &&
+            (children.Count > MaximumChildren || children.Any(entry => !candidate.AttachChild(entry.Key, entry.Value, depth))))
+            return null;
         session = document.Session;
         return candidate;
     }

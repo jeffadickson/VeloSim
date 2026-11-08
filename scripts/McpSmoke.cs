@@ -9,14 +9,14 @@ using SchematicLab.Core;
 if (args.Length != 1 || !File.Exists(args[0]))
     throw new ArgumentException("Pass the absolute path to the built MCP host DLL.");
 
-using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 var token = deadline.Token;
 var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
 var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
-    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "read_analysis_fields", "apply_analysis_fields", "read_named_models", "define_named_model", "apply_named_model", "remove_named_model", "run_circuit" };
+    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "read_analysis_fields", "apply_analysis_fields", "read_named_models", "define_named_model", "apply_named_model", "remove_named_model", "load_hierarchy_demo", "read_child_sheet", "attach_child_sheet", "run_circuit" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
@@ -169,7 +169,22 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
     var highRun = await Call(other, "run_circuit", highArgs);
     Require(highRun.Bridge is { Samples.Count: 1 }, $"Source stepping refused: {highRun.Message}");
     Console.WriteLine("MCP recovered the higher-bias MOS1 operating point.");
-    var bjt = await Call(other, "load_bjt_demo", Edit(high2.Version));
+    var hierarchy = await Call(other, "load_hierarchy_demo", Edit(high2.Version));
+    var child = (await Call(other, "read_child_sheet", new() { ["cellId"] = "X1" })).Child;
+    Require(child is not null, "Nested child was missing.");
+    var attach = Edit(hierarchy.Version);
+    attach["cellId"] = "X1";
+    attach["child"] = child;
+    var attached = await Call(other, "attach_child_sheet", attach);
+    Require(attached.Code == CommandCode.Ok, attached.Message);
+    Require((await Call(other, "attach_child_sheet", attach)).Code == CommandCode.StaleRevision,
+        "Stale child replacement was accepted.");
+    var hierarchyRun = Edit(attached.Version);
+    hierarchyRun["options"] = new BridgeOptions(BridgeAnalysis.Dc, "P1");
+    var hierarchyResult = await Call(other, "run_circuit", hierarchyRun);
+    Require(Math.Abs((hierarchyResult.Bridge?.Samples.Single().Real ?? 0) - 3.75) < 1e-9, hierarchyResult.Message);
+    Console.WriteLine("MCP attached and solved the nested divider at 3.75 V.");
+    var bjt = await Call(other, "load_bjt_demo", Edit(attached.Version));
     foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
     {
         var arguments = Edit(bjt.Version);

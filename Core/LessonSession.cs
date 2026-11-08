@@ -54,9 +54,24 @@ public sealed partial class LessonSession
             // Successful edits record the prior board. Failed edits preserve both history stacks.
             var before = command is PlacePart or SetPartValue or DeletePart or ConnectPins or
                 LoadRc or LoadBridgeDemo or LoadModelDemo or LoadBjtDemo or LoadBsim3Demo or LoadSoiDemo or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart or
-                SetNetLabel or SetWireRoute or DeleteWire or JoinRoutes or DeleteJunction or LoadDocument ? board.Copy() : null;
+                SetNetLabel or SetWireRoute or DeleteWire or JoinRoutes or DeleteJunction or AttachChildSheet or LoadHierarchyDemo or LoadDocument ? board.Copy() : null;
             switch (command)
             {
+                case AttachChildSheet attach:
+                    if (!board.AttachChild(attach.CellId, attach.Child))
+                        return Result(CommandCode.InvalidInput, "Choose a cell and a valid passive child sheet with two connected ports.");
+                    RecordEdit(before!);
+                    return Result(CommandCode.Ok, "Child sheet attached.");
+                case ReadChildSheet query:
+                    return board.ChildOf(query.CellId) is { } child
+                        ? Result(CommandCode.Ok, "Child sheet read.") with { Child = child }
+                        : Result(CommandCode.NotFound, "Cell has no attached child sheet.");
+                case LoadHierarchyDemo:
+                    var prior = CaptureSession();
+                    board = Board.HierarchyDemo(EmptySession);
+                    RecordEdit(before!, prior);
+                    ApplySession(EmptySession);
+                    return Result(CommandCode.Ok, "Hierarchical divider loaded.");
                 case SaveDocument:
                     return Result(CommandCode.Ok, "Document serialized.") with { Document = board.Save(CaptureSession()) };
                 case LoadDocument load:
@@ -264,6 +279,8 @@ public sealed partial class LessonSession
                     if (board.Parts.Count >= 64) return Result(CommandCode.LimitReached, "The sheet allows 64 parts.");
                     if (!PositionAvailable(duplicate.X, duplicate.Y))
                         return Result(CommandCode.InvalidInput, "Choose an unoccupied position on the sheet.");
+                    if (!board.CanDuplicateChild(original.Id))
+                        return Result(CommandCode.LimitReached, "The sheet allows eight attached cells.");
                     var copy = board.Duplicate(original, duplicate.X, duplicate.Y);
                     RecordEdit(before!);
                     Select(copy);

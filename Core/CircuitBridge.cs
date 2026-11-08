@@ -57,6 +57,8 @@ public sealed partial class Board
 {
     internal CircuitJob? CompileBridge(BridgeOptions options)
     {
+        if (parts.Any(p => p.Kind == Kind.CellInstance))
+            return FlattenHierarchy()?.CompileBridge(options);
         var soi = parts.Where(part => part.Kind == Kind.NmosSoi).ToArray();
         if (soi.Any(part => options.Analysis != BridgeAnalysis.Dc || options.FdSoi?.Contains(part.Id) != true ||
             wires.Any(wire => wire.A == new Pin(part.Id, 4) || wire.B == new Pin(part.Id, 4)) ||
@@ -108,6 +110,7 @@ public sealed partial class Board
             var baseNode = bipolar ? assignments[new(part.Id, 1)] : 0;
             elements.Add(new(part.Kind, part.Id, p, n, part.Value, cp, cn, control, gate, bulk, baseNode));
         }
+        if (elements.Count > 64) return null;
         if (nodes.Count + 2 * elements.Count(element => element.Kind is Kind.Npn or Kind.Pnp) > 128) return null;
         return new(nodes.ToArray(), elements.ToArray(), nodes[assignments[probe]], options);
     }

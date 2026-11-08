@@ -266,6 +266,20 @@ const server = http.createServer((req, res) => {
       await button("Apply SmallSignal").click();
       assert.equal(await analysis.getByLabel(/BJT \(ID/).inputValue(), "Q1 1e-15 75 1 .025 .025");
       console.log("Browser restored and applied a named model.");
+      await button("Open hierarchy example").click();
+      await analysis.getByText("Child sheet", {exact:true}).click();
+      await analysis.getByLabel("Cell instance ID").fill("X1");
+      await button("Read attached child").click();
+      assert.match(await analysis.getByLabel("Saved child sheet JSON").inputValue(), /schemaVersion/);
+      await button("Attach child sheet").click();
+      await analysis.getByText("Child sheet attached.", {exact:true}).waitFor();
+      await button("Save sheet").click();
+      await page.reload();
+      await button("Reload sheet").click();
+      await analysis.getByRole("button", {name:"Analyze Dc", exact:true}).click();
+      await analysis.getByRole("cell", {name:"3.75", exact:true}).waitFor();
+      await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-hierarchy.png")});
+      console.log("Browser attached, reloaded and solved the nested divider.");
       if (process.env.SPICE_BSIM330_HOST) {
         await button("Open BSIM3 example").click();
         for (const kind of ["Dc", "Ac", "Transient"]) {

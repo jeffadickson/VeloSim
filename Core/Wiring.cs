@@ -27,7 +27,7 @@ public sealed record WiringDraft(Pin? Terminal = null, string Name = "", Wire? F
 public sealed record UpdateWiringDraft(WiringDraft Draft) : LessonCommand;
 
 internal sealed record SheetDocument(int SchemaVersion, Part[] Parts, Wire[] Wires,
-    NetLabel[] Labels, WireRoute[] Routes, Junction[] Junctions, Dictionary<string, int> Next, SavedSession? Session = null);
+    NetLabel[] Labels, WireRoute[] Routes, Junction[] Junctions, Dictionary<string, int> Next, SavedSession? Session = null, Dictionary<string, ChildSheet>? Children = null);
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
 [JsonSerializable(typeof(SheetDocument))]

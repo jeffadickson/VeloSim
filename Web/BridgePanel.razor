@@ -38,6 +38,21 @@
             }
             <p role="status">@modelStatus</p>
         </details>
+        <details>
+            <summary>Child sheet</summary>
+            <label for="child-instance">Cell instance ID</label>
+            <input id="child-instance" @bind="cellId" maxlength="12" />
+            <button @onclick="ExportSheet">Copy current sheet into JSON field</button>
+            <button @onclick="ReadChild">Read attached child</button>
+            <label for="child-left">Left interface port ID</label>
+            <input id="child-left" @bind="leftPort" maxlength="12" />
+            <label for="child-right">Right interface port ID</label>
+            <input id="child-right" @bind="rightPort" maxlength="12" />
+            <label for="child-document">Saved child sheet JSON</label>
+            <textarea id="child-document" @bind="childDocument" maxlength="32768"></textarea>
+            <button @onclick="AttachChild">Attach child sheet</button>
+            <p role="status">@childStatus</p>
+        </details>
         @if (result is { } response)
         {
             <p role="status" data-testid="bridge-status">@response.Message</p>
@@ -67,6 +82,30 @@
     private BridgeField modelFamily = BridgeField.Bjts;
     private string modelParameters = "";
     private string modelInstance = "";
+    private string cellId = "";
+    private string leftPort = "";
+    private string rightPort = "";
+    private string childDocument = "";
+    private string childStatus = "";
+
+    private void ExportSheet()
+    {
+        var response = Session.Execute(new SaveDocument());
+        childStatus = response.Message;
+        childDocument = response.Document ?? "";
+    }
+
+    private void ReadChild()
+    {
+        var response = Session.Execute(new ReadChildSheet(cellId));
+        childStatus = response.Message;
+        if (response.Child is not { } child) return;
+        (childDocument, leftPort, rightPort) = (child.Document, child.LeftPort, child.RightPort);
+    }
+
+    private void AttachChild() => childStatus = Session.Execute(new AttachChildSheet(Session.Version, cellId,
+        new(childDocument, leftPort, rightPort))).Message;
+
     private string modelStatus = "";
 
     private void StoreModel() => modelStatus = Session.Execute(

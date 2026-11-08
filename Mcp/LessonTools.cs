@@ -145,6 +145,22 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
     public CommandResult LoadMixed(Guid documentId, long revision, CancellationToken cancellationToken) =>
         session.Execute(new LoadBridgeDemo(new(documentId, revision)), cancellationToken);
 
+    [McpServerTool(Name = "schematic_attach_child_sheet", UseStructuredContent = true)]
+    [Description("Attach a saved two-port passive sheet to a cell at the expected document revision.")]
+    public CommandResult AttachChild(Guid documentId, long revision, string cellId, ChildSheet child,
+        CancellationToken cancellationToken) =>
+        session.Execute(new AttachChildSheet(new(documentId, revision), cellId, child), cancellationToken);
+
+    [McpServerTool(Name = "schematic_read_child_sheet", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Read the saved sheet and its two port bindings from a cell.")]
+    public CommandResult ReadChild(string cellId, CancellationToken cancellationToken) =>
+        session.Execute(new ReadChildSheet(cellId), cancellationToken);
+
+    [McpServerTool(Name = "schematic_load_hierarchy_demo", UseStructuredContent = true)]
+    [Description("Load a divider with a resistor in a nested passive cell.")]
+    public CommandResult LoadHierarchy(Guid documentId, long revision, CancellationToken cancellationToken) =>
+        session.Execute(new LoadHierarchyDemo(new(documentId, revision)), cancellationToken);
+
     [McpServerTool(Name = "schematic_read_named_models", ReadOnly = true, UseStructuredContent = true)]
     [Description("List reusable model definitions in the sheet.")]
     public CommandResult Models(CancellationToken cancellationToken) =>

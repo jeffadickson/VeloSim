@@ -87,7 +87,7 @@ public static partial class PartCatalog
         [Kind.RfPort] = Block("RF port", "Transmission", "P", "RF", Two),
         [Kind.LoopProbe] = Block("Loop probe", "Sheet", "V", "LOOP", Horizontal),
         [Kind.InterfacePort] = Block("Interface port", "Sheet", "P", "PORT", Pins(new Terminal("Port", -33, 0))),
-        [Kind.CellInstance] = Block("Library cell placeholder", "Sheet", "X", "CELL", Horizontal),
+        [Kind.CellInstance] = Block("Two-port child sheet", "Sheet", "X", "CELL", Horizontal),
         [Kind.Gain] = Block("Analog gain", "Mixed signal", "A", "GAIN", InOut),
         [Kind.Limiter] = Block("Limiter", "Mixed signal", "A", "LIM", InOut),
         [Kind.Integrator] = Block("Integrator", "Mixed signal", "A", "INT", InOut),

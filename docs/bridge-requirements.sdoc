@@ -130,3 +130,13 @@ A sheet shall store a bounded collection of case-insensitive named model definit
 COMMENT: >>>
 BridgeSettingsTests, BrowserSmoke and McpSmoke. The supported families are diode, BJT, MOS1 and BSIM3. Applying a definition creates an instance-local copy; later edits to the definition do not change existing bindings. MCP can transfer definitions between sheets by reading and defining them.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-HIERARCHY-001
+TITLE: Attach and execute nested two-terminal passive sheets
+STATEMENT: >>>
+The editor shall attach a validated saved child sheet to a cell instance through a typed revision-checked command. Each child shall bind two distinct connected interface ports to the two parent terminals. The bridge shall preserve each instance's electrical connectivity and scope internal nets separately, with ground shared as node zero. Saving, loading, and undo shall preserve the attached topology.
+<<<
+COMMENT: >>>
+HierarchyTests, BrowserSmoke, McpSmoke and BridgeNgspice hierarchy. Supported child devices are R, L, C, ground and nested two-terminal cells. Limits are eight attachments per sheet, three levels below the root and 32,768 characters per child document. Child analysis settings are separate from the parent analysis. Child documents are embedded snapshots.
+<<<

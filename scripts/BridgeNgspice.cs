@@ -13,7 +13,7 @@ var directory = Path.GetFullPath(args[2]);
 if (Directory.EnumerateFileSystemEntries(directory).Any())
     throw new ArgumentException("Use an empty artifact directory to prevent stale oracle data.");
 var fixture = args.Length == 3 ? "mixed" : args[3];
-if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3" or "waveforms" or "exponential" or "sine" or "fd-soi" or "mos1-high")) throw new ArgumentException("Unknown fixture.");
+if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3" or "waveforms" or "exponential" or "sine" or "fd-soi" or "mos1-high" or "hierarchy")) throw new ArgumentException("Unknown fixture.");
 var deck = """
     Mixed RLC and controlled-source reference
     V1 in 0 DC 1 AC 1 30 PULSE(0 1 0 10u 10u 10m 20m)
@@ -43,7 +43,36 @@ var deck = """
     .endc
     .end
     """;
-if (fixture is "waveforms" or "exponential" or "sine")
+if (fixture == "hierarchy")
+{
+    deck = """
+        Nested resistor cell reference
+        V1 in 0 DC 5 AC 1 PULSE(0 5 0 100u 100u 10m 20m)
+        X1 in out outer
+        R2 out 0 3k
+        .subckt outer a b
+        X1 a b inner
+        .ends
+        .subckt inner a b
+        R1 a b 1k
+        .ends
+        .control
+        set wr_singlescale
+        set numdgt=16
+        op
+        wrdata dc.dat v(out)
+        ac lin 1 100 100
+        wrdata ac-low.dat v(out)
+        ac lin 1 1000 1000
+        wrdata ac-high.dat v(out)
+        tran 10u 5m 0 10u
+        wrdata transient.dat v(out)
+        quit
+        .endc
+        .end
+        """;
+}
+else if (fixture is "waveforms" or "exponential" or "sine")
 {
     var voltage = fixture switch
     {
@@ -181,6 +210,7 @@ var session = new LessonSession();
 session.Execute(fixture switch
 {
     "waveforms" or "exponential" or "sine" => new ResetLesson(session.Version),
+    "hierarchy" => new LoadHierarchyDemo(session.Version),
     "mixed" => new LoadBridgeDemo(session.Version),
     "bjt" => new LoadBjtDemo(session.Version),
     "fd-soi" => new LoadSoiDemo(session.Version),
@@ -201,6 +231,9 @@ foreach (var analysis in fixture switch
 {
     var options = fixture switch
     {
+        "hierarchy" => new BridgeOptions(analysis, "P1", analysis == BridgeAnalysis.Ac ? [100, 1000] : null,
+            Phasors: analysis == BridgeAnalysis.Ac ? [new("V1", 1, 0)] : null,
+            Pulses: analysis == BridgeAnalysis.Transient ? [new("V1", 0, 5, 0, .0001, .0001, .01, .02)] : null),
         "mixed" => BridgeDemo.Options(analysis),
         "waveforms" or "exponential" or "sine" => BridgeDemo.WaveformOptions(fixture),
         "bjt" => BridgeDemo.BjtOptions(analysis),

@@ -76,6 +76,7 @@ public sealed partial class Board
         copy.labels.AddRange(labels);
         copy.junctions.AddRange(junctions);
         foreach (var entry in next) copy.next.Add(entry.Key, entry.Value);
+        foreach (var entry in childSheets) copy.childSheets.Add(entry.Key, entry.Value);
         return copy;
     }
 
@@ -88,6 +89,8 @@ public sealed partial class Board
             Value = original.Value, QuarterTurns = original.QuarterTurns, Mirrored = original.Mirrored
         };
         Replace(copy);
+        if (childSheets.Count < MaximumChildren && childSheets.TryGetValue(original.Id, out var child))
+            childSheets.Add(copy.Id, child);
         return copy;
     }
 
@@ -96,6 +99,7 @@ public sealed partial class Board
         if (parts.RemoveAll(p => p.Id == id) == 0) return false;
         foreach (var wire in wires.Where(w => w.A.Part == id || w.B.Part == id).ToArray()) RemoveWire(wire);
         labels.RemoveAll(label => label.Terminal.Part == id);
+        childSheets.Remove(id);
         return true;
     }
 

@@ -23,6 +23,7 @@
                 <button @onclick="() => Dispatch(new LoadModelDemo(session.Version))">Open semiconductor example</button>
                 <button @onclick="() => Dispatch(new LoadBjtDemo(session.Version))">Open BJT example</button>
                 <button @onclick="() => Dispatch(new LoadBsim3Demo(session.Version))">Open BSIM3 example</button>
+                <button @onclick="() => Dispatch(new LoadHierarchyDemo(session.Version))">Open hierarchy example</button>
                 <button @onclick="() => Dispatch(new LoadSoiDemo(session.Version))">Open FD-SOI example</button>
                 <div class="catalog">
                     <button type="button" aria-expanded="@(session.CatalogOpen ? "true" : "false")" @onclick="() => Dispatch(new ToggleCatalog())">Parts library</button>
