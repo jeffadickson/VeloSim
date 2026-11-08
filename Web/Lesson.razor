@@ -22,6 +22,7 @@
                 <button @onclick="OpenBridgeDemo">Open mixed RLC example</button>
                 <button @onclick="() => Dispatch(new LoadModelDemo(session.Version))">Open semiconductor example</button>
                 <button @onclick="() => Dispatch(new LoadBjtDemo(session.Version))">Open BJT example</button>
+                <button @onclick="() => Dispatch(new LoadBsim3Demo(session.Version))">Open BSIM3 example</button>
                 <div class="catalog">
                     <button type="button" aria-expanded="@(session.CatalogOpen ? "true" : "false")" @onclick="() => Dispatch(new ToggleCatalog())">Parts library</button>
                     @if (session.CatalogOpen)

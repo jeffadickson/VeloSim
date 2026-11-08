@@ -93,3 +93,24 @@ conduction only, with no transistor storage or high-current effects.
 
 Core passed 31 tests. Coverage was 3,551 of 4,014 lines and 1,030 of 1,524
 branches. The targeted base-to-emitter terminal mutant was caught.
+
+## Bulk BSIM3 3.3.0
+
+The loaded NMOS fixture passed browser, MCP and ngspice for DC, AC at
+1 MHz and 1 GHz, and a 1 ns gate ramp with a 2 ps native maximum step.
+Maximum drain probe errors were 1.087 pV in DC, 19.85 pV in complex AC
+and 6.132 microvolts in transient (501 native and 1,008 reference points).
+
+Configure SPICE_SOLVER_PATH with a BSIM3-capable native executable, and
+SPICE_BSIM330_HOST and SPICE_BSIM330_MODEL with trusted absolute paths
+before starting either host. The tested Windows x64 executable, adapter
+and module SHA-256 hashes were, respectively:
+
+- 96CA8B0FF7F4091F32867EADDE25D6E34583351CDDA220D26F36C1778A439B65
+- E2DAAE9246A498EF3A753E9364356C01CD8721FD5C49D9E6EC4160EF13F23E56
+- 57DC3BEBE54A95B36723B3B1E1B543BA01B32A7C9C9A00524B966B3459161608
+
+The oracle takes the fixture name bsim3 and an empty artifact directory.
+This checkpoint does not verify PMOS or Linux through SchematicLab.
+Core passed 32 tests and recorded 3,592 of 4,055 lines and 1,080 of
+1,576 branches, including generated code.

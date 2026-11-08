@@ -19,14 +19,19 @@ public sealed record Mos1Binding(string Id, double ThresholdVolts, double Beta, 
 /// <summary>Effective conduction parameters for the bounded three-terminal BJT profile.</summary>
 public sealed record BjtBinding(string Id, double SaturationAmps, double ForwardBeta, double ReverseBeta,
     double ForwardThermalVolts, double ReverseThermalVolts);
+/// <summary>Bulk BSIM3 3.3.0 effective geometry in SI, with NCH and NSUB in cm⁻³.</summary>
+public sealed record Bsim3Binding(string Id, double Tox, double Nch, double Nsub, double ThresholdVolts,
+    double Width, double Length, double DrainPerimeter = 0, double SourcePerimeter = 0,
+    double DrainArea = 0, double SourceArea = 0);
 public sealed record CurrentControl(string Id, string VoltageSourceId);
 public sealed record BridgeOptions(BridgeAnalysis Analysis, string ProbeId, double[]? FrequenciesHz = null,
     double StopSeconds = .005, double StepSeconds = .00001, SourcePhasor[]? Phasors = null,
     SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null, DiodeBinding[]? Diodes = null, Mos1Binding[]? Mos1 = null,
-    BjtBinding[]? Bjts = null);
+    BjtBinding[]? Bjts = null, Bsim3Binding[]? Bsim3 = null);
 
 public sealed record RunBridge(DocumentVersion Expected, BridgeOptions Options) : DocumentCommand(Expected);
 public sealed record LoadBridgeDemo(DocumentVersion Expected) : DocumentCommand(Expected);
+public sealed record LoadBsim3Demo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record LoadBjtDemo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record LoadModelDemo(DocumentVersion Expected) : DocumentCommand(Expected);
 public sealed record CircuitElement(Kind Kind, string Id, int P, int N, double Value, int Cp = 0, int Cn = 0,
@@ -71,7 +76,8 @@ public sealed partial class Board
             var mos = part.Kind is Kind.Nmos or Kind.Pmos;
             var bipolar = part.Kind is Kind.Npn or Kind.Pnp;
             if (bipolar && options.Bjts?.Any(binding => binding.Id == part.Id) != true) return null;
-            if (mos && options.Mos1?.Any(binding => binding.Id == part.Id) != true) return null;
+            if (mos && options.Mos1?.Any(binding => binding.Id == part.Id) != true &&
+                options.Bsim3?.Any(binding => binding.Id == part.Id) != true) return null;
             var p = assignments[new(part.Id, 0)];
             var n = assignments[new(part.Id, mos || bipolar ? 2 : 1)];
             if (p == n || !ValidPartValue(part.Kind, part.Value)) return null;
@@ -105,7 +111,7 @@ public sealed partial class LessonSession
                 return Result(CommandCode.InvalidInput, "Supply analysis options.");
             options = options with { FrequenciesHz = options.FrequenciesHz?.ToArray(), Phasors = options.Phasors?.ToArray(),
                 Pulses = options.Pulses?.ToArray(), Controls = options.Controls?.ToArray(),
-                Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray(), Bjts = options.Bjts?.ToArray() };
+                Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray(), Bjts = options.Bjts?.ToArray(), Bsim3 = options.Bsim3?.ToArray() };
             if (!ValidBridgeOptions(options))
                 return Result(CommandCode.InvalidInput, "Check the probe, analysis settings, and source bindings.");
             var compiled = board.CompileBridge(options);
@@ -150,7 +156,13 @@ public sealed partial class LessonSession
         var diodes = options.Diodes ?? [];
         var mos = options.Mos1 ?? [];
         var bjts = options.Bjts ?? [];
-        return bjts.Length <= 64 && bjts.All(b => b is not null && FindPart(b.Id)?.Kind is Kind.Npn or Kind.Pnp &&
+        var bulk = options.Bsim3 ?? [];
+        return bulk.Length <= 64 && bulk.All(b => b is not null && FindPart(b.Id)?.Kind is Kind.Nmos or Kind.Pmos &&
+            Positive(b.Tox) && Positive(b.Nch) && Positive(b.Nsub) && double.IsFinite(b.ThresholdVolts) &&
+            Positive(b.Width) && Positive(b.Length) && Nonnegative(b.DrainPerimeter) && Nonnegative(b.SourcePerimeter) &&
+            Nonnegative(b.DrainArea) && Nonnegative(b.SourceArea)) &&
+            bulk.Select(b => b.Id).Distinct().Count() == bulk.Length &&
+            bjts.Length <= 64 && bjts.All(b => b is not null && FindPart(b.Id)?.Kind is Kind.Npn or Kind.Pnp &&
             Positive(b.SaturationAmps) && Positive(b.ForwardBeta) && Positive(b.ReverseBeta) &&
             Positive(b.ForwardThermalVolts) && Positive(b.ReverseThermalVolts) &&
             Positive(b.SaturationAmps / b.ForwardBeta) && Positive(b.SaturationAmps / b.ReverseBeta)) &&
@@ -167,7 +179,7 @@ public sealed partial class LessonSession
                 Nonnegative(m.SourceBodyFarads) && Positive(m.BodyVolts) && m.BodyGrading is >= 0 and < 1 &&
                 m.ForwardCoefficient is >= 0 and < 1) &&
             diodes.Select(d => d.Id).Distinct().Count() == diodes.Length &&
-            mos.Select(m => m.Id).Distinct().Count() == mos.Length &&
+            mos.Select(m => m.Id).Concat(bulk.Select(b => b.Id)).Distinct().Count() == mos.Length + bulk.Length &&
             phasors.Length <= 64 && pulses.Length <= 64 && controls.Length <= 64 &&
             phasors.All(p => p is not null && Independent(p.Id) && double.IsFinite(p.Magnitude) &&
                 p.Magnitude >= 0 && double.IsFinite(p.PhaseDegrees)) &&

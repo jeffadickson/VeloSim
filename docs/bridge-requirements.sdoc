@@ -60,3 +60,13 @@ The bridge shall preserve collector, base and emitter identity and require expli
 COMMENT: >>>
 BjtRequiresExplicitModel, BridgeNgspice bjt fixture, BrowserSmoke and McpSmoke. Charge storage, substrate, series resistances, and full Gummel-Poon behavior remain outside this profile.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-BSIM330-001
+TITLE: Bind bulk BSIM3 3.3.0 through a trusted native provider
+STATEMENT: >>>
+The bridge shall validate explicit bulk BSIM3 geometry and effective model parameters, preserve drain, gate, source and bulk order, and reject a simultaneous MOS1 binding. Analysis shall use the host-configured native provider for DC, AC and transient. A sheet or command shall have no mechanism to select executable module paths.
+<<<
+COMMENT: >>>
+BulkBsim330Requires, BridgeNgspice bsim3 fixture, BrowserSmoke and McpSmoke. This profile excludes SOI, arbitrary model cards and unqualified bias ranges.
+<<<

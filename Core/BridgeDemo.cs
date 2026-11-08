@@ -26,6 +26,22 @@ public static class BridgeDemo
         Phasors: [new("V2", 1, 0)], Pulses: [new("V2", .55, .68, 0, .00002, .00002, .005, .01)],
         Bjts: [new("Q1", 1e-15, 100, 1, ThermalVolts, ThermalVolts)]);
 
+    public static BridgeOptions Bsim3Options(BridgeAnalysis analysis) => new(analysis, "P1",
+        FrequenciesHz: [1e6, 1e9], StopSeconds: 1e-9, StepSeconds: 2e-12,
+        Phasors: [new("V2", 1, 0)], Pulses: [new("V2", .8, .9, 0, 1e-9, 1e-9, 5e-9, 1e-8)],
+        Bsim3: [new("M1", 3.5e-9, 2.4e17, 5e16, .15, 1e-6, .35e-6, 1.5e-6, 1.5e-6, 1.5e-12, 1.5e-12)]);
+
+    internal static Board BuildBsim3() => Build(
+    [
+        (Kind.Ground, 310, 330, 0, ["0"]),
+        (Kind.Supply, 85, 95, .9, ["supply", "0"]),
+        (Kind.Supply, 85, 235, .8, ["gate", "0"]),
+        (Kind.Resistor, 300, 90, 1000, ["supply", "drain"]),
+        (Kind.Nmos, 315, 225, 0, ["drain", "gate", "0", "0"]),
+        (Kind.Capacitor, 450, 235, 2e-14, ["drain", "0"]),
+        (Kind.Probe, 520, 150, 0, ["drain"])
+    ]);
+
     internal static Board BuildBjt() => Build(
     [
         (Kind.Ground, 310, 330, 0, ["0"]),

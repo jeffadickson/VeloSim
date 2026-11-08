@@ -13,7 +13,7 @@ var directory = Path.GetFullPath(args[2]);
 if (Directory.EnumerateFileSystemEntries(directory).Any())
     throw new ArgumentException("Use an empty artifact directory to prevent stale oracle data.");
 var fixture = args.Length == 3 ? "mixed" : args[3];
-if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt")) throw new ArgumentException("Unknown fixture.");
+if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3")) throw new ArgumentException("Unknown fixture.");
 var deck = """
     Mixed RLC and controlled-source reference
     V1 in 0 DC 1 AC 1 30 PULSE(0 1 0 10u 10u 10m 20m)
@@ -82,6 +82,23 @@ if (fixture == "bjt")
         """ + Environment.NewLine + deck[deck.IndexOf(".control", StringComparison.Ordinal)..]
             .Replace("v(drain)", "v(collector)", StringComparison.Ordinal);
 }
+if (fixture == "bsim3")
+{
+    deck = """
+        Loaded bulk BSIM3 3.3.0 gate ramp
+        V1 vdd 0 .9
+        V2 gate 0 DC .8 AC 1 PULSE(.8 .9 0 1n 1n 5n 10n)
+        R1 vdd drain 1k
+        C1 drain 0 20f
+        M1 drain gate 0 0 MN W=1u L=.35u PD=1.5u PS=1.5u AD=1.5p AS=1.5p
+        .model MN NMOS(LEVEL=49 VERSION=3.3.0 TOX=3.5n NCH=2.4e17 NSUB=5e16 VTH0=.15)
+        .temp 27
+        .options method=gear maxord=1
+        """ + Environment.NewLine + deck[deck.IndexOf(".control", StringComparison.Ordinal)..]
+            .Replace("ac lin 1 100 100", "ac lin 1 1meg 1meg", StringComparison.Ordinal)
+            .Replace("ac lin 1 1000 1000", "ac lin 1 1g 1g", StringComparison.Ordinal)
+            .Replace("tran .025u 100u 0 .025u", "tran 1p 1n 0 1p", StringComparison.Ordinal);
+}
 await File.WriteAllTextAsync(Path.Combine(directory, "reference.cir"), deck);
 var info = new ProcessStartInfo(Path.GetFullPath(args[0]))
 {
@@ -109,6 +126,7 @@ session.Execute(fixture switch
 {
     "mixed" => new LoadBridgeDemo(session.Version),
     "bjt" => new LoadBjtDemo(session.Version),
+    "bsim3" => new LoadBsim3Demo(session.Version),
     _ => new LoadModelDemo(session.Version)
 });
 foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
@@ -117,6 +135,7 @@ foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
     {
         "mixed" => BridgeDemo.Options(analysis),
         "bjt" => BridgeDemo.BjtOptions(analysis),
+        "bsim3" => BridgeDemo.Bsim3Options(analysis),
         _ => BridgeDemo.ModelOptions(analysis, fixture.StartsWith("diode", StringComparison.Ordinal) ? "P1" : "P2")
     };
     if (options.Mos1 is not null && fixture != "mos1-charge")

@@ -134,6 +134,25 @@ public sealed class BridgeTests
         Assert.Equal(CommandCode.Ok, result.Code);
     }
 
+    [Fact]
+    public async Task BulkBsim330RequiresExactlyOneModelAndPositiveGeometry()
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadBsim3Demo(session.Version));
+        var options = BridgeDemo.Bsim3Options(BridgeAnalysis.Dc);
+        var model = Assert.Single(options.Bsim3!);
+        Assert.Equal(CommandCode.InvalidInput, (await session.ExecuteBridgeAsync(new RunBridge(session.Version,
+            options with { Bsim3 = [model with { Length = 0 }] }), Never)).Code);
+        Assert.Equal(CommandCode.InvalidInput, (await session.ExecuteBridgeAsync(new RunBridge(session.Version,
+            options with { Mos1 = [new(model.Id, .7, .001, 0, .6, 0)] }), Never)).Code);
+        var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options), (job, _) =>
+        {
+            Assert.Equal(model, Assert.Single(job.Options.Bsim3!));
+            return Task.FromResult<IReadOnlyList<BridgeSample>>([new(0, .5)]);
+        });
+        Assert.Equal(CommandCode.Ok, result.Code);
+    }
+
     private static Task<IReadOnlyList<BridgeSample>> Never(CircuitJob job, CancellationToken token) =>
         throw new InvalidOperationException("Invalid input reached the solver.");
 }

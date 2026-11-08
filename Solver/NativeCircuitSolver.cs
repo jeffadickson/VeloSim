@@ -36,7 +36,8 @@ public sealed partial class NativeRcSolver
         }
         yield return Element(element, options);
         if (element.Kind is not (Kind.Nmos or Kind.Pmos)) yield break;
-        var model = FindModel(options.Mos1, element.Id, binding => binding.Id)!;
+        var model = FindModel(options.Mos1, element.Id, binding => binding.Id);
+        if (model is null) yield break;
         var overlap = new (string Suffix, int Other, double Farads)[]
         {
             ("_qgs", element.N, model.GateSourceFarads), ("_qgd", element.P, model.GateDrainFarads),
@@ -106,6 +107,22 @@ public sealed partial class NativeRcSolver
     {
         if (element.Kind is Kind.Nmos or Kind.Pmos)
         {
+            var bulk = FindModel(options.Bsim3, element.Id, model => model.Id);
+            if (bulk is not null)
+            {
+                return new()
+                {
+                    ["kind"] = "bsim330", ["id"] = element.Id, ["p"] = element.P, ["n"] = element.N,
+                    ["gate"] = element.Gate, ["bulk"] = element.Bulk,
+                    ["model"] = new Dictionary<string, object>
+                    {
+                        ["polarity"] = element.Kind == Kind.Pmos ? -1 : 1,
+                        ["tox"] = bulk.Tox, ["nch"] = bulk.Nch, ["nsub"] = bulk.Nsub, ["vth0"] = bulk.ThresholdVolts,
+                        ["w"] = bulk.Width, ["l"] = bulk.Length, ["pd"] = bulk.DrainPerimeter, ["ps"] = bulk.SourcePerimeter,
+                        ["ad"] = bulk.DrainArea, ["as"] = bulk.SourceArea
+                    }
+                };
+            }
             var binding = FindModel(options.Mos1, element.Id, model => model.Id)
                 ?? throw new RcSolverException("MOS level 1 requires a model binding.");
             return new()
