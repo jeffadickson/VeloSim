@@ -520,3 +520,13 @@ The catalog shall provide a P-type MESFET or HFET with drain, gate and source, a
 COMMENT: >>>
 Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
 <<<
+
+[REQUIREMENT]
+UID: SCH-DEV-PALETTE-001
+TITLE: Draw the extended generic palette
+STATEMENT: >>>
+The browser and MCP shall expose the generic source, passive, semiconductor, analog, transmission, sheet, and mixed-signal families with stable part identifiers and ordered terminals. Symbols shall retain their kind, geometry and pin identities across save and reload. A coupling directive shall have no electrical terminal. The editor shall distinguish drawing availability from solver readiness.
+<<<
+COMMENT: >>>
+PartCatalog, CatalogTests, BrowserSmoke and McpSmoke. The palette has 90 entries. Library binding, hierarchical behavior, coupling references and model execution are verified separately.
+<<<

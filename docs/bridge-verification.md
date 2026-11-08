@@ -114,3 +114,20 @@ The oracle takes the fixture name bsim3 and an empty artifact directory.
 This checkpoint does not verify PMOS or Linux through SchematicLab.
 Core passed 32 tests and recorded 3,592 of 4,055 lines and 1,080 of
 1,576 branches, including generated code.
+
+## Extended drawing palette
+
+Core placed, saved and reloaded each of the 90 symbol kinds and checked
+ordered pins and the zero-terminal coupling directive. Browser searched
+for and placed the file-backed PWL current symbol, verified its polarity
+terminal and drawing-only status, and repeated all four family demos.
+The rendered symbol was inspected. MCP enumerated 90 entries, checked
+the coupled-line terminal count and current source prefix, and ran the
+same model demos. The targeted source-prefix mutant was caught, as
+were the prior MOS charge and BSIM3 geometry boundary mutants.
+
+Final Core verification passed 33 tests. Coverlet measured 3,689 of
+4,152 lines and 1,092 of 1,588 branches, including generated code.
+StrictDoc parsed 12 documents and 252 unique requirement IDs. Browser,
+MCP, transport, provider and native solver were exercised without
+coverage instrumentation. Full mutation and fuzz campaigns were not run.

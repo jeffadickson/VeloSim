@@ -20,5 +20,6 @@ aside{padding:17px} output{display:block;font:2.45rem Georgia,serif;color:#21685
 @media(max-width:650px){.results{grid-template-columns:1fr}}
 .catalog{width:100%;padding:5px 0}.catalog summary{cursor:pointer;font-weight:650}.catalog label{display:block;margin:.7rem 0 .2rem}.catalog input{width:min(100%,26rem);padding:.5rem;font:inherit}.catalog button{margin:0 6px 5px 0}.inspector small{color:#486654}
 .wiring{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:.45rem;align-items:center}.wiring :is(input,select){min-width:0;padding:.35rem;font:inherit}.wiring button{justify-self:start}
+.symbol-mark{display:block;text-align:center;font:700 9px system-ui;line-height:16px}
 .wire.net-highlight{stroke:#b55226;stroke-width:4}.pin.net-highlight,circle.net-highlight{fill:#ffbd7f;stroke:#b55226}.net-name.net-highlight{background:#ffdfbc;color:#833616}.history-picker{display:flex;align-items:center;gap:.6rem;margin-top:1rem}.history-picker select{font:inherit}
 .wiring-actions{grid-column:2;display:flex;flex-wrap:wrap;gap:.45rem}.net-name{display:inline-block;background:#edf2e9;border-radius:3px;padding:0 3px;color:#216851;overflow-wrap:anywhere}

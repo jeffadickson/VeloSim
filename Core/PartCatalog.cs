@@ -5,10 +5,10 @@ public sealed record Terminal(string Name, int X, int Y);
 
 /// <summary>Stable part definition with ordered terminals and explicit lesson support.</summary>
 public sealed record PartDefinition(string Name, string Category, string Prefix, string Artwork,
-    IReadOnlyList<Terminal> Terminals, bool DividerSupported = false, double DefaultValue = 0);
+    IReadOnlyList<Terminal> Terminals, bool DividerSupported = false, double DefaultValue = 0, string? Mark = null);
 
 /// <summary>Built-in generic symbols. Vendor model binding is a separate operation.</summary>
-public static class PartCatalog
+public static partial class PartCatalog
 {
     private static readonly IReadOnlyList<Terminal> Two = Pins(new("Positive", 0, -32), new("Negative", 0, 32));
     private static readonly IReadOnlyList<Terminal> Bipolar = Pins(new("Collector", 12, -32), new("Base", -32, 0), new("Emitter", 12, 32));
@@ -20,7 +20,8 @@ public static class PartCatalog
     private const string MosBody = "M-32 0H-12M-12 -16V16M-5 -17V17M-5 -15H12V-32M-5 15H12V32M-5 0H33";
     private const string Diamond = "M0 -32V-20L18 0L0 20L-18 0L0 -20M0 20V32M-32 -11H-22M-32 11H-22";
 
-    public static PartDefinition Get(Kind kind) => Definitions[kind];
+    public static PartDefinition Get(Kind kind) => Definitions.TryGetValue(kind, out var definition)
+        ? definition : Extended.Value[kind];
 
     /// <summary>SI unit for the editable primary parameter, if present.</summary>
     public static string? ValueUnit(Kind kind) => kind switch

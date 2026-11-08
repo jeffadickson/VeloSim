@@ -4,7 +4,21 @@ namespace SchematicLab.Core;
 public enum Kind
 {
     Supply, Resistor, Ground, Probe, Capacitor, Inductor, Current, Diode,
-    Npn, Pnp, Nmos, Pmos, Njfet, Pjfet, Vcvs, Vccs, Switch, OpAmp, PulseVoltage, PolarizedCapacitor, Cccs, Ccvs
+    Npn, Pnp, Nmos, Pmos, Njfet, Pjfet, Vcvs, Vccs, Switch, OpAmp, PulseVoltage, PolarizedCapacitor, Cccs, Ccvs,
+    AcVoltage, AcCurrent, SineVoltage, SineCurrent, PwlVoltage,
+    PwlCurrent, PwlFileVoltage, PwlFileCurrent, ExpVoltage, ExpCurrent,
+    FmVoltage, FmCurrent, AmVoltage, AmCurrent, PatternVoltage,
+    PatternCurrent, NoiseVoltage, NoiseCurrent, RandomVoltage, RandomCurrent,
+    PulseCurrent, Transformer, CoupledInductor, SaturableInductor, Memristor,
+    Nmesfet, Pmesfet, Nvdmos, Pvdmos, NmosSoi,
+    PmosSoi, NpnSubstrate, NpnThermal, PnpSubstrate, PnpThermal,
+    IdealOpAmp, BehavioralSource, CurrentSwitch, ExpressionSwitch, CurrentSenseCccs,
+    CurrentSenseCcvs, TransmissionLine, LossyTransmissionLine, CoupledTransmissionLine, RfPort,
+    LoopProbe, InterfacePort, CellInstance, Gain, Limiter,
+    Integrator, Differentiator, Summer, Multiplier, Divider,
+    Inverter, Buffer, AdcBridge, DacBridge, AndGate,
+    OrGate, NandGate, NorGate, XorGate, Tristate,
+    DFlipFlop, JkFlipFlop, SrLatch
 }
 
 /// <summary>Stable electrical endpoint, independent of artwork and screen position.</summary>

@@ -67,7 +67,7 @@ const server = http.createServer((req, res) => {
     await lesson.getByRole("button", {name:"NMOS", exact:true}).click();
     await lesson.getByRole("button", {name:/Place Nmos/}).first().click();
     assert.equal(await lesson.getByRole("button", {name:"M1 terminal 4 · Bulk", exact:true}).count(), 1);
-    assert.equal(await lesson.getByText("Placement and wiring only").count(), 1);
+    assert.equal(await lesson.getByText("General solver · requires MOS1 or BSIM3 binding").count(), 1);
     assert.equal(await voltage.textContent(), "—");
     await lesson.getByRole("button", {name:"Reset example"}).click();
     await lesson.getByRole("button", {name:"Parts library", exact:true}).click();
@@ -227,6 +227,17 @@ const server = http.createServer((req, res) => {
         await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-bsim3.png")});
         console.log("Browser ran bulk BSIM3 in all three analyses.");
       }
+      await button("Reset example").click();
+      if (await button("Parts library").getAttribute("aria-expanded") !== "true") await button("Parts library").click();
+      await lesson.getByLabel("Find a generic symbol").fill("file-backed pwl current");
+      await button("File-backed PWL current").click();
+      await button("Place PwlFileCurrent at 440, 310").click();
+      assert.equal(await lesson.locator(".symbol-mark").filter({hasText:"FILE"}).count(), 1);
+      assert.equal(await lesson.getByRole("button", {name:"I1 terminal 2 · Negative"}).count(), 1);
+      assert.equal(await lesson.getByText("Placement and wiring only").count(), 1);
+      await lesson.locator("svg[aria-label='Interactive circuit schematic']").screenshot(
+        {path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-catalog.png")});
+      console.log("Browser placed the file-backed current symbol and exposed its drawing-only readiness.");
     }
     if (!rcHost) await page.screenshot({path:path.resolve(process.argv[4])});
     assert.deepEqual(errors, []);

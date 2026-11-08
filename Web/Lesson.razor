@@ -78,6 +78,12 @@
                         <rect class="hit" x="-25" y="-24" width="50" height="48" rx="6" tabindex="0" role="button"
                               aria-label="Select @part.Id" @onclick="() => Select(part.Id)" @onkeydown="e => Key(e, () => Select(part.Id))" />
                         <path class="art" transform="@Orientation(part)" d="@PartCatalog.Get(part.Kind).Artwork" />
+                        @if (PartCatalog.Get(part.Kind).Mark is { } mark)
+                        {
+                            <foreignObject x="-20" y="-8" width="40" height="17">
+                                <span class="symbol-mark">@mark</span>
+                            </foreignObject>
+                        }
                         <foreignObject x="40" y="-20" width="90" height="40">
                             <span class="label @(part.Kind == Kind.Probe ? "probe-label" : "")">@part.Id @ValueLabel(part)</span>
                         </foreignObject>
@@ -439,7 +445,12 @@
         Kind.PolarizedCapacitor => "Ideal capacitance in the forward RC lesson",
         Kind.PulseVoltage or Kind.Capacitor => "Native RC lesson supported",
         Kind.Resistor or Kind.Ground or Kind.Probe => "Divider and native RC lessons supported",
-        Kind.Supply => "Divider lesson supported",
+        Kind.Supply => "Divider and general solver supported",
+        Kind.Current or Kind.Inductor or Kind.Vcvs or Kind.Vccs or Kind.Cccs or Kind.Ccvs => "General solver · linear device",
+        Kind.Diode => "General solver · conduction and junction charge",
+        Kind.Nmos or Kind.Pmos => "General solver · requires MOS1 or BSIM3 binding",
+        Kind.Npn or Kind.Pnp => "General solver · requires a BJT conduction binding",
+        Kind.CoupledInductor => "Drawing only · references to windings are pending",
         _ => "Placement and wiring only"
     };
 

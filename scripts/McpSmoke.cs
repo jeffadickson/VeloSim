@@ -21,7 +21,9 @@ Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
 var catalog = await Call(client, "read_catalog");
-Require(catalog.Catalog?.Count == 22, "Catalog incomplete.");
+Require(catalog.Catalog?.Count == 90 &&
+    catalog.Catalog.Any(entry => entry.Kind == Kind.CoupledTransmissionLine && entry.Definition.Terminals.Count == 6) &&
+    catalog.Catalog.Any(entry => entry.Kind == Kind.PwlFileCurrent && entry.Definition.Prefix == "I"), "Catalog incomplete.");
 var initial = (await Call(client, "read_circuit")).Version;
 var reset = await Call(client, "reset_lesson", Edit(initial));
 Require(reset.Code == CommandCode.Ok, "Reset refused.");

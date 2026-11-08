@@ -12,7 +12,7 @@ public sealed class CatalogTests
         {
             var spec = PartCatalog.Get(kind);
             Assert.NotEmpty(spec.Artwork);
-            Assert.NotEmpty(spec.Terminals);
+            if (kind != Kind.CoupledInductor) Assert.NotEmpty(spec.Terminals);
             Assert.Equal(spec.Terminals.Count, spec.Terminals.Select(t => t.Name).Distinct().Count());
             Assert.Equal(spec.Terminals.Count, spec.Terminals.Select(t => (t.X,t.Y)).Distinct().Count());
             var part = board.Place(kind, 100, 100);
@@ -44,6 +44,28 @@ public sealed class CatalogTests
         });
         Assert.Equal(reversed ? CommandCode.UnsupportedCircuit : CommandCode.Ok, run.Code);
         Assert.Equal(!reversed, called);
+    }
+
+    [Fact]
+    public void ExtendedPaletteRetainsMultiTerminalOrderAndSavesDrawableSymbols()
+    {
+        Assert.Equal(new[] { "Drain", "Gate", "Source", "Back gate", "Body contact" },
+            PartCatalog.Get(Kind.NmosSoi).Terminals.Select(pin => pin.Name));
+        Assert.Equal(6, PartCatalog.Get(Kind.CoupledTransmissionLine).Terminals.Count);
+        Assert.Empty(PartCatalog.Get(Kind.CoupledInductor).Terminals);
+        Assert.Equal("I", PartCatalog.Get(Kind.PwlFileCurrent).Prefix);
+
+        var kinds = Enum.GetValues<Kind>();
+        Assert.Equal(90, kinds.Length);
+        foreach (var kind in kinds)
+        {
+            var session = new LessonSession();
+            var placed = session.Execute(new PlacePart(session.Version, kind, 500, 320));
+            Assert.Equal(CommandCode.Ok, placed.Code);
+            var saved = session.Execute(new SaveDocument()).Document!;
+            Assert.Equal(CommandCode.Ok, session.Execute(new LoadDocument(session.Version, saved)).Code);
+            Assert.Contains(session.Parts, part => part.Kind == kind && part.Id == placed.Part!.Id);
+        }
     }
 
     [Fact]
