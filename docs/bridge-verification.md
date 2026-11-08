@@ -175,3 +175,26 @@ The browser and MCP restored the PWL and charged-BJT entry fields from
 a saved sheet. The isolated mutant dropping settings restoration failed.
 Core passed 36 tests with 3,848/4,331 lines and 1,202/1,756 branches
 covered. Browser, MCP, adapter and native solver coverage were unmeasured.
+
+## Linux x64 provider replay
+
+A clean archive of 9d27650 was built on Ubuntu 24.04 under WSL with
+.NET SDK 10.0.402 and a native Linux artifact directory. The Linux
+WebHost served the same published browser assets, and a Windows
+Chromium client ran the full browser smoke against that host. The
+Linux stdio MCP smoke also passed. Both ran bulk BSIM3 in DC, AC and
+transient and FD-SOI in DC. Both rejected FD-SOI AC.
+
+The Linux schematic oracle invoked Windows ngspice 47+ through WSL
+interop on the same independent decks. Maximum BSIM3 errors were
+1.087 pV DC, 19.85 pV AC and 6.132 microvolts transient. FD-SOI DC
+error was 9.39e-15 V. Windows and Linux bridge comparisons reported
+the same errors for these fixtures.
+
+The Linux engine SHA-256 was 2c8949a191d7082e64eaaf754ea76351e13260a57b8104f7c4700f301cd4811b.
+The bulk adapter, OSDI model and FD host SHA-256 values were
+309b34e52dde1093d4c18b5fe545fbea09212175fd6bfa08a3fd2087f3ae896c,
+6665ebaa718bfb8135480d22e472c9914a4afa317e60508676b9d4b8b068ddd5,
+and c6eb606ae3df5c2e7775706a5eba17e5133e563c86c54cb8bf52824229a46a00.
+The logs are linux-browser.log, linux-mcp.log and linux-oracle.log in
+the storage checkpoint artifact directory. Linux coverage was unmeasured.
