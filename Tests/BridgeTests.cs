@@ -153,6 +153,35 @@ public sealed class BridgeTests
         Assert.Equal(CommandCode.Ok, result.Code);
     }
 
+    [Fact]
+    public async Task StorageAndSourceRowsRejectInvalidPhysicalDomains()
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadBjtDemo(session.Version));
+        var options = BridgeDemo.BjtOptions(BridgeAnalysis.Dc);
+        var bjt = options.Bjts![0] with { BaseCollector = new(2e-10, .75, .33, .5, 1e-9) };
+        var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options with
+        {
+            Bjts = [bjt with { BaseCollector = bjt.BaseCollector! with { Grading = 1 } }]
+        }), Never);
+        Assert.Equal(CommandCode.InvalidInput, result.Code);
+
+        var transient = BridgeDemo.BjtOptions(BridgeAnalysis.Transient);
+        result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, transient with
+        {
+            Pwl = [new("V2", [new(0, .6), new(0, .7)])], Pulses = []
+        }), Never);
+        Assert.Equal(CommandCode.InvalidInput, result.Code);
+        result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, transient with
+        {
+            Sines = [new("V2", .6, .01, 1000)]
+        }), Never);
+        Assert.Equal(CommandCode.InvalidInput, result.Code);
+
+        session.Execute(new SetBridgeDraft(BridgeField.Pwl, "V2 0 .6 1e-5 .7"));
+        Assert.Equal(new WavePoint(1e-5, .7), session.BridgeDraft.Parse(BridgeAnalysis.Transient)!.Pwl![0].Points[1]);
+    }
+
     private static Task<IReadOnlyList<BridgeSample>> Never(CircuitJob job, CancellationToken token) =>
         throw new InvalidOperationException("Invalid input reached the solver.");
 }

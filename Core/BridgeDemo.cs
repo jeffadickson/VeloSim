@@ -10,6 +10,12 @@ public static class BridgeDemo
                  new("I1", 0, .0002, 0, .00002, .00001, .01, .02)],
         Controls: [new("F1", "V1"), new("H1", "V1")]);
 
+    public static BridgeOptions WaveformOptions(string profile) => new(BridgeAnalysis.Transient, "P1",
+        StopSeconds: .003, StepSeconds: .000002,
+        Pwl: profile == "waveforms" ? [new("V1", [new(0, 0), new(.00002, 1), new(.003, 1)])] : [],
+        Exponentials: profile == "exponential" ? [new("V1", 0, 1, .00002, .0001, .001, .0002)] : [],
+        Sines: profile == "sine" ? [new("V1", 0, 1, 1000, 0, 100)] : []);
+
     public static BridgeOptions ModelOptions(BridgeAnalysis analysis, string probeId) => new(analysis, probeId,
         FrequenciesHz: [100, 1000], StopSeconds: .0001, StepSeconds: .00000005,
         Phasors: [new("V2", 1, 0), new("V3", 1, 0)],
@@ -24,7 +30,8 @@ public static class BridgeDemo
     public static BridgeOptions BjtOptions(BridgeAnalysis analysis) => new(analysis, "P1",
         FrequenciesHz: [100, 1000], StopSeconds: .0001, StepSeconds: .00000005,
         Phasors: [new("V2", 1, 0)], Pulses: [new("V2", .55, .68, 0, .00002, .00002, .005, .01)],
-        Bjts: [new("Q1", 1e-15, 100, 1, ThermalVolts, ThermalVolts)]);
+        Bjts: [new("Q1", 1e-15, 100, 1, ThermalVolts, ThermalVolts,
+            new(3e-10, .75, .33, .5, 1e-9), new(2e-10, .75, .33, .5, 2e-9))]);
 
     public static BridgeOptions Bsim3Options(BridgeAnalysis analysis) => new(analysis, "P1",
         FrequenciesHz: [1e6, 1e9], StopSeconds: 1e-9, StepSeconds: 2e-12,
@@ -46,7 +53,8 @@ public static class BridgeDemo
     [
         (Kind.Ground, 310, 330, 0, ["0"]),
         (Kind.Supply, 85, 95, 2, ["supply", "0"]),
-        (Kind.Supply, 85, 235, .65, ["base", "0"]),
+        (Kind.Supply, 85, 235, .65, ["drive", "0"]),
+        (Kind.Resistor, 190, 235, 500, ["drive", "base"]),
         (Kind.Resistor, 300, 90, 1000, ["supply", "collector"]),
         (Kind.Npn, 315, 225, 0, ["collector", "base", "0"]),
         (Kind.Probe, 470, 160, 0, ["collector"])

@@ -133,7 +133,16 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
             (analysis != BridgeAnalysis.Ac || bridge.Samples.Any(point => point.Imaginary != 0)), "Wrong circuit run.");
         Console.WriteLine($"MCP mixed {analysis}: {bridge.Samples.Count} samples, final {bridge.Samples[^1]}.");
     }
-    var models = await Call(other, "load_model_demo", Edit(demo.Version));
+    var sourceDemo = await Call(other, "reset_lesson", Edit(demo.Version));
+    foreach (var profile in new[] { "waveforms", "exponential", "sine" })
+    {
+        var arguments = Edit(sourceDemo.Version);
+        arguments["options"] = BridgeDemo.WaveformOptions(profile);
+        var result = await Call(other, "run_circuit", arguments);
+        Require(result.Bridge is { Samples.Count: > 1000 }, $"Waveforms refused: {result.Message}");
+        Console.WriteLine($"MCP transient {profile} completed.");
+    }
+    var models = await Call(other, "load_model_demo", Edit(sourceDemo.Version));
     foreach (var probe in new[] { "P1", "P2" })
     foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
     {

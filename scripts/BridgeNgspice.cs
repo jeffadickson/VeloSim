@@ -13,7 +13,7 @@ var directory = Path.GetFullPath(args[2]);
 if (Directory.EnumerateFileSystemEntries(directory).Any())
     throw new ArgumentException("Use an empty artifact directory to prevent stale oracle data.");
 var fixture = args.Length == 3 ? "mixed" : args[3];
-if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3")) throw new ArgumentException("Unknown fixture.");
+if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge" or "bjt" or "bsim3" or "waveforms" or "exponential" or "sine")) throw new ArgumentException("Unknown fixture.");
 var deck = """
     Mixed RLC and controlled-source reference
     V1 in 0 DC 1 AC 1 30 PULSE(0 1 0 10u 10u 10m 20m)
@@ -43,7 +43,30 @@ var deck = """
     .endc
     .end
     """;
-if (fixture != "mixed")
+if (fixture is "waveforms" or "exponential" or "sine")
+{
+    var voltage = fixture switch
+    {
+        "waveforms" => "PWL(0 0 20u 1 3m 1)",
+        "exponential" => "EXP(0 1 20u 100u 1m 200u)",
+        _ => "SIN(0 1 1k 0 100)"
+    };
+    deck = $"""
+        Source waveform through a divider
+        V1 in 0 {voltage}
+        R1 in sum 1k
+        R2 sum 0 1k
+        .control
+        set wr_singlescale
+        set numdgt=16
+        tran .25u 3m 0 .25u
+        wrdata transient.dat v(sum)
+        quit
+        .endc
+        .end
+        """;
+}
+else if (fixture != "mixed")
 {
     var observable = fixture.StartsWith("diode", StringComparison.Ordinal) ? "diode" : "drain";
     deck = """
@@ -73,10 +96,11 @@ if (fixture == "bjt")
     deck = """
         Three-terminal NPN conduction reference
         V1 vdd 0 2
-        V2 base 0 DC .65 AC 1 PULSE(.55 .68 0 20u 20u 5m 10m)
+        V2 drive 0 DC .65 AC 1 PULSE(.55 .68 0 20u 20u 5m 10m)
         R1 vdd collector 1k
+        R2 drive base 500
         Q1 collector base 0 QN
-        .model QN NPN(IS=1e-15 BF=100 BR=1 NF=1 NR=1)
+        .model QN NPN(IS=1e-15 BF=100 BR=1 NF=1 NR=1 CJE=300p VJE=.75 MJE=.33 CJC=200p VJC=.75 MJC=.33 FC=.5 TF=1n TR=2n)
         .temp 27
         .options tnom=27
         """ + Environment.NewLine + deck[deck.IndexOf(".control", StringComparison.Ordinal)..]
@@ -124,16 +148,19 @@ var solver = new NativeRcSolver(Path.GetFullPath(args[1]));
 var session = new LessonSession();
 session.Execute(fixture switch
 {
+    "waveforms" or "exponential" or "sine" => new ResetLesson(session.Version),
     "mixed" => new LoadBridgeDemo(session.Version),
     "bjt" => new LoadBjtDemo(session.Version),
     "bsim3" => new LoadBsim3Demo(session.Version),
     _ => new LoadModelDemo(session.Version)
 });
-foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
+foreach (var analysis in fixture is "waveforms" or "exponential" or "sine"
+    ? [BridgeAnalysis.Transient] : Enum.GetValues<BridgeAnalysis>())
 {
     var options = fixture switch
     {
         "mixed" => BridgeDemo.Options(analysis),
+        "waveforms" or "exponential" or "sine" => BridgeDemo.WaveformOptions(fixture),
         "bjt" => BridgeDemo.BjtOptions(analysis),
         "bsim3" => BridgeDemo.Bsim3Options(analysis),
         _ => BridgeDemo.ModelOptions(analysis, fixture.StartsWith("diode", StringComparison.Ordinal) ? "P1" : "P2")

@@ -131,3 +131,20 @@ Final Core verification passed 33 tests. Coverlet measured 3,689 of
 StrictDoc parsed 12 documents and 252 unique requirement IDs. Browser,
 MCP, transport, provider and native solver were exercised without
 coverage instrumentation. Full mutation and fuzz campaigns were not run.
+
+## BJT storage and inline source waveforms
+
+The charged NPN fixture has a 500 ohm base resistor, 300 pF base-emitter
+and 200 pF base-collector capacitances, and 1 ns forward and 2 ns reverse
+transit times. DC, AC and transient agreed with ngspice within 4.15 nV,
+20.9 nV and 0.389 mV, respectively. Browser and MCP ran the same profile.
+
+The three divider fixtures exercised PWL, damped SIN and EXP. Maximum
+voltage errors were 1.12e-16 V, 0.122 microvolts and 0.252 mV. The EXP
+fixture uses an explicit nonzero rise delay because the oracle defaults
+its zero delay to the transient output step. A separate mixed RLC PWL/SIN
+trial failed the native L1 constraint audit and remains unqualified.
+
+Core passed 34 tests with 3,736/4,205 lines and 1,140/1,674 branches
+covered including generated code. The duplicate-PWL-time mutant was
+caught. Browser, MCP and native engine coverage were unmeasured.

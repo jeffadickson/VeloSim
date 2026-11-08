@@ -32,7 +32,7 @@ const server = http.createServer((req, res) => {
     const plot = lesson.getByRole("img", {name:/DC sweep plot/});
     assert.equal((await plot.locator("polyline").getAttribute("points")).split(" ").length, 21);
     await lesson.getByRole("button", {name:"Select R2", exact:true}).press("Enter");
-    await lesson.getByLabel("Value").fill("3000");
+    await lesson.getByRole("spinbutton", {name:/^Value \(/}).fill("3000");
     await lesson.getByRole("button", {name:"Apply value"}).click();
     assert.equal(await voltage.textContent(), "3.75 V");
     assert.match(await lesson.locator("figcaption").textContent(), /Final 2.5 V/);
@@ -41,7 +41,7 @@ const server = http.createServer((req, res) => {
     assert.match(await lesson.locator("figcaption").textContent(), /Final 3.75 V/);
 
     // Keep the R2 draft open while a wire edit advances the document revision.
-    await lesson.getByLabel("Value").fill("9000");
+    await lesson.getByRole("spinbutton", {name:/^Value \(/}).fill("9000");
     await lesson.getByRole("button", {name:/^V1 terminal 1 /}).click();
     await lesson.getByRole("button", {name:/^G1 terminal 1 /}).click();
     await lesson.getByRole("button", {name:"Apply value"}).click();
@@ -200,6 +200,26 @@ const server = http.createServer((req, res) => {
       await analysis.scrollIntoViewIfNeeded();
       await page.screenshot({path:path.join(bridgeScreenshot.dir, bridgeScreenshot.name + "-bridge.png")});
       console.log("Browser ran mixed RLC and controlled sources in DC, AC and transient.");
+      await button("Reset example").click();
+      await analysis.getByLabel(/Current controls/).fill("");
+      await analysis.getByLabel(/Pulse sources/).fill("");
+      await analysis.getByLabel(/PWL sources/).fill("V1 0 0 .00002 1 .003 1");
+
+      const transientButton = analysis.getByRole("button", {name:"Analyze Transient", exact:true});
+      const runWaveforms = async () => {
+        const response = page.waitForResponse(r => r.url().endsWith("/api/circuit"));
+        await transientButton.click();
+        assert.equal((await response).status(), 200);
+        await transientButton.isEnabled();
+      };
+      await runWaveforms();
+      await analysis.getByLabel(/PWL sources/).fill("");
+      await analysis.getByLabel(/EXP sources/).fill("V1 0 1 .00002 .0001 .001 .0002");
+      await runWaveforms();
+      await analysis.getByLabel(/EXP sources/).fill("");
+      await analysis.getByLabel(/SIN sources/).fill("V1 0 1 1000 0 100 0");
+      await runWaveforms();
+      console.log("Browser ran inline PWL, damped sine and exponential sources.");
       await button("Open semiconductor example").click();
       for (const probe of ["P1", "P2"]) {
         await analysis.getByLabel("Probe ID", {exact:true}).fill(probe);

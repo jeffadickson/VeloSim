@@ -98,7 +98,21 @@ public sealed partial class NativeRcSolver
             pnp ? element.N : element.P, "gain", model.ReverseBeta);
         emitter["control_id"] = bcSense;
         yield return emitter;
+        if (model.BaseEmitter is { } qbe && (qbe.Farads != 0 || qbe.TransitSeconds != 0) && element.Base != element.N)
+            yield return BjtStorage(element.Id + "_qbe", pnp ? element.N : element.Base, pnp ? element.Base : element.N,
+                qbe, model.SaturationAmps, model.ForwardThermalVolts);
+        if (model.BaseCollector is { } qbc && (qbc.Farads != 0 || qbc.TransitSeconds != 0) && element.Base != element.P)
+            yield return BjtStorage(element.Id + "_qbc", pnp ? element.P : element.Base, pnp ? element.Base : element.P,
+                qbc, model.SaturationAmps, model.ReverseThermalVolts);
     }
+
+    private static Dictionary<string, object> BjtStorage(string id, int p, int n, BjtJunction junction, double saturation, double thermal) =>
+        new() { ["kind"] = "junction_storage", ["id"] = id, ["p"] = p, ["n"] = n, ["model"] = new
+        {
+            saturation_amps = saturation, thermal_volts = thermal, junction_farads = junction.Farads,
+            junction_volts = junction.Volts, grading = junction.Grading, forward_coefficient = junction.ForwardCoefficient,
+            transit_seconds = junction.TransitSeconds
+        } };
 
     private static Dictionary<string, object> Primitive(string kind, string id, int p, int n, string parameter, double value) =>
         new() { ["kind"] = kind, ["id"] = id, ["p"] = p, ["n"] = n, [parameter] = value };
@@ -213,7 +227,14 @@ public sealed partial class NativeRcSolver
 
         var pulses = options.Pulses ?? [];
         if (pulses.Any(p => p is null)) throw new RcSolverException("Invalid source pulse.");
-        var defaults = job.Elements.Where(e => e.Kind == Kind.PulseVoltage && !pulses.Any(p => p.Id == e.Id))
+        var pwl = options.Pwl ?? [];
+        var sines = options.Sines ?? [];
+        var exp = options.Exponentials ?? [];
+        if (pwl.Any(w => w?.Points is null) || sines.Any(w => w is null) || exp.Any(w => w is null))
+            throw new RcSolverException("Invalid waveform data.");
+        var explicitIds = pulses.Select(p => p.Id).Concat(pwl.Select(w => w.Id))
+            .Concat(sines.Select(w => w.Id)).Concat(exp.Select(w => w.Id)).ToHashSet();
+        var defaults = job.Elements.Where(e => e.Kind == Kind.PulseVoltage && !explicitIds.Contains(e.Id))
             .Select(e => new SourcePulse(e.Id, 0, e.Value, 0, options.StepSeconds, options.StepSeconds,
                 options.StopSeconds, 4 * options.StopSeconds));
         return new
@@ -225,11 +246,23 @@ public sealed partial class NativeRcSolver
                 // The native nonlinear profile is restricted to backward Euler.
                 method = job.Elements.Any(e => e.Kind is Kind.Diode or Kind.Nmos or Kind.Pmos or Kind.Npn or Kind.Pnp)
                     ? "backward_euler" : "trapezoidal",
-                sources = pulses.Concat(defaults).Select(p => new { id = p.Id, waveform = new
+                sources = pulses.Concat(defaults).Select(p => (object)new { id = p.Id, waveform = new
                 {
                     kind = "pulse", low = p.Low, high = p.High, delay_s = p.Delay,
                     rise_s = p.Rise, fall_s = p.Fall, width_s = p.Width, period_s = p.Period
-                } }).ToArray()
+                } }).Concat(pwl.Select(w => (object)new { id = w.Id, waveform = new
+                {
+                    kind = "pwl", points = w.Points.Select(point => new { time_s = point.TimeSeconds, value = point.Value }).ToArray()
+                } })).Concat(sines.Select(w => (object)new { id = w.Id, waveform = new
+                {
+                    kind = "damped_sine", offset = w.Offset, amplitude = w.Amplitude, frequency_hz = w.FrequencyHz,
+                    delay_s = w.DelaySeconds, damping_per_s = w.DampingPerSecond,
+                    phase_rad = Math.IEEERemainder(w.PhaseDegrees, 360) * Math.PI / 180
+                } })).Concat(exp.Select(w => (object)new { id = w.Id, waveform = new
+                {
+                    kind = "exponential", initial = w.Initial, pulsed = w.Pulsed, rise_delay_s = w.RiseDelaySeconds,
+                    rise_tau_s = w.RiseTauSeconds, fall_delay_s = w.FallDelaySeconds, fall_tau_s = w.FallTauSeconds
+                } })).ToArray()
             }
         };
     }

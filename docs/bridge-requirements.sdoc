@@ -70,3 +70,23 @@ The bridge shall validate explicit bulk BSIM3 geometry and effective model param
 COMMENT: >>>
 BulkBsim330Requires, BridgeNgspice bsim3 fixture, BrowserSmoke and McpSmoke. This profile excludes SOI, arbitrary model cards and unqualified bias ranges.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-BJT-Q-001
+TITLE: Bind base junction depletion and transit storage
+STATEMENT: >>>
+A bipolar binding shall accept independent base-emitter and base-collector junction storage. Each storage contribution shall preserve polarity and remain outside the conduction sense branch so the transport gain does not amplify displacement current. The bridge shall validate the physical domain before execution.
+<<<
+COMMENT: >>>
+Verified on a resistor-loaded NPN with a finite base drive resistance. The profile retains bounded Ebers-Moll conduction.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-WAVEFORMS-001
+TITLE: Execute inline PWL, damped sine and exponential sources
+STATEMENT: >>>
+The bridge shall support inline ordered PWL, damped sine and exponential overrides for independent sources with SI times and values, phase in degrees and bounded payloads. It shall refuse duplicate source assignments across waveform families and refuse nonfinite and invalid parameters. Browser and MCP shall use the same typed analysis request.
+<<<
+COMMENT: >>>
+BridgeTests, BrowserSmoke, McpSmoke and BridgeNgspice. File assets and stochastic sources are outside this requirement.
+<<<

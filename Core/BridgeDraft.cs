@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace SchematicLab.Core;
 
-public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1, Bjts, Bsim3 }
+public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1, Bjts, Bsim3, Pwl, Sines, Exponentials }
 public sealed record SetBridgeDraft(BridgeField Field, string Text) : LessonCommand;
 
 /// <summary>Browser entry fields for typed circuit options. Form drafts have no electrical effect.</summary>
@@ -11,7 +11,7 @@ public sealed class BridgeDraft
     private readonly Dictionary<BridgeField, string> fields = new()
     {
         [BridgeField.Probe] = "P1", [BridgeField.Frequencies] = "100 1000", [BridgeField.Stop] = ".005",
-        [BridgeField.Step] = ".00001", [BridgeField.Phasors] = "", [BridgeField.Pulses] = "", [BridgeField.Controls] = "", [BridgeField.Diodes] = "", [BridgeField.Mos1] = "", [BridgeField.Bjts] = "", [BridgeField.Bsim3] = ""
+        [BridgeField.Step] = ".00001", [BridgeField.Phasors] = "", [BridgeField.Pulses] = "", [BridgeField.Controls] = "", [BridgeField.Diodes] = "", [BridgeField.Mos1] = "", [BridgeField.Bjts] = "", [BridgeField.Bsim3] = "", [BridgeField.Pwl] = "", [BridgeField.Sines] = "", [BridgeField.Exponentials] = ""
     };
 
     public string this[BridgeField field] => fields[field];
@@ -36,6 +36,9 @@ public sealed class BridgeDraft
         fields[BridgeField.Mos1] = "";
         fields[BridgeField.Bjts] = "";
         fields[BridgeField.Bsim3] = "";
+        fields[BridgeField.Pwl] = "";
+        fields[BridgeField.Sines] = "";
+        fields[BridgeField.Exponentials] = "";
         if (!models) return;
         fields[BridgeField.Stop] = ".0001";
         fields[BridgeField.Step] = ".00000005";
@@ -55,7 +58,7 @@ public sealed class BridgeDraft
         fields[BridgeField.Pulses] = "V2 .55 .68 0 .00002 .00002 .005 .01";
         fields[BridgeField.Controls] = "";
         var thermal = BridgeDemo.BjtOptions(BridgeAnalysis.Dc).Bjts![0].ForwardThermalVolts.ToString("R", CultureInfo.InvariantCulture);
-        fields[BridgeField.Bjts] = $"Q1 1e-15 100 1 {thermal} {thermal}";
+        fields[BridgeField.Bjts] = $"Q1 1e-15 100 1 {thermal} {thermal} 3e-10 .75 .33 .5 1e-9 2e-10 .75 .33 .5 2e-9";
     }
 
     internal void LoadBsim3()
@@ -84,8 +87,9 @@ public sealed class BridgeDraft
                 : new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]),
                     Number(row[6]), Number(row[7]), Number(row[8]), Number(row[9]), Number(row[10]), Number(row[11]),
                     Number(row[12]), Number(row[13]))).ToArray();
-            var bjts = Rows(BridgeField.Bjts, 6).Select(row => new BjtBinding(row[0], Number(row[1]), Number(row[2]),
-                Number(row[3]), Number(row[4]), Number(row[5]))).ToArray();
+            var bjts = Rows(BridgeField.Bjts, 6, 16).Select(row => new BjtBinding(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]), row.Length == 16 ? Junction(row, 6) : null,
+                row.Length == 16 ? Junction(row, 11) : null)).ToArray();
             var bsim3 = Rows(BridgeField.Bsim3, 11).Select(row => new Bsim3Binding(row[0], Number(row[1]), Number(row[2]),
                 Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]), Number(row[7]),
                 Number(row[8]), Number(row[9]), Number(row[10]))).ToArray();
@@ -100,18 +104,31 @@ public sealed class BridgeDraft
 
             var pulses = Rows(BridgeField.Pulses, 8).Select(row => new SourcePulse(row[0], Number(row[1]), Number(row[2]),
                 Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]), Number(row[7]))).ToArray();
+            var pwl = Rows(BridgeField.Pwl, -1).Select(row =>
+            {
+                if (row.Length < 3 || row.Length % 2 == 0) throw new FormatException("Expected time/value pairs.");
+                return new SourcePwl(row[0], Enumerable.Range(0, (row.Length - 1) / 2)
+                    .Select(i => new WavePoint(Number(row[2 * i + 1]), Number(row[2 * i + 2]))).ToArray());
+            }).ToArray();
+            var sines = Rows(BridgeField.Sines, 7).Select(row => new SourceSine(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]))).ToArray();
+            var exp = Rows(BridgeField.Exponentials, 7).Select(row => new SourceExponential(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]))).ToArray();
             return options with { StopSeconds = Number(this[BridgeField.Stop]),
-                StepSeconds = Number(this[BridgeField.Step]), Pulses = pulses };
+                StepSeconds = Number(this[BridgeField.Step]), Pulses = pulses, Pwl = pwl, Sines = sines, Exponentials = exp };
         }
         catch (FormatException) { return null; }
     }
+
+    private static BjtJunction Junction(string[] row, int i) =>
+        new(Number(row[i]), Number(row[i + 1]), Number(row[i + 2]), Number(row[i + 3]), Number(row[i + 4]));
 
     private IEnumerable<string[]> Rows(BridgeField field, int count, int alternate = -1)
     {
         foreach (var text in this[field].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var row = Tokens(text);
-            if (row.Length != count && row.Length != alternate) throw new FormatException("Wrong source row length.");
+            if (count >= 0 && row.Length != count && row.Length != alternate) throw new FormatException("Wrong source row length.");
             yield return row;
         }
     }

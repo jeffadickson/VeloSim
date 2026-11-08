@@ -5,6 +5,12 @@ public enum BridgeAnalysis { Dc, Ac, Transient }
 /// <summary>AC excitation in polar units. Omitted independent sources have zero AC amplitude.</summary>
 public sealed record SourcePhasor(string Id, double Magnitude, double PhaseDegrees);
 /// <summary>Independent-source pulse levels in volts or amperes and times in seconds.</summary>
+public readonly record struct WavePoint(double TimeSeconds, double Value);
+public sealed record SourcePwl(string Id, WavePoint[] Points);
+public sealed record SourceSine(string Id, double Offset, double Amplitude, double FrequencyHz,
+    double DelaySeconds = 0, double DampingPerSecond = 0, double PhaseDegrees = 0);
+public sealed record SourceExponential(string Id, double Initial, double Pulsed, double RiseDelaySeconds,
+    double RiseTauSeconds, double FallDelaySeconds, double FallTauSeconds);
 public sealed record SourcePulse(string Id, double Low, double High, double Delay, double Rise,
     double Fall, double Width, double Period);
 /// <summary>Effective diode conduction and optional depletion/diffusion parameters in SI units.</summary>
@@ -16,9 +22,12 @@ public sealed record Mos1Binding(string Id, double ThresholdVolts, double Beta, 
     double GateSourceFarads = 0, double GateDrainFarads = 0, double GateBulkFarads = 0,
     double DrainBodyFarads = 0, double SourceBodyFarads = 0, double BodyVolts = .8,
     double BodyGrading = .5, double ForwardCoefficient = .5);
-/// <summary>Effective conduction parameters for the bounded three-terminal BJT profile.</summary>
+/// <summary>Effective junction storage in farads, volts and seconds.</summary>
+public sealed record BjtJunction(double Farads, double Volts, double Grading, double ForwardCoefficient, double TransitSeconds);
+/// <summary>Effective parameters for the bounded three-terminal BJT profile.</summary>
 public sealed record BjtBinding(string Id, double SaturationAmps, double ForwardBeta, double ReverseBeta,
-    double ForwardThermalVolts, double ReverseThermalVolts);
+    double ForwardThermalVolts, double ReverseThermalVolts, BjtJunction? BaseEmitter = null,
+    BjtJunction? BaseCollector = null);
 /// <summary>Bulk BSIM3 3.3.0 effective geometry in SI, with NCH and NSUB in cm⁻³.</summary>
 public sealed record Bsim3Binding(string Id, double Tox, double Nch, double Nsub, double ThresholdVolts,
     double Width, double Length, double DrainPerimeter = 0, double SourcePerimeter = 0,
@@ -27,7 +36,8 @@ public sealed record CurrentControl(string Id, string VoltageSourceId);
 public sealed record BridgeOptions(BridgeAnalysis Analysis, string ProbeId, double[]? FrequenciesHz = null,
     double StopSeconds = .005, double StepSeconds = .00001, SourcePhasor[]? Phasors = null,
     SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null, DiodeBinding[]? Diodes = null, Mos1Binding[]? Mos1 = null,
-    BjtBinding[]? Bjts = null, Bsim3Binding[]? Bsim3 = null);
+    BjtBinding[]? Bjts = null, Bsim3Binding[]? Bsim3 = null,
+    SourcePwl[]? Pwl = null, SourceSine[]? Sines = null, SourceExponential[]? Exponentials = null);
 
 public sealed record RunBridge(DocumentVersion Expected, BridgeOptions Options) : DocumentCommand(Expected);
 public sealed record LoadBridgeDemo(DocumentVersion Expected) : DocumentCommand(Expected);
@@ -111,7 +121,9 @@ public sealed partial class LessonSession
                 return Result(CommandCode.InvalidInput, "Supply analysis options.");
             options = options with { FrequenciesHz = options.FrequenciesHz?.ToArray(), Phasors = options.Phasors?.ToArray(),
                 Pulses = options.Pulses?.ToArray(), Controls = options.Controls?.ToArray(),
-                Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray(), Bjts = options.Bjts?.ToArray(), Bsim3 = options.Bsim3?.ToArray() };
+                Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray(), Bjts = options.Bjts?.ToArray(), Bsim3 = options.Bsim3?.ToArray(),
+                Pwl = options.Pwl?.Select(wave => wave is null ? null! : wave with { Points = wave.Points?.ToArray()! }).ToArray(),
+                Sines = options.Sines?.ToArray(), Exponentials = options.Exponentials?.ToArray() };
             if (!ValidBridgeOptions(options))
                 return Result(CommandCode.InvalidInput, "Check the probe, analysis settings, and source bindings.");
             var compiled = board.CompileBridge(options);
@@ -165,7 +177,8 @@ public sealed partial class LessonSession
             bjts.Length <= 64 && bjts.All(b => b is not null && FindPart(b.Id)?.Kind is Kind.Npn or Kind.Pnp &&
             Positive(b.SaturationAmps) && Positive(b.ForwardBeta) && Positive(b.ReverseBeta) &&
             Positive(b.ForwardThermalVolts) && Positive(b.ReverseThermalVolts) &&
-            Positive(b.SaturationAmps / b.ForwardBeta) && Positive(b.SaturationAmps / b.ReverseBeta)) &&
+            Positive(b.SaturationAmps / b.ForwardBeta) && Positive(b.SaturationAmps / b.ReverseBeta) &&
+            ValidJunction(b.BaseEmitter) && ValidJunction(b.BaseCollector)) &&
             bjts.Select(b => b.Id).Distinct().Count() == bjts.Length &&
             diodes.Length <= 64 && mos.Length <= 64 &&
             diodes.All(d => d is not null && FindPart(d.Id)?.Kind == Kind.Diode &&
@@ -189,8 +202,31 @@ public sealed partial class LessonSession
             controls.All(c => c is not null && FindPart(c.Id)?.Kind is Kind.Ccvs or Kind.Cccs &&
                 FindPart(c.VoltageSourceId)?.Kind is Kind.Supply or Kind.PulseVoltage) &&
             phasors.Select(p => p.Id).Distinct().Count() == phasors.Length &&
-            pulses.Select(p => p.Id).Distinct().Count() == pulses.Length &&
+            ValidWaveforms(options, pulses) &&
             controls.Select(c => c.Id).Distinct().Count() == controls.Length;
+    }
+
+    private static bool ValidJunction(BjtJunction? junction) => junction is null ||
+        Nonnegative(junction.Farads) && Positive(junction.Volts) && junction.Grading is >= 0 and < 1 &&
+        junction.ForwardCoefficient is >= 0 and < 1 && Nonnegative(junction.TransitSeconds);
+
+    private bool ValidWaveforms(BridgeOptions options, SourcePulse[] pulses)
+    {
+        var pwl = options.Pwl ?? [];
+        var sines = options.Sines ?? [];
+        var exp = options.Exponentials ?? [];
+        if (pwl.Length + sines.Length + exp.Length + pulses.Length > 64) return false;
+        return pwl.All(w => w is { Points.Length: >= 1 and <= 256 } && Independent(w.Id) &&
+                w.Points.All(p => Nonnegative(p.TimeSeconds) && double.IsFinite(p.Value)) &&
+                w.Points.Zip(w.Points.Skip(1)).All(pair => pair.First.TimeSeconds < pair.Second.TimeSeconds)) &&
+            sines.All(w => w is not null && Independent(w.Id) && double.IsFinite(w.Offset) &&
+                double.IsFinite(w.Amplitude) && Positive(w.FrequencyHz) && Nonnegative(w.DelaySeconds) &&
+                Nonnegative(w.DampingPerSecond) && double.IsFinite(w.PhaseDegrees)) &&
+            exp.All(w => w is not null && Independent(w.Id) && double.IsFinite(w.Initial) &&
+                double.IsFinite(w.Pulsed) && Nonnegative(w.RiseDelaySeconds) && Positive(w.RiseTauSeconds) &&
+                Nonnegative(w.FallDelaySeconds) && w.FallDelaySeconds >= w.RiseDelaySeconds && Positive(w.FallTauSeconds)) &&
+            pulses.Select(w => w.Id).Concat(pwl.Select(w => w.Id)).Concat(sines.Select(w => w.Id))
+                .Concat(exp.Select(w => w.Id)).Distinct().Count() == pulses.Length + pwl.Length + sines.Length + exp.Length;
     }
 
     private bool Independent(string id) => FindPart(id)?.Kind is Kind.Supply or Kind.PulseVoltage or Kind.Current;
