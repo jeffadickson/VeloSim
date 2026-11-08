@@ -27,3 +27,27 @@ Serve the published `wwwroot` over HTTP. The template uses `<base href="/">` for
 The prototype supports one sheet, 18 generic symbols, terminal-to-terminal wiring and an analytical unloaded voltage divider. It keeps edits in browser memory. Simulator integration, project files, undo/redo, hierarchy, symbol import and general-purpose wire routing are later work.
 
 See [requirements](docs/requirements.sdoc), [design notes](docs/design.md), [catalog](docs/catalog.md), and [RSpice comparison](docs/rspice-requirements-scrub.md).
+
+
+## Local agent access
+
+Build the MCP host with the .NET 10 SDK and use its DLL as the argument to the
+MCP client's `dotnet` command. This starts one local stdio session with the
+built-in divider. Read the circuit before issuing edits so you have its
+document ID and current revision.
+
+```powershell
+if (!(Test-Path -LiteralPath 'Mcp' -PathType Container)) { throw 'Run from SchematicLab' }
+$artifactRoot = if ($env:CODEX_ARTIFACT_ROOT) { $env:CODEX_ARTIFACT_ROOT } else { 'E:/Artifacts' }
+if (!(Test-Path -LiteralPath $artifactRoot -PathType Container)) { throw 'Missing artifact root' }
+$out = Join-Path $artifactRoot ("SchematicLab-Mcp-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $out | Out-Null
+dotnet build Mcp --artifacts-path (Join-Path $out 'build')
+if ($LASTEXITCODE) { throw 'MCP build failed' }
+$hostDll = Join-Path $out 'build/bin/SchematicLab.Mcp/debug/SchematicLab.Mcp.dll'
+dotnet run --artifacts-path (Join-Path $out 'smoke') --file scripts/McpSmoke.cs -- $hostDll
+```
+
+Use the [requirements index](docs/requirements.md) for the complete product
+scope. The [command verification](docs/command-verification.md) records the
+browser and MCP results.

@@ -1,0 +1,522 @@
+[DOCUMENT]
+TITLE: Device and schematic object requirements
+
+[REQUIREMENT]
+UID: SCH-DEV-R
+TITLE: Resistor
+STATEMENT: >>>
+The catalog shall provide resistor support with two terminals, resistance, scale, temperature terms and optional model binding.
+<<<
+COMMENT: >>>
+Catalog target. Check DC current and temperature scaling.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-C
+TITLE: Capacitor
+STATEMENT: >>>
+The catalog shall provide capacitor support with two terminals, capacitance, initial voltage and model parameters where supported.
+<<<
+COMMENT: >>>
+Catalog target. Check charge, AC susceptance and RC startup.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-CPOL
+TITLE: Polarized capacitor
+STATEMENT: >>>
+The catalog shall provide polarized capacitor support with explicit polarity, capacitance and optional model binding.
+<<<
+COMMENT: >>>
+Catalog target. Verify artwork polarity matches netlist order and reverse bias is handled per model.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-L
+TITLE: Inductor
+STATEMENT: >>>
+The catalog shall provide inductor support with two terminals, inductance and initial current.
+<<<
+COMMENT: >>>
+Catalog target. Check AC reactance and RL decay with nonzero initial current.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-LSAT
+TITLE: Saturable inductor
+STATEMENT: >>>
+The catalog shall provide saturable inductor support with winding terminals, nonlinear flux curve and initial state.
+<<<
+COMMENT: >>>
+Catalog target. Check differential inductance below and above saturation.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-POT
+TITLE: Potentiometer
+STATEMENT: >>>
+The catalog shall provide potentiometer support with end terminals, wiper, total resistance and normalized position.
+<<<
+COMMENT: >>>
+Catalog target. Check both ends and midpoint under load.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-MEM
+TITLE: Memristor
+STATEMENT: >>>
+The catalog shall provide memristor support with two terminals, selected state law and initial state.
+<<<
+COMMENT: >>>
+Catalog target. Check state dependence and bounded transient trajectory.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-D
+TITLE: Diode
+STATEMENT: >>>
+The catalog shall provide diode support with anode, cathode, model identity and instance scaling.
+<<<
+COMMENT: >>>
+Catalog target. Compare forward/reverse DC and junction charge when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-DZ
+TITLE: Zener diode
+STATEMENT: >>>
+The catalog shall provide zener diode support with anode, cathode and a model with reverse breakdown.
+<<<
+COMMENT: >>>
+Catalog target. Check reverse knee and forward conduction.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-DS
+TITLE: Schottky diode
+STATEMENT: >>>
+The catalog shall provide schottky diode support with anode, cathode and an appropriate model binding.
+<<<
+COMMENT: >>>
+Catalog target. Check forward bias and leakage against reference.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-LED
+TITLE: Light-emitting diode
+STATEMENT: >>>
+The catalog shall provide light-emitting diode support with anode, cathode and a named LED model.
+<<<
+COMMENT: >>>
+Catalog target. Check current and forward voltage for the selected card.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-XTAL
+TITLE: Crystal
+STATEMENT: >>>
+The catalog shall provide crystal support with two terminals and motional and shunt parameters.
+<<<
+COMMENT: >>>
+Catalog target. Compare series and parallel resonances.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-VAR
+TITLE: Varistor
+STATEMENT: >>>
+The catalog shall provide varistor support with two terminals and a nonlinear clamping characteristic.
+<<<
+COMMENT: >>>
+Catalog target. Check both polarities and the specified knee.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-FUSE
+TITLE: Fuse
+STATEMENT: >>>
+The catalog shall provide fuse support with two terminals and an explicit trip and state model.
+<<<
+COMMENT: >>>
+Catalog target. Check overcurrent transition and post-trip resistance.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-RELAY
+TITLE: Relay
+STATEMENT: >>>
+The catalog shall provide relay support with coil terminals, contact terminals and a switching model.
+<<<
+COMMENT: >>>
+Catalog target. Check pickup, dropout and contact state.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-OPTO
+TITLE: Optocoupler
+STATEMENT: >>>
+The catalog shall provide optocoupler support with input diode terminals, output terminals and transfer model.
+<<<
+COMMENT: >>>
+Catalog target. Check isolation and transfer at multiple input currents.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-DIAC
+TITLE: DIAC
+STATEMENT: >>>
+The catalog shall provide diac support with two terminals and bidirectional breakover.
+<<<
+COMMENT: >>>
+Catalog target. Check positive and negative trigger voltages.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-SCR
+TITLE: SCR
+STATEMENT: >>>
+The catalog shall provide scr support with anode, cathode and gate.
+<<<
+COMMENT: >>>
+Catalog target. Check triggering, latching and turn-off.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-TRIAC
+TITLE: TRIAC
+STATEMENT: >>>
+The catalog shall provide triac support with two main terminals and gate.
+<<<
+COMMENT: >>>
+Catalog target. Check conduction and trigger in both polarities.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-IGBT
+TITLE: IGBT
+STATEMENT: >>>
+The catalog shall provide igbt support with collector, gate, emitter and model-specific extra terminals.
+<<<
+COMMENT: >>>
+Catalog target. Compare DC transfer and switching only for qualified profiles.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-OPI
+TITLE: Ideal amplifier
+STATEMENT: >>>
+The catalog shall provide ideal amplifier support with noninverting input, inverting input and output with explicit reference and gain.
+<<<
+COMMENT: >>>
+Catalog target. Check closed-loop gain and output reference.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-OP
+TITLE: Powered op amp
+STATEMENT: >>>
+The catalog shall provide powered op amp support with noninverting and inverting inputs, both supply rails, and output.
+<<<
+COMMENT: >>>
+Catalog target. Verify terminal order and output clipping when modeled.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-CMP
+TITLE: Comparator
+STATEMENT: >>>
+The catalog shall provide comparator support with differential inputs, output and supply connections when modeled.
+<<<
+COMMENT: >>>
+Catalog target. Verify switching threshold and polarity.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-OTA
+TITLE: Transconductance amplifier
+STATEMENT: >>>
+The catalog shall provide transconductance amplifier support with differential inputs and explicit output terminals with a transconductance model.
+<<<
+COMMENT: >>>
+Catalog target. Compare output current with the differential input.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-XFMR
+TITLE: Transformer
+STATEMENT: >>>
+The catalog shall provide transformer support with two ordered winding pairs and dot polarity.
+<<<
+COMMENT: >>>
+Catalog target. Verify voltage ratio and sign.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-K
+TITLE: Mutual coupling
+STATEMENT: >>>
+The catalog shall provide mutual coupling support with two named inductors and a valid coupling coefficient.
+<<<
+COMMENT: >>>
+Catalog target. Verify induced voltage and reject a missing winding.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-CORE
+TITLE: Magnetic core
+STATEMENT: >>>
+The catalog shall provide magnetic core support with magnetic terminals and explicit flux or reluctance law.
+<<<
+COMMENT: >>>
+Catalog target. Verify orientation and flux response.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-T
+TITLE: Lossless transmission line
+STATEMENT: >>>
+The catalog shall provide lossless transmission line support with two ordered terminal pairs, impedance and delay.
+<<<
+COMMENT: >>>
+Catalog target. Verify propagation delay and reflected pulse.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-O
+TITLE: Lossy transmission line
+STATEMENT: >>>
+The catalog shall provide lossy transmission line support with two ordered terminal pairs and a supported distributed model.
+<<<
+COMMENT: >>>
+Catalog target. Verify attenuation and phase against a reference.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-CPL
+TITLE: Coupled transmission line
+STATEMENT: >>>
+The catalog shall provide coupled transmission line support with ordered near/far conductors, returns and coupling model.
+<<<
+COMMENT: >>>
+Catalog target. Verify near-end and far-end crosstalk.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-RF
+TITLE: RF port
+STATEMENT: >>>
+The catalog shall provide rf port support with signal, return, port index and reference impedance.
+<<<
+COMMENT: >>>
+Catalog target. Verify matched-port reflection and port ordering.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-STB
+TITLE: Loop probe
+STATEMENT: >>>
+The catalog shall provide loop probe support with two ordered series terminals and analysis binding.
+<<<
+COMMENT: >>>
+Catalog target. Verify insertion preserves DC bias and identifies the loop measurement.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-PORT
+TITLE: Cell interface port
+STATEMENT: >>>
+The catalog shall provide cell interface port support with an explicit name, direction, terminal order and scope.
+<<<
+COMMENT: >>>
+Catalog target. Check emitted subcircuit ordering and duplicate-name rejection.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-GROUND
+TITLE: Ground and reference symbols
+STATEMENT: >>>
+The catalog shall provide ground and reference symbols support with reference-node identity with standard, earth and chassis artwork variants.
+<<<
+COMMENT: >>>
+Catalog target. Check distinct artwork retains the declared electrical identity.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-RAIL
+TITLE: Global supply labels
+STATEMENT: >>>
+The catalog shall provide global supply labels support with named rails including VDD, VSS, VCC and VEE with explicit scope.
+<<<
+COMMENT: >>>
+Catalog target. Check that equal labels join and unequal labels remain separate.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-CELL
+TITLE: Reusable cell instance
+STATEMENT: >>>
+The catalog shall provide reusable cell instance support with a named cell definition and its ordered interface terminals.
+<<<
+COMMENT: >>>
+Catalog target. Verify two instances preserve separate internal nets.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-N-BJT
+TITLE: N-type BJT
+STATEMENT: >>>
+The catalog shall provide a N-type BJT with collector, base and emitter, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-N-BJT4
+TITLE: N-type substrate BJT
+STATEMENT: >>>
+The catalog shall provide a N-type substrate BJT with collector, base, emitter and substrate, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-N-BJT5
+TITLE: N-type electrothermal BJT
+STATEMENT: >>>
+The catalog shall provide a N-type electrothermal BJT with collector, base, emitter, substrate and thermal terminal, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-N-MOS
+TITLE: N-type MOSFET
+STATEMENT: >>>
+The catalog shall provide a N-type MOSFET with drain, gate, source and bulk, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-N-SOI
+TITLE: N-type SOI MOSFET
+STATEMENT: >>>
+The catalog shall provide a N-type SOI MOSFET with drain, gate, source, back gate and optional body contact, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-N-VDMOS
+TITLE: N-type power MOSFET
+STATEMENT: >>>
+The catalog shall provide a N-type power MOSFET with drain, gate and source, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-N-JFET
+TITLE: N-type JFET
+STATEMENT: >>>
+The catalog shall provide a N-type JFET with drain, gate and source, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-N-MES
+TITLE: N-type MESFET or HFET
+STATEMENT: >>>
+The catalog shall provide a N-type MESFET or HFET with drain, gate and source, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-P-BJT
+TITLE: P-type BJT
+STATEMENT: >>>
+The catalog shall provide a P-type BJT with collector, base and emitter, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-P-BJT4
+TITLE: P-type substrate BJT
+STATEMENT: >>>
+The catalog shall provide a P-type substrate BJT with collector, base, emitter and substrate, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-P-BJT5
+TITLE: P-type electrothermal BJT
+STATEMENT: >>>
+The catalog shall provide a P-type electrothermal BJT with collector, base, emitter, substrate and thermal terminal, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-P-MOS
+TITLE: P-type MOSFET
+STATEMENT: >>>
+The catalog shall provide a P-type MOSFET with drain, gate, source and bulk, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-P-SOI
+TITLE: P-type SOI MOSFET
+STATEMENT: >>>
+The catalog shall provide a P-type SOI MOSFET with drain, gate, source, back gate and optional body contact, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-P-VDMOS
+TITLE: P-type power MOSFET
+STATEMENT: >>>
+The catalog shall provide a P-type power MOSFET with drain, gate and source, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-P-JFET
+TITLE: P-type JFET
+STATEMENT: >>>
+The catalog shall provide a P-type JFET with drain, gate and source, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DEV-P-MES
+TITLE: P-type MESFET or HFET
+STATEMENT: >>>
+The catalog shall provide a P-type MESFET or HFET with drain, gate and source, an explicit model selector and instance parameters validated against the selected model profile.
+<<<
+COMMENT: >>>
+Catalog target. Verify pin order and polarity with independent bias sweeps. Verify derivatives, charge or thermal behavior for each claimed analysis.
+<<<

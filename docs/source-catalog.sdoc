@@ -1,0 +1,332 @@
+[DOCUMENT]
+TITLE: Independent and controlled source requirements
+
+[REQUIREMENT]
+UID: SCH-SRC-V-DC
+TITLE: DC voltage source
+STATEMENT: >>>
+The catalog shall provide a dc voltage source with ordered positive and negative terminals and a signed constant and explicit polarity. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare operating point and a two-point DC sweep.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-AC
+TITLE: AC voltage source
+STATEMENT: >>>
+The catalog shall provide a ac voltage source with ordered positive and negative terminals and magnitude and phase in degrees, plus an independently editable DC bias. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare real and imaginary AC response at zero and ninety degrees.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-PULSE
+TITLE: Pulse voltage source
+STATEMENT: >>>
+The catalog shall provide a pulse voltage source with ordered positive and negative terminals and low/high levels, delay, rise, fall, width and period. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check both edges, both steady levels and repetition over two periods.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-SIN
+TITLE: Sinusoidal voltage source
+STATEMENT: >>>
+The catalog shall provide a sinusoidal voltage source with ordered positive and negative terminals and offset, amplitude, frequency, delay, phase and damping. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check pre-delay value, first period, and damped envelope.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-PWL
+TITLE: Piecewise linear voltage source
+STATEMENT: >>>
+The catalog shall provide a piecewise linear voltage source with ordered positive and negative terminals and ordered time/value pairs and explicit repetition policy. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check breakpoints, interpolation, duplicate times and invalid ordering.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-PWLFILE
+TITLE: File-backed piecewise linear voltage source
+STATEMENT: >>>
+The catalog shall provide a file-backed piecewise linear voltage source with ordered positive and negative terminals and a bounded waveform asset with explicit time and value units. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare samples with the inline equivalent, then refuse malformed and unavailable assets.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-EXP
+TITLE: Exponential voltage source
+STATEMENT: >>>
+The catalog shall provide a exponential voltage source with ordered positive and negative terminals and initial and pulsed levels, independent delays and time constants. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check both exponential segments at their time constants.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-SFFM
+TITLE: Frequency modulated voltage source
+STATEMENT: >>>
+The catalog shall provide a frequency modulated voltage source with ordered positive and negative terminals and offset, amplitude, carrier frequency, modulation index and signal frequency. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare the waveform and its carrier sidebands.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-AM
+TITLE: Amplitude modulated voltage source
+STATEMENT: >>>
+The catalog shall provide a amplitude modulated voltage source with ordered positive and negative terminals and offset, carrier and modulation frequencies, amplitude and delay. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare carrier, envelope and delayed startup.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-PAT
+TITLE: Pattern voltage source
+STATEMENT: >>>
+The catalog shall provide a pattern voltage source with ordered positive and negative terminals and low/high levels, bit sequence, timing and repeat rules. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check sequence ordering, transition times and repeat termination.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-NOISE
+TITLE: Transient noise voltage source
+STATEMENT: >>>
+The catalog shall provide a transient noise voltage source with ordered positive and negative terminals and amplitude, sampling interval and a replay seed when the selected profile supports it. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check replay and statistical bounds under a pinned sample count.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-V-RANDOM
+TITLE: Transient random voltage source
+STATEMENT: >>>
+The catalog shall provide a transient random voltage source with ordered positive and negative terminals and distribution, distribution parameters, hold interval and replay seed. Values shall use volts and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check the held value between draws, replay, and distribution limits.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-DC
+TITLE: DC current source
+STATEMENT: >>>
+The catalog shall provide a dc current source with ordered positive and negative terminals and a signed constant and explicit polarity. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare operating point and a two-point DC sweep.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-AC
+TITLE: AC current source
+STATEMENT: >>>
+The catalog shall provide a ac current source with ordered positive and negative terminals and magnitude and phase in degrees, plus an independently editable DC bias. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare real and imaginary AC response at zero and ninety degrees.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-PULSE
+TITLE: Pulse current source
+STATEMENT: >>>
+The catalog shall provide a pulse current source with ordered positive and negative terminals and low/high levels, delay, rise, fall, width and period. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check both edges, both steady levels and repetition over two periods.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-SIN
+TITLE: Sinusoidal current source
+STATEMENT: >>>
+The catalog shall provide a sinusoidal current source with ordered positive and negative terminals and offset, amplitude, frequency, delay, phase and damping. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check pre-delay value, first period, and damped envelope.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-PWL
+TITLE: Piecewise linear current source
+STATEMENT: >>>
+The catalog shall provide a piecewise linear current source with ordered positive and negative terminals and ordered time/value pairs and explicit repetition policy. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check breakpoints, interpolation, duplicate times and invalid ordering.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-PWLFILE
+TITLE: File-backed piecewise linear current source
+STATEMENT: >>>
+The catalog shall provide a file-backed piecewise linear current source with ordered positive and negative terminals and a bounded waveform asset with explicit time and value units. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare samples with the inline equivalent, then refuse malformed and unavailable assets.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-EXP
+TITLE: Exponential current source
+STATEMENT: >>>
+The catalog shall provide a exponential current source with ordered positive and negative terminals and initial and pulsed levels, independent delays and time constants. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check both exponential segments at their time constants.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-SFFM
+TITLE: Frequency modulated current source
+STATEMENT: >>>
+The catalog shall provide a frequency modulated current source with ordered positive and negative terminals and offset, amplitude, carrier frequency, modulation index and signal frequency. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare the waveform and its carrier sidebands.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-AM
+TITLE: Amplitude modulated current source
+STATEMENT: >>>
+The catalog shall provide a amplitude modulated current source with ordered positive and negative terminals and offset, carrier and modulation frequencies, amplitude and delay. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Compare carrier, envelope and delayed startup.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-PAT
+TITLE: Pattern current source
+STATEMENT: >>>
+The catalog shall provide a pattern current source with ordered positive and negative terminals and low/high levels, bit sequence, timing and repeat rules. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check sequence ordering, transition times and repeat termination.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-NOISE
+TITLE: Transient noise current source
+STATEMENT: >>>
+The catalog shall provide a transient noise current source with ordered positive and negative terminals and amplitude, sampling interval and a replay seed when the selected profile supports it. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check replay and statistical bounds under a pinned sample count.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-C-RANDOM
+TITLE: Transient random current source
+STATEMENT: >>>
+The catalog shall provide a transient random current source with ordered positive and negative terminals and distribution, distribution parameters, hold interval and replay seed. Values shall use amperes and waveform time shall use seconds.
+<<<
+COMMENT: >>>
+Catalog target. Check the held value between draws, replay, and distribution limits.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-BAT
+TITLE: Battery symbol
+STATEMENT: >>>
+A battery shall have explicit positive and negative terminals and bind to a DC voltage model with a signed voltage.
+<<<
+COMMENT: >>>
+Catalog target. Verify that replacing the artwork preserves polarity and DC behavior.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-VCVS
+TITLE: Voltage-controlled voltage source
+STATEMENT: >>>
+A VCVS shall bind output positive and negative, then control positive and negative, and accept a signed voltage gain.
+<<<
+COMMENT: >>>
+Catalog target. Reverse the control pins and verify the output sign.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-VCCS
+TITLE: Voltage-controlled current source
+STATEMENT: >>>
+A VCCS shall bind output positive and negative, then control positive and negative, and accept transconductance in siemens.
+<<<
+COMMENT: >>>
+Catalog target. Compare output current to control voltage times transconductance.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-CCVS
+TITLE: Current-controlled voltage source
+STATEMENT: >>>
+A CCVS shall bind output terminals, a named current-sensing voltage source and signed transresistance in ohms.
+<<<
+COMMENT: >>>
+Catalog target. Verify sense orientation and refuse unknown references.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-CCCS
+TITLE: Current-controlled current source
+STATEMENT: >>>
+A CCCS shall bind output terminals, a named current-sensing voltage source and signed current gain.
+<<<
+COMMENT: >>>
+Catalog target. Verify sense orientation and refuse unknown references.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-B
+TITLE: Behavioral source
+STATEMENT: >>>
+A behavioral source shall select voltage or current output, bind typed expressions to explicit node and branch references, and report unsupported operators or analyses.
+<<<
+COMMENT: >>>
+Catalog target. Check voltage and current expressions and reject missing or cyclic references.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-SWV
+TITLE: Voltage-controlled switch
+STATEMENT: >>>
+A voltage-controlled switch shall expose conduction and control terminals, on/off resistance, threshold, hysteresis and startup state.
+<<<
+COMMENT: >>>
+Catalog target. Sweep above and below threshold in both directions and verify branch resistance.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-SWI
+TITLE: Current-controlled switch
+STATEMENT: >>>
+A current-controlled switch shall expose conduction terminals and a named sense branch with current threshold and hysteresis.
+<<<
+COMMENT: >>>
+Catalog target. Check both trip directions and missing sense branch refusal.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SRC-SWE
+TITLE: Expression-controlled switch
+STATEMENT: >>>
+An expression-controlled switch shall accept a typed control expression and explicit on/off states.
+<<<
+COMMENT: >>>
+Catalog target. Verify the selected branch and refuse unresolved inputs.
+<<<
