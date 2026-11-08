@@ -198,3 +198,7 @@ The bulk adapter, OSDI model and FD host SHA-256 values were
 and c6eb606ae3df5c2e7775706a5eba17e5133e563c86c54cb8bf52824229a46a00.
 The logs are linux-browser.log, linux-mcp.log and linux-oracle.log in
 the storage checkpoint artifact directory. Linux coverage was unmeasured.
+
+The named model library stores up to 32 sheet-local diode, BJT, MOS1 or BSIM3 definitions. Apply a definition to a compatible instance to copy its parameters into the bridge settings. Editing or deleting the definition does not change previously applied copies. Save and load preserve the definitions; an MCP client can transfer them by reading and defining them in another sheet.
+
+Verification: 37 .NET tests passed. The browser smoke test saved, reloaded and applied a named BJT definition. The MCP smoke test discovered the named-model commands and exercised definition, listing and removal. An isolated mutation that discarded definitions on reload failed the targeted round-trip test. Coverlet measured 4,067/4,584 lines (88.72%) and 1,264/1,884 branches (67.09%) in the instrumented .NET test scope; this does not measure browser, MCP host or Rust solver coverage. No fuzz campaign or new numerical comparison was run for this change to model storage.

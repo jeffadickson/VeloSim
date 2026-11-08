@@ -17,7 +17,7 @@ public sealed record AnalysisHistory(IReadOnlyList<SweepRun> Sweeps, IReadOnlyLi
     IReadOnlyList<Guid> Current);
 
 internal sealed record SavedSession(LessonView View, AnalysisHistory History,
-    Dictionary<BridgeField, string>? AnalysisFields = null);
+    Dictionary<BridgeField, string>? AnalysisFields = null, NamedModel[]? Models = null);
 
 public sealed partial class LessonSession
 {
@@ -47,7 +47,7 @@ public sealed partial class LessonSession
 
     public AnalysisHistory History { get { lock (gate) return CaptureHistory(); } }
 
-    private SavedSession CaptureSession() => new(View, CaptureHistory(), BridgeDraft.Snapshot());
+    private SavedSession CaptureSession() => new(View, CaptureHistory(), BridgeDraft.Snapshot(), namedModels.Values.ToArray());
 
     private AnalysisHistory CaptureHistory() => new(
         Array.AsReadOnly(runs.ToArray()), Array.AsReadOnly(transients.ToArray()),
@@ -59,6 +59,8 @@ public sealed partial class LessonSession
         sessionGeneration++;
         Wiring = new();
         BridgeDraft.Restore(saved.AnalysisFields);
+        namedModels.Clear();
+        foreach (var model in saved.Models ?? []) namedModels.Add(model.Name, model);
         ClearGesture();
         ClearSelection();
         if (saved.View.Selected is { } id) Select(FindPart(id)!);
@@ -80,6 +82,8 @@ public sealed partial class LessonSession
     {
         if (saved is not { View.Filter.Length: <= 128, History.Sweeps.Count: <= RunLimit,
             History.Transients.Count: <= RunLimit, History.Current.Count: <= 2 * RunLimit }) return false;
+        if (saved.Models is { } models && (models.Length > ModelLimit || !models.All(ValidModel) ||
+            models.Select(m => m.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != models.Length)) return false;
         if (saved.AnalysisFields is { } fields && !BridgeDraft.ValidFields(fields)) return false;
         if (saved.View.Selected is { } selected && !candidate.Parts.Any(part => part.Id == selected)) return false;
         if (saved.View.Highlight is Pin pin && !candidate.Connected(pin, pin)) return false;

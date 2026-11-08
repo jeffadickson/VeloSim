@@ -15,6 +15,29 @@
             <label for="@field.Key">@field.Label</label>
             <input id="@field.Key" value="@Session.BridgeDraft[field.Key]" maxlength="4096" @onchange="e => Set(field.Key, e)" />
         }
+        <details>
+            <summary>Model library</summary>
+            <label for="named-model">Model name</label>
+            <input id="named-model" @bind="modelName" maxlength="48" />
+            <label for="named-family">Model family</label>
+            <select id="named-family" @bind="modelFamily">
+                <option value="@BridgeField.Diodes">Diode</option>
+                <option value="@BridgeField.Bjts">BJT</option>
+                <option value="@BridgeField.Mos1">MOS1</option>
+                <option value="@BridgeField.Bsim3">BSIM3</option>
+            </select>
+            <label for="named-parameters">Model parameters without instance ID</label>
+            <input id="named-parameters" @bind="modelParameters" maxlength="512" />
+            <button @onclick="StoreModel">Store named model</button>
+            <label for="model-instance">Target instance</label>
+            <input id="model-instance" @bind="modelInstance" maxlength="12" />
+            @foreach (var model in Session.Execute(new ReadNamedModels()).Models ?? [])
+            {
+                <button @onclick="() => UseModel(model.Name)">Apply @model.Name</button>
+                <button @onclick="() => DeleteModel(model.Name)">Remove @model.Name</button>
+            }
+            <p role="status">@modelStatus</p>
+        </details>
         @if (result is { } response)
         {
             <p role="status" data-testid="bridge-status">@response.Message</p>
@@ -40,6 +63,16 @@
     [Parameter, EditorRequired] public LessonSession Session { get; set; } = default!;
     private CommandResult? result;
     private bool running;
+    private string modelName = "";
+    private BridgeField modelFamily = BridgeField.Bjts;
+    private string modelParameters = "";
+    private string modelInstance = "";
+    private string modelStatus = "";
+
+    private void StoreModel() => modelStatus = Session.Execute(
+        new DefineNamedModel(new(modelName, modelFamily, modelParameters))).Message;
+    private void UseModel(string name) => modelStatus = Session.Execute(new ApplyNamedModel(name, modelInstance)).Message;
+    private void DeleteModel(string name) => modelStatus = Session.Execute(new RemoveNamedModel(name)).Message;
     private static readonly (BridgeField Key, string Label)[] fields =
     [
         (BridgeField.DcContinuation, "DC source stepping (true or false)"),

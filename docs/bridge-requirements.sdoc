@@ -120,3 +120,13 @@ An explicit DC source-continuation request shall use the bounded native source-s
 COMMENT: >>>
 BridgeNgspice mos1-high and browser and MCP high-bias runs.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-MODEL-LIB-001
+TITLE: Save and reuse named model definitions
+STATEMENT: >>>
+A sheet shall store a bounded collection of case-insensitive named model definitions separately from instance settings. Typed commands shall list, define, remove and apply definitions through the browser and MCP. Applying a definition shall copy its parameters to a compatible instance without changing other instance bindings. Loading an older sheet without definitions shall yield an empty library. Invalid definitions shall not change the current sheet.
+<<<
+COMMENT: >>>
+BridgeSettingsTests, BrowserSmoke and McpSmoke. The supported families are diode, BJT, MOS1 and BSIM3. Applying a definition creates an instance-local copy; later edits to the definition do not change existing bindings. MCP can transfer definitions between sheets by reading and defining them.
+<<<

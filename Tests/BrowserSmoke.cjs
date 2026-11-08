@@ -254,7 +254,18 @@ const server = http.createServer((req, res) => {
       await button("Reload sheet").click();
       assert.equal(await analysis.getByLabel(/PWL sources/).inputValue(), "V2 0 .55 1e-5 .68");
       assert.match(await analysis.getByLabel(/BJT \(ID/).inputValue(), /3e-10/);
-      console.log("Browser restored model and source settings after reload.");
+      await analysis.getByText("Model library", {exact:true}).click();
+      await analysis.getByLabel("Model name", {exact:true}).fill("SmallSignal");
+      await analysis.getByLabel("Model parameters without instance ID").fill("1e-15 75 1 .025 .025");
+      await button("Store named model").click();
+      await button("Save sheet").click();
+      await page.reload();
+      await button("Reload sheet").click();
+      await analysis.getByText("Model library", {exact:true}).click();
+      await analysis.getByLabel("Target instance").fill("Q1");
+      await button("Apply SmallSignal").click();
+      assert.equal(await analysis.getByLabel(/BJT \(ID/).inputValue(), "Q1 1e-15 75 1 .025 .025");
+      console.log("Browser restored and applied a named model.");
       if (process.env.SPICE_BSIM330_HOST) {
         await button("Open BSIM3 example").click();
         for (const kind of ["Dc", "Ac", "Transient"]) {

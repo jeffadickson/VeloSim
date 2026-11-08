@@ -145,6 +145,26 @@ internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
     public CommandResult LoadMixed(Guid documentId, long revision, CancellationToken cancellationToken) =>
         session.Execute(new LoadBridgeDemo(new(documentId, revision)), cancellationToken);
 
+    [McpServerTool(Name = "schematic_read_named_models", ReadOnly = true, UseStructuredContent = true)]
+    [Description("List reusable model definitions in the sheet.")]
+    public CommandResult Models(CancellationToken cancellationToken) =>
+        session.Execute(new ReadNamedModels(), cancellationToken);
+
+    [McpServerTool(Name = "schematic_define_named_model", UseStructuredContent = true)]
+    [Description("Store or replace a named model parameter row without an instance ID.")]
+    public CommandResult DefineModel(NamedModel model, CancellationToken cancellationToken) =>
+        session.Execute(new DefineNamedModel(model), cancellationToken);
+
+    [McpServerTool(Name = "schematic_apply_named_model", UseStructuredContent = true)]
+    [Description("Apply a named definition to a compatible instance's analysis fields.")]
+    public CommandResult ApplyModel(string name, string partId, CancellationToken cancellationToken) =>
+        session.Execute(new ApplyNamedModel(name, partId), cancellationToken);
+
+    [McpServerTool(Name = "schematic_remove_named_model", UseStructuredContent = true)]
+    [Description("Remove a model definition from the sheet library.")]
+    public CommandResult RemoveModel(string name, CancellationToken cancellationToken) =>
+        session.Execute(new RemoveNamedModel(name), cancellationToken);
+
     [McpServerTool(Name = "schematic_read_analysis_fields", ReadOnly = true, UseStructuredContent = true)]
     [Description("Read the saved analysis, waveform and model entry fields.")]
     public CommandResult AnalysisFields(CancellationToken cancellationToken) =>

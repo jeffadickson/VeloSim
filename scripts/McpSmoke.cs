@@ -16,10 +16,14 @@ options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
 var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
-    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "read_analysis_fields", "apply_analysis_fields", "run_circuit" };
+    "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "read_analysis_fields", "apply_analysis_fields", "read_named_models", "define_named_model", "apply_named_model", "remove_named_model", "run_circuit" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
 
+var definition = await Call(client, "define_named_model", new() { ["model"] = new NamedModel("Signal", BridgeField.Bjts, "1e-15 75 1 .025 .025") });
+Require(definition.Code == CommandCode.Ok, definition.Message);
+Require((await Call(client, "read_named_models")).Models?.Single().Name == "Signal", "Named model was not retained.");
+Require((await Call(client, "remove_named_model", new() { ["name"] = "Signal" })).Code == CommandCode.Ok, "Named model removal failed.");
 var catalog = await Call(client, "read_catalog");
 Require(catalog.Catalog?.Count == 90 &&
     catalog.Catalog.Any(entry => entry.Kind == Kind.CoupledTransmissionLine && entry.Definition.Terminals.Count == 6) &&

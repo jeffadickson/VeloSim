@@ -96,6 +96,16 @@ public sealed partial class LessonSession
                 case UpdateWiringDraft wiring when wiring.Draft is { Name.Length: <= 48, Bends.Length: <= 256 }:
                     Wiring = wiring.Draft;
                     return Result(CommandCode.Ok, "Wiring selection updated.");
+                case DefineNamedModel definition:
+                    return DefineModel(definition.Model);
+                case ApplyNamedModel binding:
+                    return BindModel(binding.Name, binding.PartId);
+                case ReadNamedModels:
+                    return Result(CommandCode.Ok, "Model library read.") with { Models = namedModels.Values.ToArray() };
+                case RemoveNamedModel removal:
+                    return removal.Name is not null && namedModels.Remove(removal.Name)
+                        ? Result(CommandCode.Ok, "Model removed.")
+                        : Result(CommandCode.NotFound, "Model not found.");
                 case ReadAnalysisFields:
                     return Result(CommandCode.Ok, "Analysis settings read.") with { AnalysisFields = BridgeDraft.Snapshot() };
                 case ApplyAnalysisFields settings:
