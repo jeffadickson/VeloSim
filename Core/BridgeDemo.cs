@@ -16,14 +16,14 @@ public static class BridgeDemo
         Pulses: [new("V2", 1.2, 1.6, 0, .00002, .00002, .005, .01),
                  new("V3", .2, 1, 0, .00002, .00002, .005, .01)],
         Diodes: [new("D1", 1e-14, 8.617333262145e-5 * 300.15, 2e-9, .7, .5, .5, 1e-8)],
-        Mos1: [new("M1", .7, .001, 0, .6, .02)]);
+        Mos1: [new("M1", .7, .001, 0, .6, .02, 1e-10, 2e-10, 5e-11, 3e-10, 4e-10)]);
 
     internal static Board BuildModels() => Build(
     [
         (Kind.Ground, 320, 330, 0, ["0"]),
-        (Kind.Supply, 90, 100, 3, ["drain-supply", "0"]),
+        (Kind.Supply, 90, 100, 1, ["drain-supply", "0"]),
         (Kind.Supply, 90, 235, 1.5, ["gate", "0"]),
-        (Kind.Supply, 385, 105, 1, ["diode-supply", "0"]),
+        (Kind.Supply, 385, 105, .8, ["diode-supply", "0"]),
         (Kind.Resistor, 220, 95, 1000, ["drain-supply", "drain"]),
         (Kind.Resistor, 490, 95, 1000, ["diode-supply", "diode"]),
         (Kind.Nmos, 235, 235, 0, ["drain", "gate", "0", "0"]),

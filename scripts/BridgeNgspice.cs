@@ -13,7 +13,7 @@ var directory = Path.GetFullPath(args[2]);
 if (Directory.EnumerateFileSystemEntries(directory).Any())
     throw new ArgumentException("Use an empty artifact directory to prevent stale oracle data.");
 var fixture = args.Length == 3 ? "mixed" : args[3];
-if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1")) throw new ArgumentException("Unknown fixture.");
+if (fixture is not ("mixed" or "diode" or "diode-charge" or "mos1" or "mos1-charge")) throw new ArgumentException("Unknown fixture.");
 var deck = """
     Mixed RLC and controlled-source reference
     V1 in 0 DC 1 AC 1 30 PULSE(0 1 0 10u 10u 10m 20m)
@@ -48,9 +48,9 @@ if (fixture != "mixed")
     var observable = fixture.StartsWith("diode", StringComparison.Ordinal) ? "diode" : "drain";
     deck = """
         Diode and MOS1 conduction reference
-        V1 vdd 0 3
+        V1 vdd 0 1
         V2 gate 0 DC 1.5 AC 1 PULSE(1.2 1.6 0 20u 20u 5m 10m)
-        V3 vd 0 DC 1 AC 1 PULSE(.2 1 0 20u 20u 5m 10m)
+        V3 vd 0 DC .8 AC 1 PULSE(.2 1 0 20u 20u 5m 10m)
         R1 vdd drain 1k
         R2 vd diode 1k
         M1 drain gate 0 0 MN W=10u L=10u
@@ -63,6 +63,8 @@ if (fixture != "mixed")
         deck[deck.IndexOf(".control", StringComparison.Ordinal)..]
             .Replace("v(sum)", $"v({observable})", StringComparison.Ordinal)
             .Replace("tran 2u 3m 0 2u", "tran .025u 100u 0 .025u", StringComparison.Ordinal);
+    if (fixture == "mos1-charge")
+        deck = deck.Replace("IS=1e-30)", "IS=1e-30 CGSO=1e-5 CGDO=2e-5 CGBO=5e-6 CBD=3e-10 CBS=4e-10 PB=.8 MJ=.5 FC=.5)", StringComparison.Ordinal);
     if (fixture == "diode-charge")
         deck = deck.Replace("TT=0 CJO=0", "TT=10n CJO=2n VJ=.7 M=.5 FC=.5", StringComparison.Ordinal);
 }
@@ -94,7 +96,12 @@ foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
 {
     var options = fixture == "mixed" ? BridgeDemo.Options(analysis)
         : BridgeDemo.ModelOptions(analysis, fixture.StartsWith("diode", StringComparison.Ordinal) ? "P1" : "P2");
-    if (fixture is "diode" or "mos1")
+    if (fixture is not ("mixed" or "mos1-charge"))
+        options = options with { Mos1 = [options.Mos1![0] with
+        {
+            GateSourceFarads = 0, GateDrainFarads = 0, GateBulkFarads = 0, DrainBodyFarads = 0, SourceBodyFarads = 0
+        }] };
+    if (fixture is "diode" or "mos1" or "mos1-charge")
         options = options with { Diodes = [options.Diodes![0] with { JunctionFarads = 0, TransitSeconds = 0 }] };
     var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version, options),
         solver.SolveCircuitAsync);

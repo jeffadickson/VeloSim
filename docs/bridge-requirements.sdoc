@@ -40,3 +40,13 @@ A diode binding shall carry optional effective junction capacitance, junction po
 COMMENT: >>>
 ChargedDiodeBinding, BridgeNgspice diode-charge fixture, BrowserSmoke and McpSmoke. Avalanche, series resistance and temperature scaling are outside this profile.
 <<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-MOS1-Q-001
+TITLE: Bind MOS1 body depletion and overlap charge
+STATEMENT: >>>
+The bridge shall map effective MOS1 gate overlap capacitances and body depletion parameters to explicit native companions. The body junction polarity shall follow the transistor polarity. An equipotential companion shall contribute no element. Invalid storage parameter domains shall be refused. Intrinsic channel charge is outside this profile.
+<<<
+COMMENT: >>>
+Mos1OverlapAndBodyCharge, BridgeNgspice mos1-charge fixture, BrowserSmoke and McpSmoke.
+<<<

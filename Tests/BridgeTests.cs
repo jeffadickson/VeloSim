@@ -96,6 +96,25 @@ public sealed class BridgeTests
         Assert.Equal(CommandCode.Ok, result.Code);
     }
 
+    [Fact]
+    public async Task Mos1OverlapAndBodyChargeValidateBeforeSolving()
+    {
+        var session = new LessonSession();
+        session.Execute(new LoadModelDemo(session.Version));
+        var options = BridgeDemo.ModelOptions(BridgeAnalysis.Dc, "P2");
+        var model = options.Mos1![0] with { GateDrainFarads = 2e-9, DrainBodyFarads = 1e-9 };
+        var invalid = await session.ExecuteBridgeAsync(new RunBridge(session.Version,
+            options with { Mos1 = [model with { DrainBodyFarads = -1 }] }), Never);
+        Assert.Equal(CommandCode.InvalidInput, invalid.Code);
+        var result = await session.ExecuteBridgeAsync(new RunBridge(session.Version,
+            options with { Mos1 = [model] }), (job, _) =>
+        {
+            Assert.Equal(model, Assert.Single(job.Options.Mos1!));
+            return Task.FromResult<IReadOnlyList<BridgeSample>>([new(0, 2)]);
+        });
+        Assert.Equal(CommandCode.Ok, result.Code);
+    }
+
     private static Task<IReadOnlyList<BridgeSample>> Never(CircuitJob job, CancellationToken token) =>
         throw new InvalidOperationException("Invalid input reached the solver.");
 }

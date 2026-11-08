@@ -18,10 +18,43 @@ public sealed partial class NativeRcSolver
         var request = JsonSerializer.Serialize(new
         {
             schema_version = "1", case_id = "schematic-circuit", backend = "lu",
-            circuit = new { nodes = job.Nodes, elements = job.Elements.Select(element => Element(element, job.Options)).ToArray() },
+            circuit = new { nodes = job.Nodes, elements = job.Elements.SelectMany(element => Elements(element, job.Options)).ToArray() },
             analysis = Analysis(job)
         });
         return await ExchangeAsync(request, json => ParseCircuit(json, job), 32 * 1024 * 1024, cancellation);
+    }
+
+    private static IEnumerable<Dictionary<string, object>> Elements(CircuitElement element, BridgeOptions options)
+    {
+        yield return Element(element, options);
+        if (element.Kind is not (Kind.Nmos or Kind.Pmos)) yield break;
+        var model = FindModel(options.Mos1, element.Id, binding => binding.Id)!;
+        var overlap = new (string Suffix, int Other, double Farads)[]
+        {
+            ("_qgs", element.N, model.GateSourceFarads), ("_qgd", element.P, model.GateDrainFarads),
+            ("_qgb", element.Bulk, model.GateBulkFarads)
+        };
+        foreach (var (suffix, other, farads) in overlap)
+            if (farads > 0 && element.Gate != other)
+                yield return new() { ["kind"] = "capacitor", ["id"] = element.Id + suffix,
+                    ["p"] = element.Gate, ["n"] = other, ["farads"] = farads };
+
+        var body = new (string Suffix, int Other, double Farads)[]
+        {
+            ("_qbd", element.P, model.DrainBodyFarads), ("_qbs", element.N, model.SourceBodyFarads)
+        };
+        foreach (var (suffix, other, farads) in body)
+        {
+            if (farads == 0 || element.Bulk == other) continue;
+            var (p, n) = element.Kind == Kind.Pmos ? (other, element.Bulk) : (element.Bulk, other);
+            yield return new() { ["kind"] = "junction_storage", ["id"] = element.Id + suffix,
+                ["p"] = p, ["n"] = n, ["model"] = new
+                {
+                    saturation_amps = 1e-14, thermal_volts = 8.617333262145e-5 * 300.15,
+                    junction_farads = farads, junction_volts = model.BodyVolts, grading = model.BodyGrading,
+                    forward_coefficient = model.ForwardCoefficient, transit_seconds = 0
+                } };
+        }
     }
 
     private static Dictionary<string, object> Element(CircuitElement element, BridgeOptions options)

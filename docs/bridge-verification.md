@@ -68,3 +68,15 @@ The Core suite passed 29 tests. Coverlet measured 3,494 of 3,957 lines and
 976 of 1,458 branches, including generated code. An isolated grading-boundary
 mutant was caught. Browser, MCP, transport and Rust coverage were unmeasured.
 See E:/Artifacts/SchematicLab-charge-a5c5329 for local logs and screenshots.
+
+## MOS1 explicit charge
+
+The NMOS fixture with nonzero overlap and body depletion passed browser,
+MCP and ngspice. DC error was 0.607 nV, maximum complex AC component error
+1.435 nV, and maximum transient error 0.175 mV (2,001 native and 4,011
+reference samples). The first, higher-bias fixture hit the native Newton
+limit. The verified fixture uses a 1 V drain supply and zero GAMMA.
+This scope excludes intrinsic channel charge and a PMOS reference fixture.
+
+The Core suite passed 30 tests. Coverlet measured 3,503 of 3,966 lines and
+991 of 1,474 branches. Native, transport, MCP and browser code were unmeasured.

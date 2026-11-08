@@ -52,8 +52,17 @@ public sealed partial class NativeRcSolver(string? executable)
             await process.StandardInput.WriteAsync(request.AsMemory(), token);
             process.StandardInput.Close();
             await Task.WhenAll(output, error, process.WaitForExitAsync(token));
-            if (process.ExitCode != 0) throw new RcSolverException("The native solver refused the circuit or analysis.");
-            return parse(await output);
+            var body = await output;
+            if (process.ExitCode != 0)
+            {
+                using var refusal = JsonDocument.Parse(body);
+                if (refusal.RootElement.TryGetProperty("error", out var failure) &&
+                    failure.TryGetProperty("message", out var message) &&
+                    message.ValueKind == JsonValueKind.String && message.GetString() is { Length: <= 512 } detail)
+                    throw new RcSolverException(detail);
+                throw new RcSolverException("The native solver refused the circuit or analysis.");
+            }
+            return parse(body);
         }
         catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
         {

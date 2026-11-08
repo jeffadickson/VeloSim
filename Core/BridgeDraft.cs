@@ -41,7 +41,7 @@ public sealed class BridgeDraft
         fields[BridgeField.Pulses] = "V2 1.2 1.6 0 .00002 .00002 .005 .01; V3 .2 1 0 .00002 .00002 .005 .01";
         fields[BridgeField.Controls] = "";
         fields[BridgeField.Diodes] = "D1 1e-14 " + (8.617333262145e-5 * 300.15).ToString("R", CultureInfo.InvariantCulture) + " 2e-9 .7 .5 .5 1e-8";
-        fields[BridgeField.Mos1] = "M1 .7 .001 0 .6 .02";
+        fields[BridgeField.Mos1] = "M1 .7 .001 0 .6 .02 1e-10 2e-10 5e-11 3e-10 4e-10 .8 .5 .5";
     }
 
     public BridgeOptions? Parse(BridgeAnalysis analysis)
@@ -53,8 +53,11 @@ public sealed class BridgeDraft
                 ? new DiodeBinding(row[0], Number(row[1]), Number(row[2]))
                 : new DiodeBinding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]),
                     Number(row[5]), Number(row[6]), Number(row[7]))).ToArray();
-            var mos = Rows(BridgeField.Mos1, 6).Select(row => new Mos1Binding(row[0], Number(row[1]), Number(row[2]),
-                Number(row[3]), Number(row[4]), Number(row[5]))).ToArray();
+            var mos = Rows(BridgeField.Mos1, 6, 14).Select(row => row.Length == 6
+                ? new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]))
+                : new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]),
+                    Number(row[6]), Number(row[7]), Number(row[8]), Number(row[9]), Number(row[10]), Number(row[11]),
+                    Number(row[12]), Number(row[13]))).ToArray();
             var options = new BridgeOptions(analysis, this[BridgeField.Probe], Controls: controls, Diodes: diodes, Mos1: mos);
             if (analysis == BridgeAnalysis.Dc) return options;
             if (analysis == BridgeAnalysis.Ac)

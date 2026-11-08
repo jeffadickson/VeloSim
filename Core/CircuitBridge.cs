@@ -12,7 +12,10 @@ public sealed record DiodeBinding(string Id, double SaturationAmps, double Therm
     double JunctionFarads = 0, double JunctionVolts = 1, double Grading = .5,
     double ForwardCoefficient = .5, double TransitSeconds = 0);
 /// <summary>Effective MOS level 1 channel parameters in SI units. Beta includes W/L.</summary>
-public sealed record Mos1Binding(string Id, double ThresholdVolts, double Beta, double Gamma, double Phi, double Lambda);
+public sealed record Mos1Binding(string Id, double ThresholdVolts, double Beta, double Gamma, double Phi, double Lambda,
+    double GateSourceFarads = 0, double GateDrainFarads = 0, double GateBulkFarads = 0,
+    double DrainBodyFarads = 0, double SourceBodyFarads = 0, double BodyVolts = .8,
+    double BodyGrading = .5, double ForwardCoefficient = .5);
 public sealed record CurrentControl(string Id, string VoltageSourceId);
 public sealed record BridgeOptions(BridgeAnalysis Analysis, string ProbeId, double[]? FrequenciesHz = null,
     double StopSeconds = .005, double StepSeconds = .00001, SourcePhasor[]? Phasors = null,
@@ -144,7 +147,10 @@ public sealed partial class LessonSession
                 d.ForwardCoefficient is >= 0 and < 1 && Nonnegative(d.TransitSeconds)) &&
             mos.All(m => m is not null && FindPart(m.Id)?.Kind is Kind.Nmos or Kind.Pmos &&
                 double.IsFinite(m.ThresholdVolts) && Positive(m.Beta) && Positive(m.Phi) &&
-                double.IsFinite(m.Gamma) && m.Gamma >= 0 && double.IsFinite(m.Lambda) && m.Lambda >= 0) &&
+                Nonnegative(m.Gamma) && Nonnegative(m.Lambda) && Nonnegative(m.GateSourceFarads) &&
+                Nonnegative(m.GateDrainFarads) && Nonnegative(m.GateBulkFarads) && Nonnegative(m.DrainBodyFarads) &&
+                Nonnegative(m.SourceBodyFarads) && Positive(m.BodyVolts) && m.BodyGrading is >= 0 and < 1 &&
+                m.ForwardCoefficient is >= 0 and < 1) &&
             diodes.Select(d => d.Id).Distinct().Count() == diodes.Length &&
             mos.Select(m => m.Id).Distinct().Count() == mos.Length &&
             phasors.Length <= 64 && pulses.Length <= 64 && controls.Length <= 64 &&
