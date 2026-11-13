@@ -1,0 +1,84 @@
+[DOCUMENT]
+TITLE: VeloSim toolchain and standalone schematic requirements
+
+[REQUIREMENT]
+UID: VELO-TOOLCHAIN-NET11-001
+STATUS: Draft
+TITLE: Released .NET 11 toolchain
+STATEMENT: >>>
+Maintained VeloSim C# projects and included schematic projects shall build with
+released SDK 11.0.100 and target net11.0. SDK selection, framework-dependent
+paths, package locks, examples and build instructions shall agree. Verification
+shall distinguish successful compilation, runtime execution and unavailable
+native/platform coverage. The RC SDK shall not be required by this repository.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-OWNERSHIP-001
+STATUS: Draft
+TITLE: Versioned schematic subproject
+STATEMENT: >>>
+The complete schematic source, requirements, tests, UI, solver adapter and MCP
+host shall reside under apps/SchematicLab in VeloSim. Import shall retain its
+history and stable requirements/command identifiers. Existing checkout data
+shall not be discarded. Core shall remain independent of UI and HDL engines.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-STANDALONE-001
+STATUS: Draft
+TITLE: Relocatable standalone web application
+STATEMENT: >>>
+A standalone schematic distribution shall contain its server and published
+browser assets, and shall run outside the source checkout without building
+the HDL simulator. Its default assets shall resolve relative to the installed
+application, independent of current working directory. Packaging shall record
+file hashes, runtime requirements and any included external solver provenance.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-STARTUP-001
+STATUS: Draft
+TITLE: Typed bounded startup commands
+STATEMENT: >>>
+Startup shall parse bounded explicit arguments into serve, help or error
+commands. Duplicate or unknown options, missing values, invalid numeric ports
+and invalid explicit paths shall fail before starting a server. Help shall
+not require assets or a solver and shall not open interactive dialogs.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-LOOPBACK-001
+STATUS: Draft
+TITLE: Local host boundary
+STATEMENT: >>>
+The standalone server shall listen only on localhost at an explicitly validated
+port in 1024..65535, defaulting to 5087. It shall retain the 64 KiB request-body
+bound and existing typed command validation, revision checks and structured
+solver refusals. CLI configuration shall not enable public network binding.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-SOLVER-001
+STATUS: Draft
+TITLE: Explicit native solver availability
+STATEMENT: >>>
+The distribution may include an explicitly selected trusted solver with its
+SHA-256 and source provenance, or accept an explicit absolute solver path.
+A missing optional solver shall preserve schematic editing and the analytical
+divider while native analyses return an explicit unavailable result. Missing
+model providers or numerical outputs shall never be replaced with invented
+successful results. Browser and MCP shall retain the shared command contracts.
+<<<
+
+[REQUIREMENT]
+UID: VELO-CSHARP-AUDIT-001
+STATUS: Draft
+TITLE: Evidence-based language modernization
+STATEMENT: >>>
+The migration shall document useful C# features adopted or already present and
+their verified scope. Changes shall preserve public wire contracts and error,
+cancellation and resource semantics. New syntax alone shall not establish a
+performance improvement. Inapplicable or incompatible features shall be
+documented rather than introduced solely for feature-count claims.
+<<<

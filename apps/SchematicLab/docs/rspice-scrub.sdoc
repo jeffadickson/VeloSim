@@ -1,0 +1,102 @@
+[DOCUMENT]
+TITLE: RSpice comparison and draft schematic requirements
+
+[REQUIREMENT]
+UID: SCH-NET-001
+TITLE: Named nets, routed segments and explicit junctions
+STATEMENT: >>>
+A learner shall be able to route a wire through bends, join a segment at an explicit junction, name a net, and highlight all its connected terminals. A geometric crossing alone shall preserve separate nets.
+<<<
+COMMENT: >>>
+Draft. Verify with a crossing before and after inserting a junction, two same-name labels and a net highlight on the extracted graph.
+<<<
+
+[REQUIREMENT]
+UID: SCH-TXN-001
+TITLE: Reversible schematic edits
+STATEMENT: >>>
+The editor shall support move, rotate, mirror, duplicate and undo/redo through typed edit operations. Geometry changes shall preserve terminal identity and connectivity. Canceling a pending placement or route shall leave the committed document unchanged.
+<<<
+COMMENT: >>>
+Draft. Compare the complete electrical graph before, after and across undo/redo for each edit.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CHECK-001
+TITLE: Actionable simulation preflight
+STATEMENT: >>>
+Preflight shall identify missing reference nodes, dangling terminals, invalid model bindings and unsupported analyses. Each finding shall have a stable code, severity, affected object when applicable and corrective guidance. Blocking findings shall prevent simulation from starting.
+<<<
+COMMENT: >>>
+Draft. Verify that a single unconnected resistor yields the missing reference and both terminal findings. Verify that activating a finding highlights the relevant object.
+<<<
+
+[REQUIREMENT]
+UID: SCH-PROBE-001
+TITLE: Cross-probe directly from the schematic
+STATEMENT: >>>
+A learner shall select a net on the schematic to add its voltage to the visible plot. Current probes shall identify a device terminal and sign convention. The plot and schematic shall show the same signal name and unit. The UI shall distinguish a signal unavailable in the selected run from a signal recorded but not plotted.
+<<<
+COMMENT: >>>
+Draft. Verify selecting an RC output net adds its recorded voltage without a second plot action, and selecting an unavailable branch explains which output must be recorded.
+<<<
+
+[REQUIREMENT]
+UID: SCH-RUN-001
+TITLE: Reproducible simulation and result states
+STATEMENT: >>>
+An analysis shall run against an immutable circuit and plan snapshot. Results shall retain analysis configuration, model identity, units and completion status. An edit shall mark prior results stale without overwriting them. Failed, cancelled and warning-bearing runs shall remain distinguishable.
+<<<
+COMMENT: >>>
+Draft. Verify run and rerun with a changed resistor, cancel a run, and select the retained prior result.
+<<<
+
+[REQUIREMENT]
+UID: SCH-RESULT-001
+TITLE: Plot and inspect multiple recorded observables
+STATEMENT: >>>
+The lesson shall support voltage and current traces for the available DC, AC and transient analyses with labeled axes and units. It shall provide signal selection, cursor values, and export of the plotted samples. Supported circuit lessons shall open their intended traces on completion.
+<<<
+COMMENT: >>>
+Draft. Verify an RC cutoff against the analytic response, an RC charging waveform at a time constant, and a two-signal plot with units and exported samples.
+<<<
+
+[REQUIREMENT]
+UID: SCH-LIB-002
+TITLE: Extensible catalog and model binding
+STATEMENT: >>>
+The catalog shall distinguish generic symbols, device model variants and user-provided subcircuits. A model binding shall validate electrical terminal order and expose supported analyses before a run. Part values shall accept engineering notation with explicit units and validation.
+<<<
+COMMENT: >>>
+Draft. Verify a capacitor value of 159n, swapped subcircuit pins, missing model files, and a model that supports DC but lacks transient charge.
+<<<
+
+[REQUIREMENT]
+UID: SCH-DOC-001
+TITLE: Portable and recoverable lesson documents
+STATEMENT: >>>
+A versioned lesson document shall round-trip circuit, view, analysis and probe state. The editor shall be able to open a built-in example without waiting for a save or file-picker decision. Unknown document versions shall preserve the current lesson and report an actionable error.
+<<<
+COMMENT: >>>
+Draft. Verify reload, cancellation, unknown-version refusal and loading an example while an unsaved lesson is open.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CANVAS-001
+TITLE: Drawing navigation and accessible controls
+STATEMENT: >>>
+The schematic shall support pan, zoom, fit content and configurable grid snapping. Essential placement, wiring, inspection and probe actions shall be reachable by keyboard. Controls shall remain discoverable in a narrow article embed.
+<<<
+COMMENT: >>>
+Draft. Verify keyboard-only placement and probing at desktop and narrow iframe widths and verify that pan and zoom do not change electrical connectivity.
+<<<
+
+[REQUIREMENT]
+UID: SCH-HIER-001
+TITLE: Reusable cells and multi-sheet interfaces
+STATEMENT: >>>
+Reusable schematic cells shall define ordered interface pins with symbol validation. Multi-sheet connectors shall preserve explicit net scope. The editor shall distinguish navigating to a child definition from changing an instance.
+<<<
+COMMENT: >>>
+Draft, after the single-sheet learning workflow. Verify a reusable amplifier with two instances and detect missing and mismatched interface pins.
+<<<

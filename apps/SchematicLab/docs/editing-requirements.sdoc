@@ -1,0 +1,32 @@
+[DOCUMENT]
+TITLE: Schematic editing and preflight acceptance
+
+[REQUIREMENT]
+UID: SCH-EDIT-GEOMETRY-001
+TITLE: Preserve electrical identity during geometry edits
+STATEMENT: >>>
+Move shall change only the selected part position. Rotate shall turn its artwork and terminal anchors clockwise in ninety-degree increments. Mirror shall reflect those anchors in the part's local vertical axis. Each operation shall preserve the ordered terminal IDs and wire endpoints. Duplicate shall preserve the value and orientation and assign a new part ID without copying incident wires.
+<<<
+COMMENT: >>>
+Browser and MCP dispatch typed commands. Verify geometry changes against an unchanged divider probe and wire list. The browser moves and duplicates to selectable grid destinations.
+<<<
+
+[REQUIREMENT]
+UID: SCH-EDIT-HISTORY-001
+TITLE: Bounded undo and redo
+STATEMENT: >>>
+Successful document edits shall record the previous state, including the part ID allocator. Undo and redo shall restore the applicable state and create a fresh revision. A new successful edit after undo shall discard redo history. A refused edit shall preserve both history branches. The session shall retain at most 32 prior edit states.
+<<<
+COMMENT: >>>
+Verify edit, undo, redo, stale revision refusal, branching history and unchanged results for geometry-only edits.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CHECK-BASIC-001
+TITLE: Structured checks for the built-in circuits
+STATEMENT: >>>
+The browser and MCP shall identify a missing ground, each dangling terminal and topology outside the supported divider and RC profiles. A finding shall carry a stable code, blocking status and corrective message. A terminal finding shall identify its part and terminal index. Activating it in the browser shall highlight that terminal.
+<<<
+COMMENT: >>>
+Verify both built-in circuits and a deleted ground. Model-specific validation and additional analyses remain separate requirements.
+<<<

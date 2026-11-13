@@ -1,0 +1,178 @@
+using System.Globalization;
+
+namespace SchematicLab.Core;
+
+public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1, Bjts, Bsim3, Pwl, Sines, Exponentials, FdSoi, DcContinuation }
+public sealed record SetBridgeDraft(BridgeField Field, string Text) : LessonCommand;
+public sealed record ReadAnalysisFields : LessonCommand;
+public sealed record ApplyAnalysisFields(IReadOnlyDictionary<BridgeField, string> Fields) : LessonCommand;
+
+/// <summary>Browser entry fields for typed circuit options. Form drafts have no electrical effect.</summary>
+public sealed class BridgeDraft
+{
+    private static readonly Dictionary<BridgeField, string> Defaults = new()
+    {
+        [BridgeField.Probe] = "P1", [BridgeField.Frequencies] = "100 1000", [BridgeField.Stop] = ".005",
+        [BridgeField.Step] = ".00001", [BridgeField.Phasors] = "", [BridgeField.Pulses] = "", [BridgeField.Controls] = "", [BridgeField.Diodes] = "", [BridgeField.Mos1] = "", [BridgeField.Bjts] = "", [BridgeField.Bsim3] = "", [BridgeField.Pwl] = "", [BridgeField.Sines] = "", [BridgeField.Exponentials] = "", [BridgeField.FdSoi] = "", [BridgeField.DcContinuation] = ""
+    };
+    private readonly Dictionary<BridgeField, string> fields = new(Defaults);
+
+    internal Dictionary<BridgeField, string> Snapshot() => new(fields);
+
+    internal static bool ValidFields(IReadOnlyDictionary<BridgeField, string> values) =>
+        values.Count <= Defaults.Count && values.All(entry => Defaults.ContainsKey(entry.Key) && entry.Value is { Length: <= 4096 });
+
+    internal bool Apply(IReadOnlyDictionary<BridgeField, string>? values)
+    {
+        if (values is null || !ValidFields(values)) return false;
+        foreach (var entry in values) fields[entry.Key] = entry.Value;
+        return true;
+    }
+
+    internal void Restore(IReadOnlyDictionary<BridgeField, string>? values)
+    {
+        foreach (var entry in Defaults) fields[entry.Key] = entry.Value;
+        if (values is not null) Apply(values);
+    }
+
+    public string this[BridgeField field] => fields[field];
+
+    internal bool Set(BridgeField field, string? text)
+    {
+        if (!fields.ContainsKey(field) || text is not { Length: <= 4096 }) return false;
+        fields[field] = text;
+        return true;
+    }
+
+    internal void LoadDemo(bool models)
+    {
+        fields[BridgeField.Probe] = "P1";
+        fields[BridgeField.Frequencies] = "100 1000";
+        fields[BridgeField.Stop] = ".003";
+        fields[BridgeField.Step] = ".000002";
+        fields[BridgeField.Phasors] = "V1 1 30; I1 .0002 90";
+        fields[BridgeField.Pulses] = "V1 0 1 0 .00001 .00001 .01 .02; I1 0 .0002 0 .00002 .00001 .01 .02";
+        fields[BridgeField.Controls] = "F1 V1; H1 V1";
+        fields[BridgeField.Diodes] = "";
+        fields[BridgeField.Mos1] = "";
+        fields[BridgeField.Bjts] = "";
+        fields[BridgeField.Bsim3] = "";
+        fields[BridgeField.Pwl] = "";
+        fields[BridgeField.Sines] = "";
+        fields[BridgeField.Exponentials] = "";
+        fields[BridgeField.FdSoi] = "";
+        fields[BridgeField.DcContinuation] = "";
+        if (!models) return;
+        fields[BridgeField.Stop] = ".0001";
+        fields[BridgeField.Step] = ".00000005";
+        fields[BridgeField.Phasors] = "V2 1 0; V3 1 0";
+        fields[BridgeField.Pulses] = "V2 1.2 1.6 0 .00002 .00002 .005 .01; V3 .2 1 0 .00002 .00002 .005 .01";
+        fields[BridgeField.Controls] = "";
+        fields[BridgeField.Diodes] = "D1 1e-14 " + (8.617333262145e-5 * 300.15).ToString("R", CultureInfo.InvariantCulture) + " 2e-9 .7 .5 .5 1e-8";
+        fields[BridgeField.Mos1] = "M1 .7 .001 0 .6 .02 1e-10 2e-10 5e-11 3e-10 4e-10 .8 .5 .5";
+    }
+
+    internal void LoadBjt()
+    {
+        LoadDemo(false);
+        fields[BridgeField.Stop] = ".0001";
+        fields[BridgeField.Step] = ".00000005";
+        fields[BridgeField.Phasors] = "V2 1 0";
+        fields[BridgeField.Pulses] = "V2 .55 .68 0 .00002 .00002 .005 .01";
+        fields[BridgeField.Controls] = "";
+        var thermal = BridgeDemo.BjtOptions(BridgeAnalysis.Dc).Bjts![0].ForwardThermalVolts.ToString("R", CultureInfo.InvariantCulture);
+        fields[BridgeField.Bjts] = $"Q1 1e-15 100 1 {thermal} {thermal} 3e-10 .75 .33 .5 1e-9 2e-10 .75 .33 .5 2e-9";
+    }
+
+    internal void LoadBsim3()
+    {
+        LoadDemo(false);
+        fields[BridgeField.Frequencies] = "1e6 1e9";
+        fields[BridgeField.Stop] = "1e-9";
+        fields[BridgeField.Step] = "2e-12";
+        fields[BridgeField.Phasors] = "V2 1 0";
+        fields[BridgeField.Pulses] = "V2 .8 .9 0 1e-9 1e-9 5e-9 1e-8";
+        fields[BridgeField.Controls] = "";
+        fields[BridgeField.Bsim3] = "M1 3.5e-9 2.4e17 5e16 .15 1e-6 .35e-6 1.5e-6 1.5e-6 1.5e-12 1.5e-12";
+    }
+
+    internal void LoadSoi()
+    {
+        LoadDemo(false);
+        fields[BridgeField.Controls] = "";
+        fields[BridgeField.Phasors] = "";
+        fields[BridgeField.Pulses] = "";
+        fields[BridgeField.FdSoi] = "M1";
+    }
+
+    public BridgeOptions? Parse(BridgeAnalysis analysis)
+    {
+        try
+        {
+            var controls = Rows(BridgeField.Controls, 2).Select(row => new CurrentControl(row[0], row[1])).ToArray();
+            var diodes = Rows(BridgeField.Diodes, 3, 8).Select(row => row.Length == 3
+                ? new DiodeBinding(row[0], Number(row[1]), Number(row[2]))
+                : new DiodeBinding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]),
+                    Number(row[5]), Number(row[6]), Number(row[7]))).ToArray();
+            var mos = Rows(BridgeField.Mos1, 6, 14, 7, 15).Select(row => row.Length is 6 or 7
+                ? new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]),
+                    OxideFarads: row.Length == 7 ? Number(row[6]) : 0)
+                : new Mos1Binding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]), Number(row[5]),
+                    Number(row[6]), Number(row[7]), Number(row[8]), Number(row[9]), Number(row[10]), Number(row[11]),
+                    Number(row[12]), Number(row[13]), row.Length == 15 ? Number(row[14]) : 0)).ToArray();
+            var bjts = Rows(BridgeField.Bjts, 6, 16).Select(row => new BjtBinding(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]), row.Length == 16 ? Junction(row, 6) : null,
+                row.Length == 16 ? Junction(row, 11) : null)).ToArray();
+            var bsim3 = Rows(BridgeField.Bsim3, 11).Select(row => new Bsim3Binding(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]), Number(row[7]),
+                Number(row[8]), Number(row[9]), Number(row[10]))).ToArray();
+            var options = new BridgeOptions(analysis, this[BridgeField.Probe], Controls: controls, Diodes: diodes, Mos1: mos, Bjts: bjts, Bsim3: bsim3,
+                FdSoi: Tokens(this[BridgeField.FdSoi]));
+            if (analysis == BridgeAnalysis.Dc)
+            {
+                var setting = this[BridgeField.DcContinuation];
+                if (setting.Length == 0) return options;
+                return bool.TryParse(setting, out var continuation)
+                    ? options with { UseSourceContinuation = continuation } : null;
+            }
+            if (analysis == BridgeAnalysis.Ac)
+            {
+                var phasors = Rows(BridgeField.Phasors, 3).Select(row => new SourcePhasor(row[0], Number(row[1]), Number(row[2]))).ToArray();
+                return options with { FrequenciesHz = Tokens(this[BridgeField.Frequencies]).Select(Number).ToArray(),
+                    Phasors = phasors };
+            }
+
+            var pulses = Rows(BridgeField.Pulses, 8).Select(row => new SourcePulse(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]), Number(row[7]))).ToArray();
+            var pwl = Rows(BridgeField.Pwl, -1).Select(row =>
+            {
+                if (row.Length < 3 || row.Length % 2 == 0) throw new FormatException("Expected time/value pairs.");
+                return new SourcePwl(row[0], Enumerable.Range(0, (row.Length - 1) / 2)
+                    .Select(i => new WavePoint(Number(row[2 * i + 1]), Number(row[2 * i + 2]))).ToArray());
+            }).ToArray();
+            var sines = Rows(BridgeField.Sines, 7).Select(row => new SourceSine(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]))).ToArray();
+            var exp = Rows(BridgeField.Exponentials, 7).Select(row => new SourceExponential(row[0], Number(row[1]), Number(row[2]),
+                Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]))).ToArray();
+            return options with { StopSeconds = Number(this[BridgeField.Stop]),
+                StepSeconds = Number(this[BridgeField.Step]), Pulses = pulses, Pwl = pwl, Sines = sines, Exponentials = exp };
+        }
+        catch (FormatException) { return null; }
+    }
+
+    private static BjtJunction Junction(string[] row, int i) =>
+        new(Number(row[i]), Number(row[i + 1]), Number(row[i + 2]), Number(row[i + 3]), Number(row[i + 4]));
+
+    private IEnumerable<string[]> Rows(BridgeField field, int count, int alternate = -1, int third = -1, int fourth = -1)
+    {
+        foreach (var text in this[field].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var row = Tokens(text);
+            if (count >= 0 && row.Length != count && row.Length != alternate && row.Length != third && row.Length != fourth) throw new FormatException("Wrong source row length.");
+            yield return row;
+        }
+    }
+
+    private static string[] Tokens(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+    private static double Number(string text) => double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture);
+}

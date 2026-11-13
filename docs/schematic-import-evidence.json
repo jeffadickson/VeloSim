@@ -1,0 +1,21 @@
+{
+  "source_commit": "02c02ad0358bdc2fc6cc4784eb09ec3927621090",
+  "destination": "apps/SchematicLab",
+  "retained_history": true,
+  "original_git_blobs": 75,
+  "original_blob_mismatches": 0,
+  "test_sdk": "10.0.403",
+  "test_framework": "net10.0",
+  "passed": 41,
+  "failed": 0,
+  "skipped": 0,
+  "coverage": {
+    "lines_valid": 4877,
+    "scope": "Schematic Core instrumented by imported Core tests; browser, MCP host and Rust excluded",
+    "branches_covered": 1379,
+    "lines_covered": 4338,
+    "branches_valid": 2026
+  },
+  "evidence_root": "E:/Artifacts/VeloSim-net11-schematic-20261112",
+  "no_new_mutation_or_fuzz": "Import changes no runtime behavior; later standalone/migration checks are recorded separately."
+}

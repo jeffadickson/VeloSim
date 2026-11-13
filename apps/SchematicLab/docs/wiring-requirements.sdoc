@@ -1,0 +1,52 @@
+[DOCUMENT]
+TITLE: Electrical wiring and sheet persistence
+
+[REQUIREMENT]
+UID: SCH-WIRING-LABEL-001
+TITLE: Named terminal connections
+STATEMENT: >>>
+The editor shall assign or clear one label per terminal. Matching names shall connect the labeled terminals for circuit checks and simulation using ordinal case-insensitive comparison. The editor shall display the assigned spelling and refuse invalid labels before changing the sheet.
+<<<
+COMMENT: >>>
+SetNetLabel, Board.Neighbors and WiringDocumentTests. The browser and MCP smoke tests replace a physical RC probe wire with matching labels and solve the reloaded circuit.
+<<<
+
+[REQUIREMENT]
+UID: SCH-WIRING-ROUTE-001
+TITLE: Separate route geometry from topology
+STATEMENT: >>>
+The editor shall replace the ordered bends of an existing wire without changing its endpoints or electrically connecting nearby wires. An explicit junction shall join two distinct wires at a bend recorded on both routes. Removing that junction shall preserve the routes. Editing a joined route shall preserve its junction anchors. Deleting a wire shall remove its route and incident junctions.
+<<<
+COMMENT: >>>
+SetWireRoute, JoinRoutes, DeleteJunction, DeleteWire and Board.Neighbors. Verify a geometric crossing, an explicit join, join removal, undo and round trip.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SHEET-JSON-001
+TITLE: Validate and restore a versioned circuit sheet
+STATEMENT: >>>
+Saving shall export schema version 2, the parts and their values and geometry, terminal wires, labels, bends, junctions and part identifier counters without changing the revision. Loading shall validate the entire document before replacing the board, reject unsupported versions, invalid references and stale revisions, and record a successful replacement as one undoable edit.
+<<<
+COMMENT: >>>
+SaveDocument, LoadDocument and Board.Load. The browser stores one sheet per origin. MCP returns or accepts the same JSON for client-managed storage. Version 1 remains readable. The following requirements define the version 2 session payload. The undo stack stays in memory.
+<<<
+
+[REQUIREMENT]
+UID: SCH-WIRING-HIGHLIGHT-001
+TITLE: Highlight the complete electrical net
+STATEMENT: >>>
+Highlighting a valid terminal shall identify all terminals, physical wires and explicit junctions in its connected component, including connections through equal labels. The browser shall distinguish these members visually. Clear shall remove the highlight. A refused request shall preserve the previous highlight and highlighting shall preserve the circuit revision.
+<<<
+COMMENT: >>>
+HighlightNet, Board.TraceNet, SessionPersistenceTests, browser and MCP smoke tests.
+<<<
+
+[REQUIREMENT]
+UID: SCH-SHEET-SESSION-001
+TITLE: Restore view settings and completed analysis history
+STATEMENT: >>>
+A version 2 sheet shall preserve the selected part, parts catalog visibility and filter, the highlighted terminal, and up to 16 completed runs of each supported analysis type. Reload shall validate the full session before changing the board. It shall preserve each run ID, original document version and samples, distinguish current results from historical results, and restore the previous view and run history on undo. A version 1 sheet shall restore an empty view and run history.
+<<<
+COMMENT: >>>
+SaveDocument, LoadDocument, ReadView, ReadAnalysisHistory, ReadRun, SessionPersistenceTests and cross-session RC smoke verification.
+<<<
