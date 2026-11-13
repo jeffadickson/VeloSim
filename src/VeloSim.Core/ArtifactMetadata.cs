@@ -57,9 +57,20 @@ public sealed partial record ArtifactMetadata(IReadOnlyList<FileFingerprint> Sou
             if (depth > 128 || visited.Count > 4096 || new FileInfo(path).Length > 64 * 1024 * 1024 - bytes) throw new IOException("Source include closure exceeds depth, file count or 64 MiB budget.");
             bytes += new FileInfo(path).Length;
             result.Add(Fingerprint(path));
-            foreach (var line in File.ReadLines(path))
+            // Scan lexical tokens so comments cannot hide includes or invent dependencies.
+            const string commentsAndStrings = """
+"(?:\\.|[^"\\])*"|//[^\r\n]*|/\*[\s\S]*?\*/
+""";
+            string text = Regex.Replace(File.ReadAllText(path), commentsAndStrings, token =>
+                token.Value.StartsWith("/", StringComparison.Ordinal)
+                    ? new string(token.Value.Select(c => c is '\r' or '\n' ? c : ' ').ToArray()) : token.Value,
+                RegexOptions.CultureInvariant);
+            const string tokens = """
+"(?:\\.|[^"\\])*"|`include\b(?:[ \t]*"[^"\r\n]*")?
+""";
+            foreach (Match token in Regex.Matches(text, tokens, RegexOptions.CultureInvariant))
             {
-                var trimmed = line.TrimStart(); if (!trimmed.StartsWith("`include", StringComparison.Ordinal)) continue;
+                var trimmed = token.Value; if (!trimmed.StartsWith("`include", StringComparison.Ordinal)) continue;
                 var match = IncludePattern().Match(trimmed);
                 if (!match.Success) throw new IOException("Cannot fingerprint macro-based include in " + path);
                 Visit(System.IO.Path.GetFullPath(match.Groups[1].Value, System.IO.Path.GetDirectoryName(path)!), depth + 1);

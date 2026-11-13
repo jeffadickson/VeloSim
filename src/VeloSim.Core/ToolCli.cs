@@ -333,16 +333,21 @@ public static class ToolCli
             }
             catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { WriteError(error, ex); return 1; }
         }
-        if (args.Length == 0 || args[0] != "compile") return Run(args, output, error);
+        if (args.Length == 0 || args[0] is not ("compile" or "compile-rtl")) return Run(args, output, error);
         try
         {
+            bool structural = args[0] == "compile-rtl";
             string? top = null, directory = null, surelog = null, normalizer = null; int workers = 1;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             var sources = new List<string>();
             for (int i = 1; i < args.Length; i++)
             {
                 if (args[i] == "--") { sources.AddRange(args.Skip(i + 1)); break; }
                 if (!args[i].StartsWith("--", StringComparison.Ordinal)) { sources.Add(args[i]); continue; }
                 var option = args[i];
+                if (structural && !seen.Add(option)) throw new ArgumentException("Duplicate compile-rtl option: " + option);
+                if (option == "--exporter" && structural) option = "--normalizer";
+                else if (option == "--normalizer" && structural) throw new ArgumentException("compile-rtl requires --exporter, not --normalizer.");
                 if (option is not ("--top" or "--output-dir" or "--surelog" or "--normalizer" or "--threads") || ++i == args.Length) throw new ArgumentException("Unknown or incomplete compile option: " + option);
                 switch (option)
                 {
@@ -354,7 +359,10 @@ public static class ToolCli
                 }
             }
             if (top is null || directory is null) throw new ArgumentException("Compile requires --top and --output-dir.");
-            output.WriteLine(await new DesignPipeline(runner).CompileAsync(sources, top, directory, surelog, normalizer, workers, cancellationToken: cancellationToken).ConfigureAwait(false));
+            var pipeline = new DesignPipeline(runner);
+            output.WriteLine(structural
+                ? await pipeline.CompileRtlAsync(sources, top, directory, surelog, normalizer, workers, cancellationToken: cancellationToken).ConfigureAwait(false)
+                : await pipeline.CompileAsync(sources, top, directory, surelog, normalizer, workers, cancellationToken: cancellationToken).ConfigureAwait(false));
             return 0;
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
