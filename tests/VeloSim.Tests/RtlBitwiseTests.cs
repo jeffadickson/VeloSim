@@ -18,7 +18,7 @@ public class RtlBitwiseTests
     public async Task ActualBitwiseRtlMatchesIcarusForFourStatesWidthsAndArithmeticContext()
     {
         if (Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO") != "1") Assert.Ignore("Requires pinned UHDM RTL exporter.");
-        DirectoryInfo? root = new(TestContext.CurrentContext.TestDirectory);
+        DirectoryInfo? root = new(TestRepository.Root);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "native/rtl/runtime.h"))) root = root.Parent;
         Assert.That(root, Is.Not.Null);
         string checkout = root!.FullName, path = Path.Combine(checkout, "artifacts", "rtl-bitwise-" + Guid.NewGuid().ToString("N"));

@@ -1,6 +1,33 @@
 [DOCUMENT]
 TITLE: VeloSim toolchain and standalone schematic requirements
 
+[TEXT]
+STATEMENT: >>>
+Trace: global.json, Directory.Build.props, Makefile and tools/VeloSim.Build
+implement the toolchain selection and framework paths. apps/SchematicLab keeps
+the imported component/source and command requirements. WebHost/StartupCommand.cs
+and StartupOptions.cs implement finite CLI outcomes; WebHost/Program.cs enforces
+localhost and source-generated failure JSON. Solver/SolverLocation.cs supplies
+installed-relative lookup for WebHost and Mcp/Program.cs. Tests/StandaloneStartupTests.cs
+checks boundary, deployment, malformed-input and seeded properties. scripts/Publish-Schematic.ps1,
+Launch-Schematic.ps1 and Test-SchematicBundle.ps1 create/run/verify distributions;
+Tests/Bundle.Tests.ps1 checks refusal boundaries. scripts/Test-Schematic.ps1
+checks actual TRX outcomes. docs/csharp-modernization.md records language choices
+and verification limitations; docs/schematic-import-evidence.json records import
+integrity and the original baseline. Draft status does not imply general HDL,
+analog or model-family qualification.
+Book interaction trace: Core/InteractionPolicy.cs and LessonSession.cs enforce
+typed lock/read commands and parameter-only history; CircuitBridge.cs and
+BridgeDraft.cs enforce unchanged F/H connections at the asynchronous analysis
+boundary. Web/Program.cs and WebHost/Program.cs provide required deployment
+bootstrap; Mcp/Program.cs and LessonTools.cs reuse the same policy/commands.
+Tests/InteractionPolicyTests.cs, Tests/BookBrowserSmoke.cjs and scripts/McpSmoke.cs
+verify the bounded contracts. docs/live-lessons.md and examples/wally-live-rc.qmd
+describe deployment/readiness; actual WALLY rendering and shared visible-session
+agent control remain open. See docs/schematic-book-verification.md for current
+counts, coverage scope, seeds, package provenance and unresolved checks.
+<<<
+
 [REQUIREMENT]
 UID: VELO-TOOLCHAIN-NET11-001
 STATUS: Draft
@@ -81,4 +108,97 @@ their verified scope. Changes shall preserve public wire contracts and error,
 cancellation and resource semantics. New syntax alone shall not establish a
 performance improvement. Inapplicable or incompatible features shall be
 documented rather than introduced solely for feature-count claims.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-VERIFICATION-001
+STATUS: Draft
+TITLE: Reject partial test-framework success
+STATEMENT: >>>
+The schematic verification entry point shall validate the generated test report,
+completed counts and required contract/property cases. A zero process exit or
+nominally successful partial report shall not pass when an unhandled framework
+exception, fatal error, aborted run or missing required case is present. Actual
+executed counts, property replay and unavailable coverage shall remain explicit.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-BUNDLE-001
+STATUS: Draft
+TITLE: Executable standalone lesson package
+STATEMENT: >>>
+The standard standalone schematic package shall include its real simulation
+executable, host runtime and browser assets. A representative RC lesson shall
+execute from the extracted package outside a source checkout without a separate
+solver installation. Optional provider/model dependencies and platform limits
+shall be declared; a UI-only package shall not be described as a simulation bundle.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-LOCK-001
+STATUS: Draft
+TITLE: Author-controlled layout lock
+STATEMENT: >>>
+A lesson author shall choose whether readers may unlock its layout. A locked
+lesson shall preserve component identities, types, positions, orientations,
+wiring, routes, named nets, junctions and hierarchy while permitting supported
+parameter changes, inspection and simulation. The default general editor shall
+remain editable and may expose a layout-lock checkbox.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-COMMAND-001
+STATUS: Draft
+TITLE: Shared command enforcement and explicit refusals
+STATEMENT: >>>
+Layout policy shall be enforced by the shared typed command layer for browser,
+keyboard, programmatic and MCP entry points. Refused operations shall return a
+structured result, preserve state/history, and retain document/revision checks.
+Disabling browser controls alone shall not implement this requirement.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-HISTORY-001
+STATUS: Draft
+TITLE: Persistence and undo preserve author policy
+STATEMENT: >>>
+Reader save/load, undo/redo and reset commands shall not relax a deployment's
+author policy or bypass a layout lock. Parameter-only history may remain usable
+while structural history is refused. Enabling a lock shall not erase author or
+reader history. Old editable documents shall retain a documented default.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-LESSON-001
+STATUS: Draft
+TITLE: Evidence-backed electronics lesson readiness
+STATEMENT: >>>
+The project shall maintain an electronics-topic, model and analysis readiness
+matrix covering passive networks, diode circuits, bipolar and field-effect
+transistor circuits, feedback amplifiers, filters, oscillators and switching.
+Drawing availability shall remain separate from execution support and verified
+lesson readiness. Each ready lesson shall include actual parameters, probes,
+waveforms as applicable, expected results and independent reference evidence.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-EMBED-001
+STATUS: Draft
+TITLE: Web and presentation embedding
+STATEMENT: >>>
+A lesson shall be embeddable in an HTML book or WALLY presentation with a
+documented simulation-service dependency, author layout policy and independent
+document identity. Offline packaging shall provide a usable local host path;
+static HTML shall not be claimed to execute a native solver by itself.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-AGENT-001
+STATUS: Draft
+TITLE: Agent control of the visible embedded session
+STATEMENT: >>>
+An embedded automation integration shall address the same visible circuit and
+document revision as the reader or presenter. It shall expose supported typed
+commands, correlate outcomes, reject stale requests and validate message origins
+and sources. A separate hidden MCP session shall not satisfy this requirement.
 <<<

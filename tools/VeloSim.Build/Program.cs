@@ -61,7 +61,7 @@ internal static class Build
                 string executable = Path.Combine(Artifacts, "publish", "VeloSim.Bench", "VeloSim.Bench"), stamp = executable + ".source-sha256";
                 if (File.Exists(executable) && File.Exists(stamp) && File.ReadAllText(stamp).Trim() == BenchmarkSourceStamp())
                     await Run(executable, ["--report", Path.Combine(directory, RunId + ".json")], nativeDirectory: Path.Combine(Native, "lib"));
-                else await Run("dotnet", ["src/VeloSim.Bench/bin/Release/net10.0/VeloSim.Bench.dll", "--report", Path.Combine(directory, RunId + ".json")], nativeDirectory: Path.Combine(Native, "lib"));
+                else await Run("dotnet", ["src/VeloSim.Bench/bin/Release/net11.0/VeloSim.Bench.dll", "--report", Path.Combine(directory, RunId + ".json")], nativeDirectory: Path.Combine(Native, "lib"));
                 return 0;
             }
             if (command is "publish" or "bundle")
@@ -139,7 +139,7 @@ internal static class Build
     }
     private static void VerifyCoverageEvidence(string report) => CoverageEvidence.Validate(report,
         new[] { "lib/libvelosim_ir.so", "lib/libvelosim_scheduler.so", "bin/velosim_native_tests", "bin/velosim_c_abi_tests", "bin/velosim_word_tests", "bin/velosim_json_tests", "bin/velosim_rtl_tests", "bin/velosim_external_tests", "lib/libvelosim_vpi.so", "lib/libvelosim_external_plugin.so" }.Select(relative => Path.Combine(NativeCoverage, relative)), ManagedCoverageObjects());
-    private static IEnumerable<string> ManagedCoverageObjects() => new[] { "VeloSim.dll", "VeloSim.Build.dll", "VeloSim.Tests.dll" }.Select(name => Path.Combine(Root, "tests/VeloSim.Tests/bin/Release/net10.0", name));
+    private static IEnumerable<string> ManagedCoverageObjects() => new[] { "VeloSim.dll", "VeloSim.Build.dll", "VeloSim.Tests.dll" }.Select(name => Path.Combine(Root, "tests/VeloSim.Tests/bin/Release/net11.0", name));
     private static string BenchmarkSourceStamp()
     {
         var files = new[] { "src/VeloSim.Core", "src/VeloSim.Bench", "tools/VeloSim.Build" }.SelectMany(directory => Directory.EnumerateFiles(Path.Combine(Root, directory), "*", SearchOption.AllDirectories)

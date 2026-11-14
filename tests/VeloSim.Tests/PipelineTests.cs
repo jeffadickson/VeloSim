@@ -9,7 +9,7 @@ public class PipelineTests
     {
         get
         {
-            var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+            var dir = new DirectoryInfo(TestRepository.Root);
             while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "examples", "counter.normalized.json"))) dir = dir.Parent;
             return File.ReadAllText(Path.Combine(dir!.FullName, "examples", "counter.normalized.json"));
         }

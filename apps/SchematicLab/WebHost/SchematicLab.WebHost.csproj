@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <PropertyGroup><TargetFramework>net11.0</TargetFramework><RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><GenerateDocumentationFile>true</GenerateDocumentationFile></PropertyGroup>
   <ItemGroup><ProjectReference Include="../Solver/SchematicLab.Solver.csproj" /></ItemGroup>
 </Project>

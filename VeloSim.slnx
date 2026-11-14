@@ -4,4 +4,12 @@
   <Project Path="src/VeloSim.Bench/VeloSim.Bench.csproj" />
   <Project Path="tests/VeloSim.Tests/VeloSim.Tests.csproj" />
   <Project Path="tools/VeloSim.Build/VeloSim.Build.csproj" />
+  <Folder Name="/SchematicLab/">
+    <Project Path="apps/SchematicLab/Core/SchematicLab.Core.csproj" />
+    <Project Path="apps/SchematicLab/Solver/SchematicLab.Solver.csproj" />
+    <Project Path="apps/SchematicLab/Web/SchematicLab.Web.csproj" />
+    <Project Path="apps/SchematicLab/WebHost/SchematicLab.WebHost.csproj" />
+    <Project Path="apps/SchematicLab/Mcp/SchematicLab.Mcp.csproj" />
+    <Project Path="apps/SchematicLab/Tests/SchematicLab.Tests.csproj" />
+  </Folder>
 </Solution>
