@@ -216,5 +216,22 @@
     "branches": 1601,
     "lines": 4546,
     "total_branches": 2590
+  },
+  "release": {
+    "manifest_sha256": "bb438a59da0caa9d5ac933d0a0d845d6bb472e53cd8de71285225155b0fd4ba0",
+    "browser_result": "Embedded author-locked RC: Faer selected, reset refused, value changed, geometry preserved, real Faer RC waveform and AC rendered.",
+    "source_dirty": true,
+    "mcp_result": "MCP author lock, Faer selection/inheritance, value edit, stale refusal and native RC/AC=True passed.",
+    "source_commit": "b32b828133942b913900ac368b3da29512df224e",
+    "package": {
+      "bundle": "E:\\Artifacts\\VeloSim-backends-ff63ff8-20261114\\release\\bundle",
+      "archive": "E:\\Artifacts\\VeloSim-backends-ff63ff8-20261114\\release\\SchematicLab-win-x64.zip",
+      "sha256": "2c7c875b586c47446f568421c6a507c7637c055f2fbf82d8706a5def4ff74c37"
+    },
+    "files": 747,
+    "browser_log": "E:/Artifacts/VeloSim-backends-ff63ff8-20261114/release-browser.log",
+    "url": "http://localhost:5091",
+    "mcp_log": "E:/Artifacts/VeloSim-backends-ff63ff8-20261114/release-mcp.log",
+    "dirty_reason": "Only Core/Solver NuGet lockfiles gained SDK-generated net11.0/win-x64 restore groups; all recorded application source hashes matched"
   }
 }
