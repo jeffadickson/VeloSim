@@ -6,6 +6,16 @@ using SchematicLab.Solver;
 [McpServerToolType]
 internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
 {
+    [McpServerTool(Name = "schematic_read_interaction_policy", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Read the current layout lock and the author's immutable unlock permission.")]
+    public CommandResult ReadPolicy(CancellationToken cancellationToken) =>
+        session.Execute(new ReadInteractionPolicy(), cancellationToken);
+
+    [McpServerTool(Name = "schematic_set_layout_locked", UseStructuredContent = true)]
+    [Description("Change layout lock at an expected revision, subject to author permission.")]
+    public CommandResult SetLayout(Guid documentId, long revision, bool locked, CancellationToken cancellationToken) =>
+        session.Execute(new SetLayoutLocked(new(documentId, revision), locked), cancellationToken);
+
     [McpServerTool(Name = "schematic_read_circuit", ReadOnly = true, UseStructuredContent = true)]
     [Description("Read the current circuit, voltage probe, document ID and revision.")]
     public CommandResult Read(CancellationToken cancellationToken) =>

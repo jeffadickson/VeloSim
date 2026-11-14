@@ -51,12 +51,28 @@ public sealed partial class LessonSession
                     return Result(CommandCode.StaleRevision, "The document changed. Reselect the part or retry with the current revision.");
             }
 
+            if (layoutLocked && !AllowedWhileLocked(command))
+                return Result(CommandCode.LayoutLocked, "The author has locked the layout. Parameter edits and analysis remain available.");
+
             // Successful edits record the prior board. Failed edits preserve both history stacks.
             var before = command is PlacePart or SetPartValue or DeletePart or ConnectPins or
                 LoadRc or LoadBridgeDemo or LoadModelDemo or LoadBjtDemo or LoadBsim3Demo or LoadSoiDemo or ResetLesson or MovePart or RotatePart or MirrorPart or DuplicatePart or
                 SetNetLabel or SetWireRoute or DeleteWire or JoinRoutes or DeleteJunction or AttachChildSheet or LoadHierarchyDemo or LoadDocument ? board.Copy() : null;
             switch (command)
             {
+                case ReadInteractionPolicy:
+                    return Result(CommandCode.Ok, "Interaction policy read.") with { Interaction = Interaction };
+                case SetLayoutLocked mode:
+                    if (!mode.Locked && !interactionPolicy.ReaderCanUnlock)
+                        return Result(CommandCode.LayoutLocked, "The author does not allow readers to unlock this layout.");
+                    if (layoutLocked != mode.Locked)
+                    {
+                        layoutLocked = mode.Locked;
+                        revision++;
+                        ClearGesture();
+                        DraftVersion = Version;
+                    }
+                    return Result(CommandCode.Ok, "Layout mode updated.") with { Interaction = Interaction };
                 case AttachChildSheet attach:
                     if (!board.AttachChild(attach.CellId, attach.Child))
                         return Result(CommandCode.InvalidInput, "Choose a cell and a valid passive child sheet with two connected ports.");
@@ -185,7 +201,7 @@ public sealed partial class LessonSession
                 case SetPartValue change:
                     if (!board.SetValue(change.PartId, change.Value))
                         return Result(CommandCode.InvalidInput, "Select an editable part and enter a finite value in its allowed range.");
-                    RecordEdit(before!);
+                    RecordEdit(before!, parameterOnly: true);
                     if (Selected == change.PartId) DraftVersion = Version;
                     return Result(CommandCode.Ok, $"Updated {change.PartId}.");
                 case DeletePart delete:
@@ -399,10 +415,10 @@ public sealed partial class LessonSession
         x is >= 0 and <= 640 && y is >= 0 and <= 370 &&
         !board.Parts.Any(part => part.Id != except && Math.Abs(part.X - x) < 64 && Math.Abs(part.Y - y) < 55);
 
-    private void RecordEdit(Board before, SavedSession? saved = null)
+    private void RecordEdit(Board before, SavedSession? saved = null, bool parameterOnly = false)
     {
         if (undo.Count == HistoryLimit) undo.RemoveFirst();
-        undo.AddLast(new EditState(before, saved));
+        undo.AddLast(new EditState(before, saved, parameterOnly));
         redo.Clear();
         revision++;
         if (highlightAnchor is Pin pin && !board.Connected(pin, pin)) highlightAnchor = null;
@@ -411,7 +427,7 @@ public sealed partial class LessonSession
     private CommandResult Restore(LinkedList<EditState> source, LinkedList<EditState> destination, string message)
     {
         if (source.Last is not { } snapshot) return Result(CommandCode.NotFound, "No edit is available.");
-        destination.AddLast(new EditState(board, snapshot.Value.Session is null ? null : CaptureSession()));
+        destination.AddLast(new EditState(board, snapshot.Value.Session is null ? null : CaptureSession(), snapshot.Value.ParameterOnly));
         board = snapshot.Value.Board;
         Wiring = new();
         source.RemoveLast();

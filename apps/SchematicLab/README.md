@@ -1,37 +1,100 @@
 # SchematicLab
 
-SchematicLab is a standalone .NET 10 prototype for embedding an interactive circuit in an electronics lesson. The example opens with a 5 V supply and two 1 kΩ resistors. Select R2, enter 3000 Ω, and apply the value to see the midpoint rise from 2.5 V to 3.75 V. Select two terminals to wire them. Place parts using the marked points, delete the selected part from the inspector, or reset the example. Select **Run DC sweep** to plot the measured probe voltage over 21 input voltages.
+The canonical source now lives in `apps/SchematicLab` in
+[VeloSim](https://github.com/jeffadickson/VeloSim). Its original history is retained.
+Use released .NET SDK 11.0.100. `SchematicLab.slnx` builds this application without
+the HDL projects; the root VeloSim solution also includes it.
+
+## Standalone application
+
+The standalone distribution is a self-contained local server plus browser UI
+and stdio MCP host. The installed application needs neither the source checkout
+nor an installed .NET SDK/runtime. It remains a browser application, rather than
+a native desktop GUI. Building the distribution requires .NET 11 and PowerShell 7.
+
+```powershell
+if (!(Test-Path -LiteralPath 'scripts' -PathType Container)) { throw 'Run from apps/SchematicLab' }
+$artifactRoot = if ($env:CODEX_ARTIFACT_ROOT) { $env:CODEX_ARTIFACT_ROOT } else { 'E:/Artifacts' }
+if (!(Test-Path -LiteralPath $artifactRoot -PathType Container)) { throw 'Missing artifact root' }
+$out = Join-Path $artifactRoot ("SchematicLab-" + [guid]::NewGuid().ToString('N'))
+# The publisher requires a fresh destination and creates it itself.
+$solver = $env:SPICE_SOLVER_PATH
+$solverCommit = $env:SPICE_SOLVER_SOURCE_COMMIT
+if (!$solver -or ![IO.Path]::IsPathFullyQualified($solver) -or !(Test-Path -LiteralPath $solver -PathType Leaf)) { throw 'Set SPICE_SOLVER_PATH to a trusted native solver' }
+if ($solverCommit -notmatch '^[0-9a-f]{40}$') { throw 'Set SPICE_SOLVER_SOURCE_COMMIT to its declared source revision' }
+./scripts/Publish-Schematic.ps1 -OutputDirectory $out -Runtime win-x64 -SolverPath $solver -SolverSourceCommit $solverCommit
+if (!(Test-Path -LiteralPath (Join-Path $out 'bundle') -PathType Container)) { throw 'Publication failed' }
+& (Join-Path $out 'bundle/Launch-Schematic.ps1') -Port 5087
+```
+
+Open `http://localhost:5087/`. The default browser assets resolve from the
+installed directory, irrespective of the current working directory. The launcher
+verifies the recorded file hashes. The native apphost can also run directly:
+`SchematicLab.WebHost --port 5087`, or use `--help` for explicit path options.
+Listeners are localhost-only. Unknown/duplicate arguments or invalid explicit
+paths return a structured startup error before opening a listener.
+
+Native analyses use the bundled executable or an absolute `SPICE_SOLVER_PATH` or `--solver` override.
+The standard publisher requires an explicitly selected trusted executable with
+`-SolverPath` and its actual `-SolverSourceCommit`; the manifest records its
+byte hash and caller-declared source provenance. It does not include optional
+third-party model providers. Explicit `-EditorOnly` publication omits the solver;
+editing and the analytical
+divider remain available and native analyses return an explicit unavailable
+result. The bundled MCP host also finds an included solver without environment
+configuration. Its stdio entry point is `mcp/SchematicLab.Mcp` (with `.exe` on Windows).
+
+Select `linux-x64` for a Linux bundle. Cross-publication does not establish Linux
+execution coverage. ZIP extraction may require restoring executable permissions
+as described in the bundle README. Retain an appropriate native Linux filesystem
+for toolchains that require its semantics; do not assume exFAT is equivalent.
+
+Verify the application with `scripts/Test-Schematic.ps1 -OutputDirectory <fresh
+artifact child>`. It runs the complete unit/property suite and validates the TRX
+report, including the required stale-edit and seeded property cases. An adapter
+exit code alone is insufficient if the report contains an unhandled exception.
+
+SchematicLab is a standalone .NET 11 application for embedding an interactive circuit in an electronics lesson. The default example opens with a 5 V supply and two 1 kΩ resistors. Select R2, enter 3000 Ω, and apply the value to see the midpoint rise from 2.5 V to 3.75 V. Select two terminals to wire them. Place parts using the marked points, delete the selected part from the inspector, or reset the example. Select **Run DC sweep** to plot the measured probe voltage over 21 input voltages.
 
 ## Build and embed
 
-From the SchematicLab source directory, use a new output directory on the artifact drive.
+Publish and launch the standalone application above. To start the author-locked
+RC profile, set these values before launching its WebHost (and the MCP process):
 
 ```powershell
-$artifactRoot = if ($env:CODEX_ARTIFACT_ROOT) { $env:CODEX_ARTIFACT_ROOT } else { 'E:/Artifacts' }
-if (!(Test-Path -LiteralPath $artifactRoot -PathType Container)) { throw 'Missing artifact root' }
-if (!(Test-Path -LiteralPath 'Web' -PathType Container)) { throw 'Run from the SchematicLab directory' }
-$out = Join-Path $artifactRoot ("SchematicLab-" + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $out | Out-Null
-dotnet publish Web -c Release --artifacts-path (Join-Path $out 'build') -o (Join-Path $out 'publish')
+$env:SCHEMATIC_LAYOUT_MODE = 'author-locked'
+$env:SCHEMATIC_LESSON = 'rc'
 ```
 
-Serve the published `wwwroot` over HTTP. The template uses `<base href="/">` for a host root. For a subdirectory deployment, set the base path to that directory with a trailing slash before publishing. The article can embed the hosted app with an iframe. The app processes the circuit locally in the browser.
+Serve with WebHost, which supplies the required `/api/lesson-deployment` bootstrap
+and native simulation endpoints. A plain static file server is insufficient.
+The circuit document lives in the browser; native numerical analysis runs in
+the local host. The article can embed that host in an iframe. Subdirectory
+deployment requires matching base-path and API routing and is not qualified yet.
 
 ```html
-<iframe title="Interactive voltage-divider lesson" src="/schematic-lab/"
+<iframe title="Interactive RC lesson" src="http://localhost:5087/"
         style="width:100%;height:670px;border:0" loading="lazy"></iframe>
 ```
 
 ## Boundaries
 
-The prototype supports one sheet, 19 generic symbols, terminal-to-terminal wiring and an analytical unloaded voltage divider. It keeps edits in browser memory. Select a part to move, rotate, mirror or duplicate it. Undo and redo restore earlier edits, and Check circuit identifies the terminals that need attention. The native RC charging lesson is available with the loopback solver host. Project files, hierarchy, symbol import and general-purpose wire routing are later work.
+This prototype includes the component/source drawing catalog, named nets,
+editable wire routes and explicit junctions, save/reload with view and analysis
+history, bounded two-port child sheets and named model definitions. Drawing
+availability is broader than solver execution: readiness and unsupported-model
+results remain explicit. Native RC, RLC, controlled-source and selected
+semiconductor analyses use the separately qualified solver bridge. Select parts
+to move, rotate, mirror or duplicate; undo/redo and circuit checks remain shared
+typed commands. The versioned requirements and verification records below define
+the actual limits; this is not full device-library or HDL/analog compatibility.
 
 See [requirements](docs/requirements.sdoc), [design notes](docs/design.md), [catalog](docs/catalog.md), and [RSpice comparison](docs/rspice-requirements-scrub.md).
 
 
 ## Local agent access
 
-Build the MCP host with the .NET 10 SDK and use its DLL as the argument to the
+Build the MCP host with the .NET 11 SDK and use its DLL as the argument to the
 MCP client's `dotnet` command. This starts one local stdio session with the
 built-in divider. Read the circuit before issuing edits so you have its
 document ID and current revision.
@@ -54,16 +117,14 @@ browser and MCP results.
 
 ## Run the native RC lesson
 
-Publish the browser as described above. Set `SCHEMATIC_WEB_ROOT` to the published
-`wwwroot` directory and `SPICE_SOLVER_PATH` to the absolute path of the trusted
-Rust circuit-simulator executable. Run the loopback host from the SchematicLab
-directory. The same executable path enables the RC tools in the stdio MCP host.
+Publish the standalone simulation package above. Both hosts find its included
+Rust executable. Use `SPICE_SOLVER_PATH` only for an explicit trusted override.
 
 ```powershell
-if (!(Test-Path -LiteralPath 'WebHost' -PathType Container)) { throw 'Run from SchematicLab' }
-if (!(Test-Path -LiteralPath $env:SCHEMATIC_WEB_ROOT -PathType Container)) { throw 'Missing published browser' }
-if (!(Test-Path -LiteralPath $env:SPICE_SOLVER_PATH -PathType Leaf)) { throw 'Missing solver' }
-dotnet run --project WebHost --artifacts-path (Join-Path $out 'host')
+if (!$out) { throw 'Set out to the published package directory from the publication example' }
+$bundle = Join-Path $out 'bundle'
+if (!(Test-Path -LiteralPath $bundle -PathType Container)) { throw 'Missing published application' }
+& (Join-Path $bundle 'Launch-Schematic.ps1') -Port 5087
 ```
 
 Open http://127.0.0.1:5087/, choose **Open RC example**, select **P1**, and run
@@ -124,3 +185,10 @@ inspect and transfer those fields with schematic_read_analysis_fields
 and schematic_apply_analysis_fields. Set DC source stepping to true
 for the bounded opt-in continuation policy. The pinned FD-SOI example
 requires SPICE_BSIM_SOI_FD_HOST and supports DC operating point only.
+
+## Live book and presentation lessons
+
+See [live lessons](docs/live-lessons.md) for the author-controlled layout lock,
+standalone solver packaging, the bounded textbook-readiness matrix and WALLY
+iframe deployment. Browser and stdio MCP use the same commands and policy but
+currently retain independent document sessions.

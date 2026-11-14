@@ -105,11 +105,19 @@ public sealed class BridgeDraft
         fields[BridgeField.FdSoi] = "M1";
     }
 
+    /// <summary>Reads only electrical control references, independently of numeric/model drafts.</summary>
+    internal CurrentControl[]? ParseControls()
+    {
+        try { return Rows(BridgeField.Controls, 2).Select(row => new CurrentControl(row[0], row[1])).ToArray(); }
+        catch (FormatException) { return null; }
+    }
+
     public BridgeOptions? Parse(BridgeAnalysis analysis)
     {
         try
         {
-            var controls = Rows(BridgeField.Controls, 2).Select(row => new CurrentControl(row[0], row[1])).ToArray();
+            var controls = ParseControls();
+            if (controls is null) return null;
             var diodes = Rows(BridgeField.Diodes, 3, 8).Select(row => row.Length == 3
                 ? new DiodeBinding(row[0], Number(row[1]), Number(row[2]))
                 : new DiodeBinding(row[0], Number(row[1]), Number(row[2]), Number(row[3]), Number(row[4]),

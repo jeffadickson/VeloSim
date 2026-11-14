@@ -7,6 +7,7 @@ const root = path.resolve(process.argv[3]);
 const rcHost = process.argv[5];
 const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript", ".wasm": "application/wasm", ".json": "application/json" };
 const server = http.createServer((req, res) => {
+  if (req.url === "/api/lesson-deployment") { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({policy:{initiallyLocked:false,readerCanUnlock:true},rcExample:false})); return; }
   if (req.url === "/article") { res.setHeader("Content-Type", "text/html"); res.end(`<iframe title="lesson" src="${rcHost || "/"}" style="width:100%;height:1770px;border:0"></iframe>`); return; }
   const name = path.resolve(root, "." + new URL(req.url, "http://localhost").pathname);
   const file = name === root ? path.join(root, "index.html") : name;

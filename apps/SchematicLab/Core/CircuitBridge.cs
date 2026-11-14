@@ -137,6 +137,15 @@ public sealed partial class LessonSession
                 Sines = options.Sines?.ToArray(), Exponentials = options.Exponentials?.ToArray(), FdSoi = options.FdSoi?.ToArray() };
             if (!ValidBridgeOptions(options))
                 return Result(CommandCode.InvalidInput, "Check the probe, analysis settings, and source bindings.");
+            if (layoutLocked)
+            {
+                // F/H control references are electrical connections. The async
+                // analysis boundary must enforce the same policy as field edits.
+                var trusted = BridgeDraft.ParseControls();
+                if (trusted is null || !(options.Controls ?? []).OrderBy(control => control.Id, StringComparer.Ordinal)
+                    .SequenceEqual(trusted.OrderBy(control => control.Id, StringComparer.Ordinal)))
+                    return Result(CommandCode.LayoutLocked, "The author has locked the current-control connections.");
+            }
             var compiled = board.CompileBridge(options);
             if (compiled is null) return Result(CommandCode.UnsupportedCircuit,
                 "Use supported parts and connected terminals. Check the model binding, terminal connections and supported analyses.");

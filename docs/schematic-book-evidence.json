@@ -1,0 +1,513 @@
+{
+  "schema": "velosim.schematic.book-evidence.v1",
+  "generated_utc": "2026-11-14T12:21:36.3578857+00:00",
+  "sdk": "11.0.100",
+  "framework": "net11.0",
+  "runtime": "win-x64",
+  "source_base": "bf67c78586bd4f6b4f848ea0effca5902c04e12e",
+  "source_dirty": true,
+  "source_build_inputs": [
+    {
+      "path": "global.json",
+      "sha256": "abcd917ed631b66c1ac15cbe1383287cec766affb6bb3e8ee5fb541c9377293e"
+    },
+    {
+      "path": "Directory.Build.props",
+      "sha256": "52d2a9411566b0a266f368df3c8f1839b170ac8f8d46a38964e41f8deec22182"
+    }
+  ],
+  "application_source_files": [
+    {
+      "path": ".gitignore",
+      "sha256": "9e319dbe979dd99280bd6ee2baaa5f81385a81070ef6c318712a8c3ceeb054bb"
+    },
+    {
+      "path": "Core/Board.cs",
+      "sha256": "2935cc9623603f3a3c78a62145672471033bd7ec37ce88544e25f3b1cfae7604"
+    },
+    {
+      "path": "Core/Board.Wiring.cs",
+      "sha256": "9d8c06c29aebbea58eff65590402775e6a0e34530baf941dd592f208936cb7ab"
+    },
+    {
+      "path": "Core/BridgeDemo.cs",
+      "sha256": "e4d9450763c1e4cddc5bd9a009c2f5f65e2ca86a4711f635ffe13568bfcebb8c"
+    },
+    {
+      "path": "Core/BridgeDraft.cs",
+      "sha256": "9631eefc1597f1d4b022b51d29ee15d3f46ad0ba1fdbad8bc59ec09a508f1f7a"
+    },
+    {
+      "path": "Core/CircuitBridge.cs",
+      "sha256": "47cd4ed5aac1378d07b01ce904c78cf493083bd12e94a6a49a4dbc7517dfadfb"
+    },
+    {
+      "path": "Core/Commands.cs",
+      "sha256": "1d675b0209537a6af5bf4e88df574baae580b1b5a6f890f1f8379dc9b3581464"
+    },
+    {
+      "path": "Core/Hierarchy.cs",
+      "sha256": "4b99976ab436cb9177d103bc9a4e42aae9b18eec63d0ac45cd3b6bb240c6b4e6"
+    },
+    {
+      "path": "Core/InteractionPolicy.cs",
+      "sha256": "a973a0314add06010058475043903c687bbadc3643d23a7c9a2a526f348eb62d"
+    },
+    {
+      "path": "Core/LessonSession.cs",
+      "sha256": "96b8c2984e04275ba125fa0fec8f407913784da965d1eb241caced1e0379ba5f"
+    },
+    {
+      "path": "Core/NamedModels.cs",
+      "sha256": "4f85ca266cf3092abe37ebb0f7eac3867920a8480ff3b6ceb7152dda276e8ce3"
+    },
+    {
+      "path": "Core/packages.lock.json",
+      "sha256": "cede08d375a6b412b026cd3a06c711daa6808045098246abac7657674971ecb9"
+    },
+    {
+      "path": "Core/PartCatalog.cs",
+      "sha256": "40ebe97404b3d6546fded83f9ad92594ed1c65a95b5d44df33ef2b7128958d64"
+    },
+    {
+      "path": "Core/PartCatalog.Extended.cs",
+      "sha256": "c5415cf0e423c4c3976db4fde5db590f570d759b0aed9749cc2d7f758baa615d"
+    },
+    {
+      "path": "Core/RcTransient.cs",
+      "sha256": "d55403f7145c0a66f8e21e2f05e447cada9283f925c4f4000f109baf3ca5719f"
+    },
+    {
+      "path": "Core/SchematicLab.Core.csproj",
+      "sha256": "64e8380be83a02e5984137375f42a803b61227cd451f5618f3f894a5533ebf53"
+    },
+    {
+      "path": "Core/SessionPersistence.cs",
+      "sha256": "bf77dd4496c6e9e2456f38c17d31505bf5709199acb05f7f016beb501fe77282"
+    },
+    {
+      "path": "Core/Wiring.cs",
+      "sha256": "b013f0ed971c9a60ad042c9091c4040b66274d6690bb66253282a0e87daa077a"
+    },
+    {
+      "path": "docs/behavioral-catalog.sdoc",
+      "sha256": "e9c8a9e72259623ae7dfd2d5ea6b45ee7b9e8af4dcc883807b48611c3094388e"
+    },
+    {
+      "path": "docs/bridge-plan.md",
+      "sha256": "85edbc1387060a46eced3e6b1d4e0a1ce1506751fe65664171edc00cb5fb55d1"
+    },
+    {
+      "path": "docs/bridge-requirements.sdoc",
+      "sha256": "dc69df3fd5d5bcd190cb7187a487c944dd0fa0ba62b4df8a13c5076c936e4823"
+    },
+    {
+      "path": "docs/bridge-verification.md",
+      "sha256": "b758b45afc7644944566e70446686a5ea9eac2a428e779b5ab570bfdeeedb4cb"
+    },
+    {
+      "path": "docs/catalog.md",
+      "sha256": "42015ec36a92e266168d0a0e1d5592eff725e2a6e2639fbb3013b5ce424d4197"
+    },
+    {
+      "path": "docs/command-requirements.sdoc",
+      "sha256": "84a311a405d3d602076136c88947f82a4a259358c4018fc00429e6d3372fa43a"
+    },
+    {
+      "path": "docs/command-verification.md",
+      "sha256": "6a93a56087895b3c5901068037ca75eb97c1a479e68572dd68c9df0f675241ca"
+    },
+    {
+      "path": "docs/compact-model-catalog.sdoc",
+      "sha256": "f66a958618cbf3b200fc2400c45e855dc2b85d9a7657546cabf6adfa552248f2"
+    },
+    {
+      "path": "docs/design.md",
+      "sha256": "2932f9e77cadd906b74afd78f4aae1947afc987cb3b56831a5d4ded906b2e30d"
+    },
+    {
+      "path": "docs/device-catalog.sdoc",
+      "sha256": "88385778ba49508c2374196fe96ec37e18c7867339c4bd4c47853582e8bafd62"
+    },
+    {
+      "path": "docs/digital-catalog.sdoc",
+      "sha256": "c4af230e93fe89db7811d7be31a8180909391b7b7912231bc675d1807771273e"
+    },
+    {
+      "path": "docs/editing-requirements.sdoc",
+      "sha256": "b3f5ae7c606f032e2431de9e96c477b478cc4e0580d937ee3532d236a191c11e"
+    },
+    {
+      "path": "docs/editing-verification.md",
+      "sha256": "ff406e0df3d4382370e29a4c824bfc26a15b43f6cd8347c614518b14d19f747b"
+    },
+    {
+      "path": "docs/live-lessons.md",
+      "sha256": "0fdd162c701351a9806505f5b26667d2ae1c3e6335d68bc20dd3453c85cd2d71"
+    },
+    {
+      "path": "docs/rc-transient.sdoc",
+      "sha256": "ba648381c63d9b67ad9cb9d9533fe664b3160ed147538f1b4f8eebbf458a6903"
+    },
+    {
+      "path": "docs/rc-verification.md",
+      "sha256": "85dd274e68190fbb22482d5bd2f03eb872cdddc688f831290f939d8346e10b2f"
+    },
+    {
+      "path": "docs/requirements.md",
+      "sha256": "740d57b774bcf3e0513e122092919b649fd193946cbf44403fa4fa82d2e573e7"
+    },
+    {
+      "path": "docs/requirements.sdoc",
+      "sha256": "d59f972a8e463246754c562c80f6fa78972b400f7d22009cdc1b2aa377ba8bd2"
+    },
+    {
+      "path": "docs/rspice-requirements-scrub.md",
+      "sha256": "abc2f4ff9705115a73e63f107e7ec0cef86deb07af3bc5ae17584ec3e985cd3c"
+    },
+    {
+      "path": "docs/rspice-scrub.sdoc",
+      "sha256": "f141c2df45acde20ce2b131c19beb40de9d510ce7e5b70222a6f8a216dcf65f9"
+    },
+    {
+      "path": "docs/session-verification.md",
+      "sha256": "c3c147a28df8387bca87b28a5c3ae0be500d09afdc8608bca1b41e55c4c4a92a"
+    },
+    {
+      "path": "docs/source-catalog.sdoc",
+      "sha256": "220ea8f31400a21660f8fc0fc8c815ec09b87c788056ed9da843596570c740d5"
+    },
+    {
+      "path": "docs/source-requirements-audit.md",
+      "sha256": "96c86cd4bbec340135720a50d75d0d94ceb149d45bf71c2470a2a5fba4f81606"
+    },
+    {
+      "path": "docs/verification.md",
+      "sha256": "0eb27fcc3e7326d4a3eaebce37534c4ca8e4902a21644515f31661b42e404e11"
+    },
+    {
+      "path": "docs/wiring-requirements.sdoc",
+      "sha256": "90db50ae7e9a4057711a6e754072664c409f8575ccbbe6dca4233434f6b856f3"
+    },
+    {
+      "path": "docs/wiring-verification.md",
+      "sha256": "749f5f49ba1b8ae207891f33c9482048ec3e33e2cd1e7a4375a725c5222b7489"
+    },
+    {
+      "path": "examples/wally-live-rc.qmd",
+      "sha256": "9b301e859fcd63bc5f1e693e3286309e1b8a770141b3257b795ffb544bdc581b"
+    },
+    {
+      "path": "Mcp/LessonTools.cs",
+      "sha256": "c9e2d9d80c61a2966b9f9dea21dd56a19e9ff97328ca4e10ab19de93cf597c5a"
+    },
+    {
+      "path": "Mcp/packages.lock.json",
+      "sha256": "29c5bc3fe0149b64e1d468a9772dd4dffdc30b0c1376fd057bd0013029152ed0"
+    },
+    {
+      "path": "Mcp/Program.cs",
+      "sha256": "20d1b5dc0a92683350f52f62626b47689882777712b16a17c602a53914e64cc0"
+    },
+    {
+      "path": "Mcp/SchematicLab.Mcp.csproj",
+      "sha256": "234d8d61b780cb6fbfdf1e3f44494b50731de46eaff587f359c0d17e93e1f5b1"
+    },
+    {
+      "path": "README.md",
+      "sha256": "f915ff66fd1faaf229ab39ca465ae777e0752ccff8d68574a02d3b8055cdbe8a"
+    },
+    {
+      "path": "SchematicLab.slnx",
+      "sha256": "2aa2714eb42d0e5d5c1d31ce2bf14ec0f00bb971478c2684290eba07aac93684"
+    },
+    {
+      "path": "scripts/BridgeNgspice.cs",
+      "sha256": "84d90260e2708caf4d9e49716883a140cd2282bd500abe90eb6ac0fc289e5ae0"
+    },
+    {
+      "path": "scripts/Launch-Schematic.ps1",
+      "sha256": "e81f067917fae9a38e067405861011828d0781c73a33cb8793a95870c6c901df"
+    },
+    {
+      "path": "scripts/McpSmoke.cs",
+      "sha256": "f00f7663fac1f974f46c59076372ead9c4aa47445c9621b712bf23d0f810ba6e"
+    },
+    {
+      "path": "scripts/packages.lock.json",
+      "sha256": "07e12482e83a1ca28b6d21d21b5fd2a169bff1e738c7ec5250fb827671de35a1"
+    },
+    {
+      "path": "scripts/Publish-Schematic.ps1",
+      "sha256": "37dcaf592568c173ab728894aa0d24d068a7a2932c2bbb587e4a106ed5608c96"
+    },
+    {
+      "path": "scripts/Test-Schematic.ps1",
+      "sha256": "9094217f57bf305b2af1cef5c4caed06dfa0f96a83c03c781668ee2413ce0950"
+    },
+    {
+      "path": "scripts/Test-SchematicBundle.ps1",
+      "sha256": "aab265b580b0659719a990c0909796ff2125e32d6dcbec1fe7452e910e2c57d5"
+    },
+    {
+      "path": "Solver/NativeCircuitSolver.cs",
+      "sha256": "555a4281b2016539f4cb8821bff086ca07245df44cade9a167a3bdee48bdcc68"
+    },
+    {
+      "path": "Solver/NativeRcSolver.cs",
+      "sha256": "5cfaa67453400a3cb3f30adb17d4c2e3c5db8ed56cde8d64adad5a65d9d2ad14"
+    },
+    {
+      "path": "Solver/packages.lock.json",
+      "sha256": "2f14ad5a1a08f20e92893cf8a9891e90ab86e83e0ecd632ffd7f44f22042d529"
+    },
+    {
+      "path": "Solver/SchematicLab.Solver.csproj",
+      "sha256": "27ded3c51944e8d816d867a552f60df11680b87845e5db0d2715ec85e6db47e8"
+    },
+    {
+      "path": "Solver/SolverLocation.cs",
+      "sha256": "08ee8578e9accc9ce83e0687a034bfebba06cd722f61f050b94c22bf47274639"
+    },
+    {
+      "path": "Tests/BookBrowserSmoke.cjs",
+      "sha256": "bfc75c99860fad455d5fd90d252f09b909a79f623e329cd8efc6fa5325387336"
+    },
+    {
+      "path": "Tests/BridgeSettingsTests.cs",
+      "sha256": "2e15ea95c94a68f0e86b70920eef3718bf58ead41d36e7ff12f2d4f8b645f7fc"
+    },
+    {
+      "path": "Tests/BridgeTests.cs",
+      "sha256": "9546588e1e82a0906625366a821a9204d523e18e53180c872fdc43513635bc6a"
+    },
+    {
+      "path": "Tests/BrowserSmoke.cjs",
+      "sha256": "887f173d9b20c089bf5555415d1c7accd81a8c6ecf5f50b1a907f4b68a6dd9a2"
+    },
+    {
+      "path": "Tests/Bundle.Tests.ps1",
+      "sha256": "a2e5d123f4e5cbce69cfff9347242befeaf26a02c81b784e22fd1849424bbb79"
+    },
+    {
+      "path": "Tests/CatalogTests.cs",
+      "sha256": "b92d98af2188fcfe08054b39422fcd8f72206104f0a762b8014da85526bc64da"
+    },
+    {
+      "path": "Tests/CommandTests.cs",
+      "sha256": "22eb9b850e0a8dd3f6ab5bc7ade72aa4678b6c46eaa3e4b5bd62d6f15271d84c"
+    },
+    {
+      "path": "Tests/EditHistoryTests.cs",
+      "sha256": "8fc805c5e287c68c39f3f375facfb3b3b4175ac61190e3f4357062265473bd83"
+    },
+    {
+      "path": "Tests/HierarchyTests.cs",
+      "sha256": "cfbfa6da57c83632911e785bc3b772c06ff2b5dc8b176338a4fc6780e832072a"
+    },
+    {
+      "path": "Tests/InteractionPolicyTests.cs",
+      "sha256": "3e824f16ae38b82ef871165b1a3b2b18bb43278589360ad703f4d519ceb33747"
+    },
+    {
+      "path": "Tests/LessonTests.cs",
+      "sha256": "b0c3da5f1b588e3911df0321a459b6a9cb25b84157b98aba6953b7496cb50db9"
+    },
+    {
+      "path": "Tests/packages.lock.json",
+      "sha256": "8d3d67b15fe5819a9771d9d8da6e38454ce7b49bf24b70054e0fccb7020c4c0e"
+    },
+    {
+      "path": "Tests/PreflightTests.cs",
+      "sha256": "c124a0ca1bfe54d13d0ba5b45a8068dff21521463ebc810ed4849f4a253e4cda"
+    },
+    {
+      "path": "Tests/RcTests.cs",
+      "sha256": "4fbcb67f083c44be4dc937231eb7d87933033a4e18f7bc99ee81fb375b299b56"
+    },
+    {
+      "path": "Tests/SchematicLab.Tests.csproj",
+      "sha256": "bc99ddc467cdd55bfcb5eb9709fcc448628779cf7dac1e7876caadf526b8c366"
+    },
+    {
+      "path": "Tests/SessionPersistenceTests.cs",
+      "sha256": "0f56920dcfbfacee0b2d3defbda0e1ed7d753417d4a4b72002182bfe37cf8200"
+    },
+    {
+      "path": "Tests/SoiBridgeTests.cs",
+      "sha256": "bc47515c0bdf2820102e231b1974d8d443e42ffcefdf035ae43da0e398c671b5"
+    },
+    {
+      "path": "Tests/StandaloneStartupTests.cs",
+      "sha256": "ddd37cc9cc99689b8bbb02b2eaf1925d3d20e0e12b5e5a21096a3a0977ce1fc6"
+    },
+    {
+      "path": "Tests/SweepTests.cs",
+      "sha256": "63a82ad7fde5c6b4776f76ffbac2b1cdb050185583f74547b8e7084f19d3d5f1"
+    },
+    {
+      "path": "Tests/WiringDocumentTests.cs",
+      "sha256": "619d7679527a318f6c84f07514b8bceb6bb5e53220bd165b4504f91726878e1c"
+    },
+    {
+      "path": "Web/_Imports.razor",
+      "sha256": "b4ea4ce33063bf115c1de7a3287412ea9133bb5991c130deb714be9fc398a8e9"
+    },
+    {
+      "path": "Web/BridgePanel.razor",
+      "sha256": "dc0bf54fad352f34e194991799b07d4bdac635959f8b46f69509e4c2778e8c72"
+    },
+    {
+      "path": "Web/Lesson.razor",
+      "sha256": "db56c26a10b9d61d4710d75a02608e55e84b9246da036e2c19ed83a8c1c3357e"
+    },
+    {
+      "path": "Web/packages.lock.json",
+      "sha256": "3c60e6e135016afc2f261b469c5c46f296b86239b33c891ced1b21db653ec0b4"
+    },
+    {
+      "path": "Web/Program.cs",
+      "sha256": "07bf5b1577dc25462da9bc3e5fc289f2b17c288578b4418f397224880c9116c2"
+    },
+    {
+      "path": "Web/RcBrowserSolver.cs",
+      "sha256": "be7a27babeb20c2eb9e2cc1760b210571dcf992ee986c0e3a3f5b94a46d0fa56"
+    },
+    {
+      "path": "Web/SchematicLab.Web.csproj",
+      "sha256": "be194b3b897e804116c7b200accbf815f431da5e0e328cc1ae337d6e4865f614"
+    },
+    {
+      "path": "Web/wwwroot/index.html",
+      "sha256": "a761be4e6a1f65ffd2c38270c7a6b0011bb810eb29f8944eab80c556721111ba"
+    },
+    {
+      "path": "Web/wwwroot/lesson.css",
+      "sha256": "25572ce822cd39022bf0052e89f05835a4e7ca8e317086db18f62174fbf4a318"
+    },
+    {
+      "path": "WebHost/packages.lock.json",
+      "sha256": "69165072a6aaa0fa44c05f83e16be474fdbe0c03aa79625768a8b93cfa356eec"
+    },
+    {
+      "path": "WebHost/Program.cs",
+      "sha256": "de6f4891290f56dd7974ef3c6361f8ddbc5c336461c593bfb2b56494360d3b57"
+    },
+    {
+      "path": "WebHost/SchematicLab.WebHost.csproj",
+      "sha256": "4678552c24eea2d83ed5cf906d9e594d60935fc3542aa57e55bebd15c0f7a85d"
+    },
+    {
+      "path": "WebHost/StartupCommand.cs",
+      "sha256": "c6d5c9018438c538d9487a76802753547907a79012482c32c890084b665bab68"
+    },
+    {
+      "path": "WebHost/StartupOptions.cs",
+      "sha256": "9da218ae9a6fad567088bbfc0eae9a1a3516a0942605f4a8f1052030cd643bd8"
+    }
+  ],
+  "package": {
+    "manifest_sha256": "2a788e1a0e08d76d68b020e65cca76b1e91b83c6f140aec1b818f0d5031ab824",
+    "files": 747,
+    "sha256": "3d3e2c67c5ce2dd609750607811a59b6f8219b4a15605dc23805e0120c31603f",
+    "solver": {
+      "source_claim": "Caller-declared revision; executable bytes verified by SHA-256. Optional third-party providers are not included.",
+      "sha256": "c3caf38a08fa03c4cb375408d96ddbcf984fe4e1ef19f34b2e3c4fedce46888b",
+      "file": "solver/circuit-simulator.exe",
+      "declared_source_commit": "1aa258e40749f842d913b7a0242c4b7775ffe606"
+    },
+    "archive": "E:\\Artifacts\\VeloSim-net11-schematic-20261112\\standalone-book-final-20261114\\SchematicLab-win-x64.zip",
+    "kind": "simulation"
+  },
+  "checks": {
+    "mutation": {
+      "selected_manual_mutants": 1,
+      "stryker": "not run",
+      "detected": 1,
+      "snapshot": "Earlier policy snapshot in lock-mutant.json, restored and retested; not a final whole-assembly score",
+      "log": "lock-mutant.log"
+    },
+    "editor_browser": {
+      "log": "editor-browser-retry.log",
+      "scope": "Test HTTP server supplies explicit editor bootstrap; this is not plain-static-host production acceptance",
+      "result": "Failed to load resource: the server responded with a status of 404 (Not Found)\r\nBrowser geometry, history and actionable preflight passed.\r\nBrowser crossing, junction and junction round trip passed.\r\nEmbedded lesson: edit, plot, reject stale draft, delete, place, reconnect and reset passed.",
+      "prior_attempt": "editor-browser.log failed on ERR_NETWORK_CHANGED during WASM fetch; retained, unchanged retry passed"
+    },
+    "schematic_tests": {
+      "report": "book-final-reviewed-tests/book.trx",
+      "skipped": 0,
+      "failed": 0,
+      "passed": 72
+    },
+    "mcp": {
+      "log": "book-final-mcp.log",
+      "reference": "Analytical RC exponential endpoint, absolute error <0.02V; default numerical controls unchanged",
+      "result": "MCP author lock, value edit, stale refusal and native RC=True passed."
+    },
+    "browser": {
+      "log": "book-final-browser.log",
+      "waveform": "book-final-browser-waveform.png",
+      "surface": "iframe",
+      "screenshot": "book-final-browser.png",
+      "result": "Embedded author-locked RC: reset refused, value changed, geometry preserved, real waveform rendered."
+    },
+    "coverage": {
+      "lines": 4450,
+      "total_lines": 5597,
+      "branches": 1524,
+      "scope": "Core/Solver/WebHost reached by schematic xUnit suite; excludes browser/MCP protocol/native numerical and whole-repository scope",
+      "total_branches": 2494
+    },
+    "pester": {
+      "report": "bundle-reviewed.xml",
+      "passed": 18,
+      "total_commands": 265,
+      "failed": 0,
+      "skipped": 0,
+      "branch_coverage": "unavailable",
+      "covered_commands": 86
+    },
+    "full_solution_build": {
+      "errors": 0,
+      "result": "succeeded",
+      "warnings": 0,
+      "log": "solution-build.log"
+    },
+    "strictdoc": {
+      "version": "0.30.4",
+      "mode": "SDReader.read_with_parse_context",
+      "log": "strictdoc-final.log",
+      "html_export": "not verified; full export API missing html2pdf4doc dependency",
+      "documents": 13
+    },
+    "properties": [
+      {
+        "replay": "110011,2026111201",
+        "scope": "startup argument vectors",
+        "cases": 128
+      },
+      {
+        "replay": "111413,2026111401",
+        "scope": "locked arbitrary move coordinates",
+        "cases": 128
+      }
+    ],
+    "broader_windows_root_tests": {
+      "passed": 263,
+      "total": 419,
+      "failed": 15,
+      "skipped": 141,
+      "qualification": "not passing; platform/tool paths, replay, exFAT link fixtures and source working-directory failures remain",
+      "report": "root-relocated-tests/velosim.trx"
+    }
+  },
+  "limits": [
+    "No new whole-corpus ngspice run",
+    "Optional BSIM providers not bundled",
+    "No Linux/macOS runtime or NativeAOT qualification",
+    "WALLY renderer not exercised",
+    "Browser/MCP own independent sessions",
+    "Interaction lock is not a security sandbox"
+  ],
+  "artifacts": "E:\\Artifacts\\VeloSim-net11-schematic-20261112"
+}

@@ -1,6 +1,7 @@
 @using Microsoft.JSInterop
 @inject IJSRuntime Browser
 @inject RcBrowserSolver RcSolver
+@inject LessonSession session
 
 <main @onkeydown="CancelOnEscape">
     <header><p class="eyebrow">CIRCUIT NOTEBOOK / 01</p><h1>@(IsRc ? "Charging a capacitor" : "The voltage divider")</h1>
@@ -8,6 +9,10 @@
     <section class="layout">
         <div class="sheet">
             <nav aria-label="Schematic tools">
+                <label><input type="checkbox" checked="@session.Interaction.LayoutLocked"
+                    disabled="@(!session.Interaction.ReaderCanUnlock)"
+                    @onchange="e => Dispatch(new SetLayoutLocked(session.Version, e.Value is true))" /> Lock layout</label>
+                @if (!session.Interaction.ReaderCanUnlock) { <span>Layout fixed by the author; values remain editable.</span> }
                 @foreach (var kind in QuickParts)
                 {
                     <button aria-pressed="@(placing == kind ? "true" : "false")" @onclick="() => Choose(kind)">+ @kind</button>
@@ -328,7 +333,6 @@
 </main>
 
 @code {
-    private readonly LessonSession session = new();
     private void OpenBridgeDemo() => Dispatch(new LoadBridgeDemo(session.Version));
     private string? selected => session.Selected;
     private Pin? pending => session.PendingPin;

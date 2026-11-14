@@ -3,7 +3,7 @@ namespace SchematicLab.Core;
 /// <summary>Identifies the exact document state on which an edit or analysis is based.</summary>
 public readonly record struct DocumentVersion(Guid DocumentId, long Revision);
 
-public enum CommandCode { Ok, InvalidInput, RequiredInput, WrongDocument, StaleRevision, Cancelled, NotFound, LimitReached, UnsupportedCircuit, SolverFailed }
+public enum CommandCode { Ok, InvalidInput, RequiredInput, WrongDocument, StaleRevision, Cancelled, NotFound, LimitReached, UnsupportedCircuit, SolverFailed, LayoutLocked }
 
 /// <summary>The command type identifies its stable action. The version is mandatory for document changes.</summary>
 public abstract record LessonCommand;
@@ -33,7 +33,7 @@ public sealed record SweepRun(Guid Id, DocumentVersion Version, IReadOnlyList<Sw
 public sealed record CatalogEntry(Kind Kind, PartDefinition Definition);
 public sealed record CommandResult(CommandCode Code, DocumentVersion Version, string Message,
     Part? Part = null, CircuitSnapshot? Circuit = null, SweepRun? Run = null,
-    IReadOnlyList<CatalogEntry>? Catalog = null, TransientRun? Transient = null, IReadOnlyList<CircuitFinding>? Findings = null, string? Document = null, NetHighlight? Net = null, LessonView? View = null, AnalysisHistory? History = null, BridgeRun? Bridge = null, IReadOnlyDictionary<BridgeField, string>? AnalysisFields = null, IReadOnlyList<NamedModel>? Models = null, ChildSheet? Child = null);
+    IReadOnlyList<CatalogEntry>? Catalog = null, TransientRun? Transient = null, IReadOnlyList<CircuitFinding>? Findings = null, string? Document = null, NetHighlight? Net = null, LessonView? View = null, AnalysisHistory? History = null, BridgeRun? Bridge = null, IReadOnlyDictionary<BridgeField, string>? AnalysisFields = null, IReadOnlyList<NamedModel>? Models = null, ChildSheet? Child = null, InteractionState? Interaction = null);
 
 public sealed record MovePart(DocumentVersion Expected, string PartId, int X, int Y) : DocumentCommand(Expected);
 public sealed record RotatePart(DocumentVersion Expected, string PartId) : DocumentCommand(Expected);

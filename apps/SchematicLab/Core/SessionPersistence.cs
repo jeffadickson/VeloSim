@@ -23,7 +23,7 @@ public sealed partial class LessonSession
 {
     private const int RunLimit = 16;
     private static readonly SavedSession EmptySession = new(new(null, false, "", null), new([], [], []));
-    private sealed record EditState(Board Board, SavedSession? Session);
+    private sealed record EditState(Board Board, SavedSession? Session, bool ParameterOnly = false);
     private Pin? highlightAnchor;
     private long sessionGeneration;
     private long restoredRevision = -1;

@@ -1,13 +1,18 @@
 #:property PublishAot=false
 #:package ModelContextProtocol@2.4.0
 #:project ../Core/SchematicLab.Core.csproj
+#:project ../Solver/SchematicLab.Solver.csproj
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ModelContextProtocol.Client;
 using SchematicLab.Core;
+using SchematicLab.Solver;
 
 if (args.Length != 1 || !File.Exists(args[0]))
     throw new ArgumentException("Pass the absolute path to the built MCP host DLL.");
+
+var nativeEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH")) ||
+    SolverLocation.FindPackaged(Path.GetDirectoryName(Path.GetFullPath(args[0]))!) is not null;
 
 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 var token = deadline.Token;
@@ -15,10 +20,34 @@ var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
-var expectedTools = new[] { "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
+var expectedTools = new[] { "read_interaction_policy", "set_layout_locked", "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
     "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "read_analysis_fields", "apply_analysis_fields", "read_named_models", "define_named_model", "apply_named_model", "remove_named_model", "load_hierarchy_demo", "read_child_sheet", "attach_child_sheet", "run_circuit" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
+
+if (Environment.GetEnvironmentVariable("SCHEMATIC_LAYOUT_MODE") == "author-locked")
+{
+    var policy = (await Call(client, "read_interaction_policy")).Interaction;
+    Require(policy is { LayoutLocked: true, ReaderCanUnlock: false }, "Author policy missing.");
+    var original = (await Call(client, "read_circuit")).Version;
+    Require((await Call(client, "reset_lesson", Edit(original))).Code == CommandCode.LayoutLocked, "Locked reset accepted.");
+    var unlock = Edit(original); unlock["locked"] = false;
+    Require((await Call(client, "set_layout_locked", unlock)).Code == CommandCode.LayoutLocked, "Author lock bypassed.");
+    var changedRc = await Call(client, "set_value", ValueEdit(original, "R1", 2000));
+    Require(changedRc.Code == CommandCode.Ok, "Locked parameter edit refused.");
+    Require((await Call(client, "set_value", ValueEdit(original, "R1", 3000))).Code == CommandCode.StaleRevision, "Stale parameter accepted.");
+    if (nativeEnabled)
+    {
+        var arguments = Edit(changedRc.Version); arguments["probeId"] = "P1";
+        var waveform = (await Call(client, "run_transient", arguments)).Transient;
+        Require(waveform is { Samples.Count: > 2 }, "No real locked RC waveform.");
+        var end = waveform!.Samples[^1];
+        var reference = waveform.Input.Volts * (1 - Math.Exp(-end.Seconds / (waveform.Input.Ohms * waveform.Input.Farads)));
+        Require(Math.Abs(end.Volts - reference) < .02, "Locked RC endpoint disagrees with the analytical reference.");
+    }
+    Console.WriteLine($"MCP author lock, value edit, stale refusal and native RC={nativeEnabled} passed.");
+    return;
+}
 
 var definition = await Call(client, "define_named_model", new() { ["model"] = new NamedModel("Signal", BridgeField.Bjts, "1e-15 75 1 .025 .025") });
 Require(definition.Code == CommandCode.Ok, definition.Message);
@@ -61,7 +90,7 @@ Require(joinedCircuit is { Probe: null, Junctions.Count: 1 }, "Explicit join did
 var split = await Change("delete_junction", joined.Version, ("junctionId", joinedCircuit.Junctions![0].Id));
 Require((await Call(client, "read_circuit")).Circuit?.Probe == 3.75, "Deleting a junction did not restore connectivity.");
 
-if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH")))
+if (nativeEnabled)
 {
     var charging = await Call(client, "load_rc", Edit(split.Version));
     var labeled = await Change("set_net_label", charging.Version, ("terminal", new Pin("R1", 1)), ("name", "output"));
@@ -123,7 +152,7 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH"
         "A missing probe was accepted.");
     Console.WriteLine($"Native RC probe returned {waveform.Samples.Count} samples with maximum error {maxError:G6} V.");
 }
-if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SPICE_SOLVER_PATH")))
+if (nativeEnabled)
 {
     var separate = (await Call(other, "read_circuit")).Version;
     var demo = await Call(other, "load_bridge_demo", Edit(separate));
