@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace SchematicLab.Core;
 
-public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1, Bjts, Bsim3, Pwl, Sines, Exponentials, FdSoi, DcContinuation }
+public enum BridgeField { Probe, Frequencies, Stop, Step, Phasors, Pulses, Controls, Diodes, Mos1, Bjts, Bsim3, Pwl, Sines, Exponentials, FdSoi, DcContinuation, Backend }
 public sealed record SetBridgeDraft(BridgeField Field, string Text) : LessonCommand;
 public sealed record ReadAnalysisFields : LessonCommand;
 public sealed record ApplyAnalysisFields(IReadOnlyDictionary<BridgeField, string> Fields) : LessonCommand;
@@ -12,15 +12,20 @@ public sealed class BridgeDraft
 {
     private static readonly Dictionary<BridgeField, string> Defaults = new()
     {
+        [BridgeField.Backend] = "lu",
         [BridgeField.Probe] = "P1", [BridgeField.Frequencies] = "100 1000", [BridgeField.Stop] = ".005",
         [BridgeField.Step] = ".00001", [BridgeField.Phasors] = "", [BridgeField.Pulses] = "", [BridgeField.Controls] = "", [BridgeField.Diodes] = "", [BridgeField.Mos1] = "", [BridgeField.Bjts] = "", [BridgeField.Bsim3] = "", [BridgeField.Pwl] = "", [BridgeField.Sines] = "", [BridgeField.Exponentials] = "", [BridgeField.FdSoi] = "", [BridgeField.DcContinuation] = ""
     };
     private readonly Dictionary<BridgeField, string> fields = new(Defaults);
 
     internal Dictionary<BridgeField, string> Snapshot() => new(fields);
+    /// <summary>Validated persisted selection; legacy documents restore the LU default.</summary>
+    public SolverBackend Backend => SolverBackendNames.TryParse(fields[BridgeField.Backend], out var backend)
+        ? backend : throw new InvalidOperationException("Stored backend must be validated before publication.");
 
     internal static bool ValidFields(IReadOnlyDictionary<BridgeField, string> values) =>
-        values.Count <= Defaults.Count && values.All(entry => Defaults.ContainsKey(entry.Key) && entry.Value is { Length: <= 4096 });
+        values.Count <= Defaults.Count && values.All(entry => Defaults.ContainsKey(entry.Key) && entry.Value is { Length: <= 4096 } &&
+            (entry.Key != BridgeField.Backend || SolverBackendNames.TryParse(entry.Value, out _)));
 
     internal bool Apply(IReadOnlyDictionary<BridgeField, string>? values)
     {
@@ -39,7 +44,8 @@ public sealed class BridgeDraft
 
     internal bool Set(BridgeField field, string? text)
     {
-        if (!fields.ContainsKey(field) || text is not { Length: <= 4096 }) return false;
+        if (!fields.ContainsKey(field) || text is not { Length: <= 4096 } ||
+            field == BridgeField.Backend && !SolverBackendNames.TryParse(text, out _)) return false;
         fields[field] = text;
         return true;
     }
@@ -134,7 +140,7 @@ public sealed class BridgeDraft
             var bsim3 = Rows(BridgeField.Bsim3, 11).Select(row => new Bsim3Binding(row[0], Number(row[1]), Number(row[2]),
                 Number(row[3]), Number(row[4]), Number(row[5]), Number(row[6]), Number(row[7]),
                 Number(row[8]), Number(row[9]), Number(row[10]))).ToArray();
-            var options = new BridgeOptions(analysis, this[BridgeField.Probe], Controls: controls, Diodes: diodes, Mos1: mos, Bjts: bjts, Bsim3: bsim3,
+            var options = new BridgeOptions(analysis, this[BridgeField.Probe], Controls: controls, Diodes: diodes, Mos1: mos, Bjts: bjts, Bsim3: bsim3, Backend: Backend,
                 FdSoi: Tokens(this[BridgeField.FdSoi]));
             if (analysis == BridgeAnalysis.Dc)
             {

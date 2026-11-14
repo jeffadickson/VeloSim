@@ -192,3 +192,21 @@ See [live lessons](docs/live-lessons.md) for the author-controlled layout lock,
 standalone solver packaging, the bounded textbook-readiness matrix and WALLY
 iframe deployment. Browser and stdio MCP use the same commands and policy but
 currently retain independent document sessions.
+
+## Linear solver selection
+
+Choose **Linear solver** in the analysis panel. The same selection applies to
+the RC probe run and general circuit runs; it is saved with the sheet and uses
+the normal stale-revision and parameter-only undo rules. LU remains the legacy
+default. The legacy analytical divider sweep does not call a linear provider.
+LU and QR are dense reference adapters in the same numerical library;
+Faer is the CPU sparse adapter. **QR supports DC/transient but has no complex
+AC implementation**. AC with QR refuses explicitly; it does not fall back to LU.
+
+MCP exposes `schematic_read_solver_backends` (including known capabilities) and
+`schematic_set_solver_backend` with `documentId`, `revision` and `backend`
+(`Lu`, `Qr` or `Faer`). General `BridgeOptions.Backend` may explicitly override
+the session choice for one run; null/omitted inherits it. Results retain the
+effective choice, and the native adapter verifies the response provider ID.
+See [backend verification](../../docs/linear-backend-selection.md) for the exact
+analytical cases and limits. This does not add arbitrary C++/GPU providers.

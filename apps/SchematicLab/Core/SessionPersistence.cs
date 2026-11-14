@@ -105,7 +105,13 @@ public sealed partial class LessonSession
             if (run is not { ProbeId.Length: > 0 and <= 12, Input.IsValid: true, Samples: not null } ||
                 !ValidIdentity(run.Id, run.Version, ids) || run.Samples.Any(point => point is null) ||
                 !IsComplete(run.Input, run.Samples)) return false;
-            if (current.Contains(run.Id) && candidate.ChargingInput(run.ProbeId) != run.Input) return false;
+            var backend = saved.AnalysisFields is { } values && values.TryGetValue(BridgeField.Backend, out var name) &&
+                SolverBackendNames.TryParse(name, out var selectedBackend) ? selectedBackend : SolverBackend.Lu;
+            if (current.Contains(run.Id))
+            {
+                var expected = candidate.ChargingInput(run.ProbeId);
+                if (expected is null || (expected with { Backend = backend }) != run.Input) return false;
+            }
         }
 
         return current.IsSubsetOf(ids);

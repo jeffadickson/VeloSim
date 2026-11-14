@@ -11,16 +11,19 @@ public sealed partial class NativeRcSolver
         if (job is not { Nodes.Length: >= 1 and <= 128, Elements.Length: >= 1 and <= 64,
             ProbeNode.Length: >= 1 and <= 12, Options: not null } ||
             !job.Nodes.Contains(job.ProbeNode) || !Enum.IsDefined(job.Options.Analysis) ||
+            job.Options.Backend is { } selected && !Enum.IsDefined(selected) ||
             job.Elements.Any(element => element is null || !double.IsFinite(element.Value)) ||
             job.Options.Analysis == BridgeAnalysis.Ac && job.Options.FrequenciesHz is not { Length: >= 1 and <= 128 })
             throw new RcSolverException("Invalid circuit job.");
+        if (job.Options.Analysis == BridgeAnalysis.Ac && !(job.Options.Backend ?? SolverBackend.Lu).SupportsAc())
+            throw new RcSolverException("QR has no complex AC implementation. Choose LU or Faer.");
 
         var nodes = job.Nodes.ToList();
         var elements = job.Elements.SelectMany(element => Elements(element, job.Options, nodes)).ToArray();
         if (nodes.Count > 128) throw new RcSolverException("The lowered circuit exceeds the native node budget.");
         var request = JsonSerializer.Serialize(new
         {
-            schema_version = "1", case_id = "schematic-circuit", backend = "lu",
+            schema_version = "1", case_id = "schematic-circuit", backend = (job.Options.Backend ?? SolverBackend.Lu).WireName(),
             circuit = new { nodes, elements },
             analysis = Analysis(job)
         });
@@ -294,6 +297,7 @@ public sealed partial class NativeRcSolver
             throw new RcSolverException("The native solver returned an incomplete run.");
 
         var signal = $"v({job.ProbeNode})";
+        CheckBackend(root, job.Options.Backend ?? SolverBackend.Lu);
         var names = root.GetProperty("signals").EnumerateArray().ToArray();
         var index = Array.FindIndex(names, name => name.GetProperty("id").GetString() == signal &&
             name.GetProperty("unit").GetString() == "V");

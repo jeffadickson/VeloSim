@@ -55,7 +55,7 @@ public sealed partial class LessonSession
     // decision. Controls names select electrical connections, not numeric values.
     private bool AllowedWhileLocked(LessonCommand command) => command switch
     {
-        SetLayoutLocked or ReadInteractionPolicy or SetPartValue or RunSweep or ReadCircuit or
+        SetLayoutLocked or ReadInteractionPolicy or SetSolverBackend or ReadSolverBackends or SetPartValue or RunSweep or ReadCircuit or
         ReadCatalog or ReadRun or SelectPart or CancelGesture or SetDraftValue or SetCatalogFilter or
         ToggleCatalog or CheckCircuit or FocusTerminal or HighlightNet or ReadView or ReadAnalysisHistory or
         SaveDocument or ReadChildSheet or ReadNamedModels or ReadAnalysisFields => true,

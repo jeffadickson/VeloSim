@@ -33,11 +33,13 @@ public sealed record Bsim3Binding(string Id, double Tox, double Nch, double Nsub
     double Width, double Length, double DrainPerimeter = 0, double SourcePerimeter = 0,
     double DrainArea = 0, double SourceArea = 0);
 public sealed record CurrentControl(string Id, string VoltageSourceId);
+/// <summary>Bounded analysis settings. A null Backend inherits the session selection; explicit values override it.</summary>
 public sealed record BridgeOptions(BridgeAnalysis Analysis, string ProbeId, double[]? FrequenciesHz = null,
     double StopSeconds = .005, double StepSeconds = .00001, SourcePhasor[]? Phasors = null,
     SourcePulse[]? Pulses = null, CurrentControl[]? Controls = null, DiodeBinding[]? Diodes = null, Mos1Binding[]? Mos1 = null,
     BjtBinding[]? Bjts = null, Bsim3Binding[]? Bsim3 = null,
-    SourcePwl[]? Pwl = null, SourceSine[]? Sines = null, SourceExponential[]? Exponentials = null, string[]? FdSoi = null, bool UseSourceContinuation = false);
+    SourcePwl[]? Pwl = null, SourceSine[]? Sines = null, SourceExponential[]? Exponentials = null, string[]? FdSoi = null, bool UseSourceContinuation = false,
+    SolverBackend? Backend = null);
 
 public sealed record RunBridge(DocumentVersion Expected, BridgeOptions Options) : DocumentCommand(Expected);
 public sealed record LoadBridgeDemo(DocumentVersion Expected) : DocumentCommand(Expected);
@@ -51,7 +53,7 @@ public sealed record CircuitElement(Kind Kind, string Id, int P, int N, double V
 public sealed record CircuitJob(string[] Nodes, CircuitElement[] Elements, string ProbeNode, BridgeOptions Options);
 public sealed record BridgeSample(double Axis, double Real, double Imaginary = 0);
 public sealed record BridgeRun(DocumentVersion Version, BridgeAnalysis Analysis, string ProbeId,
-    IReadOnlyList<BridgeSample> Samples);
+    IReadOnlyList<BridgeSample> Samples, SolverBackend Backend = SolverBackend.Lu);
 
 public sealed partial class Board
 {
@@ -130,13 +132,15 @@ public sealed partial class LessonSession
             if (command.Expected.Revision != revision) return Result(CommandCode.StaleRevision, "The document changed.");
             if (command.Options is not { } options)
                 return Result(CommandCode.InvalidInput, "Supply analysis options.");
-            options = options with { FrequenciesHz = options.FrequenciesHz?.ToArray(), Phasors = options.Phasors?.ToArray(),
+            options = options with { Backend = options.Backend ?? BridgeDraft.Backend, FrequenciesHz = options.FrequenciesHz?.ToArray(), Phasors = options.Phasors?.ToArray(),
                 Pulses = options.Pulses?.ToArray(), Controls = options.Controls?.ToArray(),
                 Diodes = options.Diodes?.ToArray(), Mos1 = options.Mos1?.ToArray(), Bjts = options.Bjts?.ToArray(), Bsim3 = options.Bsim3?.ToArray(),
                 Pwl = options.Pwl?.Select(wave => wave is null ? null! : wave with { Points = wave.Points?.ToArray()! }).ToArray(),
                 Sines = options.Sines?.ToArray(), Exponentials = options.Exponentials?.ToArray(), FdSoi = options.FdSoi?.ToArray() };
             if (!ValidBridgeOptions(options))
                 return Result(CommandCode.InvalidInput, "Check the probe, analysis settings, and source bindings.");
+            if (options.Analysis == BridgeAnalysis.Ac && !options.Backend!.Value.SupportsAc())
+                return Result(CommandCode.UnsupportedCircuit, "QR has no complex AC implementation. Choose LU or Faer; no fallback was run.");
             if (layoutLocked)
             {
                 // F/H control references are electrical connections. The async
@@ -159,7 +163,7 @@ public sealed partial class LessonSession
             if (!ValidBridgeSamples(job.Options, samples))
                 return new(CommandCode.SolverFailed, command.Expected, "The solver returned an incomplete or invalid trace.");
             return new(CommandCode.Ok, command.Expected, "Circuit analysis completed.",
-                Bridge: new(command.Expected, job.Options.Analysis, job.Options.ProbeId, Array.AsReadOnly(samples)));
+                Bridge: new(command.Expected, job.Options.Analysis, job.Options.ProbeId, Array.AsReadOnly(samples), job.Options.Backend!.Value));
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -173,7 +177,7 @@ public sealed partial class LessonSession
 
     private bool ValidBridgeOptions(BridgeOptions options)
     {
-        if (options.ProbeId is not { Length: > 0 and <= 12 } || !Enum.IsDefined(options.Analysis) ||
+        if (options.ProbeId is not { Length: > 0 and <= 12 } || options.Backend is { } backend && !Enum.IsDefined(backend) || !Enum.IsDefined(options.Analysis) ||
             options.UseSourceContinuation && options.Analysis != BridgeAnalysis.Dc) return false;
         var frequencies = options.FrequenciesHz ?? [];
         if (options.Analysis == BridgeAnalysis.Ac && (frequencies.Length is < 1 or > 128 ||

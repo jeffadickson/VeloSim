@@ -4,6 +4,7 @@
 #:project ../Solver/SchematicLab.Solver.csproj
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Numerics;
 using ModelContextProtocol.Client;
 using SchematicLab.Core;
 using SchematicLab.Solver;
@@ -20,7 +21,7 @@ var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 options.Converters.Add(new JsonStringEnumConverter());
 await using var client = await Open();
 var tools = await client.ListToolsAsync(cancellationToken: token);
-var expectedTools = new[] { "read_interaction_policy", "set_layout_locked", "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
+var expectedTools = new[] { "read_solver_backends", "set_solver_backend", "read_interaction_policy", "set_layout_locked", "read_circuit", "read_catalog", "set_value", "place_part", "connect_pins",
     "delete_part", "reset_lesson", "run_sweep", "read_run", "load_rc", "run_transient", "move_part", "rotate_part", "mirror_part", "duplicate_part", "undo_edit", "redo_edit", "check_circuit", "set_net_label", "set_wire_route", "delete_wire", "join_routes", "delete_junction", "save_document", "load_document", "highlight_net", "read_view", "read_analysis_history", "load_bridge_demo", "load_model_demo", "load_bjt_demo", "load_bsim3_demo", "load_soi_demo", "read_analysis_fields", "apply_analysis_fields", "read_named_models", "define_named_model", "apply_named_model", "remove_named_model", "load_hierarchy_demo", "read_child_sheet", "attach_child_sheet", "run_circuit" };
 Require(tools.Select(tool => tool.Name).Order().SequenceEqual(
     expectedTools.Select(name => "schematic_" + name).Order()), "Tool allowlist mismatch.");
@@ -30,6 +31,10 @@ if (Environment.GetEnvironmentVariable("SCHEMATIC_LAYOUT_MODE") == "author-locke
     var policy = (await Call(client, "read_interaction_policy")).Interaction;
     Require(policy is { LayoutLocked: true, ReaderCanUnlock: false }, "Author policy missing.");
     var original = (await Call(client, "read_circuit")).Version;
+    var selection = Edit(original); selection["backend"] = "Faer";
+    var selectedProvider = await Call(client, "set_solver_backend", selection);
+    Require(selectedProvider.Code == CommandCode.Ok && selectedProvider.Backend == SolverBackend.Faer, "Provider selection refused.");
+    original = selectedProvider.Version;
     Require((await Call(client, "reset_lesson", Edit(original))).Code == CommandCode.LayoutLocked, "Locked reset accepted.");
     var unlock = Edit(original); unlock["locked"] = false;
     Require((await Call(client, "set_layout_locked", unlock)).Code == CommandCode.LayoutLocked, "Author lock bypassed.");
@@ -40,12 +45,19 @@ if (Environment.GetEnvironmentVariable("SCHEMATIC_LAYOUT_MODE") == "author-locke
     {
         var arguments = Edit(changedRc.Version); arguments["probeId"] = "P1";
         var waveform = (await Call(client, "run_transient", arguments)).Transient;
-        Require(waveform is { Samples.Count: > 2 }, "No real locked RC waveform.");
+        Require(waveform is { Samples.Count: > 2, Input.Backend: SolverBackend.Faer }, "No real locked Faer RC waveform.");
         var end = waveform!.Samples[^1];
         var reference = waveform.Input.Volts * (1 - Math.Exp(-end.Seconds / (waveform.Input.Ohms * waveform.Input.Farads)));
         Require(Math.Abs(end.Volts - reference) < .02, "Locked RC endpoint disagrees with the analytical reference.");
+        var acArguments = Edit(changedRc.Version);
+        acArguments["options"] = new BridgeOptions(BridgeAnalysis.Ac, "P1", [100], Phasors: [new("V1", 1, 0)]);
+        var ac = (await Call(client, "run_circuit", acArguments)).Bridge;
+        Require(ac is { Backend: SolverBackend.Faer, Samples.Count: 1 }, "MCP AC did not inherit Faer.");
+        var acReference = Complex.One / new Complex(1, 2 * Math.PI * 100 * waveform.Input.TimeConstant);
+        Require(Complex.Abs(new Complex(ac!.Samples[0].Real, ac.Samples[0].Imaginary) - acReference) < 1e-6,
+            "MCP Faer AC disagrees with the analytical RC transfer function.");
     }
-    Console.WriteLine($"MCP author lock, value edit, stale refusal and native RC={nativeEnabled} passed.");
+    Console.WriteLine($"MCP author lock, Faer selection/inheritance, value edit, stale refusal and native RC/AC={nativeEnabled} passed.");
     return;
 }
 

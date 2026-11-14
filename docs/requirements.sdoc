@@ -26,6 +26,37 @@ verify the bounded contracts. docs/live-lessons.md and examples/wally-live-rc.qm
 describe deployment/readiness; actual WALLY rendering and shared visible-session
 agent control remain open. See docs/schematic-book-verification.md for current
 counts, coverage scope, seeds, package provenance and unresolved checks.
+Backend selection trace: Core/SolverBackend.cs, BridgeDraft.cs, RcTransient.cs
+and CircuitBridge.cs; Solver/NativeRcSolver.cs and NativeCircuitSolver.cs;
+Tests/BackendSelectionTests.cs and scripts/BackendSmoke.cs. The shared UI/MCP
+commands expose the bounded LU/QR/Faer surface. Verification scope and QR's
+unsupported AC path are recorded in docs/linear-backend-selection.md.
+<<<
+
+[REQUIREMENT]
+UID: SCH-LINEAR-BACKEND-001
+STATUS: Draft
+TITLE: Typed and persistent linear provider selection
+STATEMENT: >>>
+The schematic shall allow supported LU, QR and Faer CPU adapter selection through
+shared typed browser/MCP commands. RC and general analyses shall inherit the
+selection unless an explicit supported per-run override is supplied. Selection
+shall preserve document freshness checks, save/reload and parameter-only history,
+remain usable in locked lessons, and default legacy documents to LU. Undefined
+providers and malformed field imports shall fail without partial changes.
+<<<
+
+[REQUIREMENT]
+UID: SCH-LINEAR-PROVENANCE-001
+STATUS: Draft
+TITLE: Check effective provider and capabilities without silent fallback
+STATEMENT: >>>
+Both native request builders shall send the selected adapter identity and check
+the response provider identity before accepting samples. Results shall retain
+the effective selection. Discovery shall state known adapter limits; real-only
+QR shall refuse complex AC before simulation without silently selecting LU.
+Numerical qualification shall identify actual analyses, references, tolerances
+and unavailable platforms rather than imply all providers support every analysis.
 <<<
 
 [REQUIREMENT]

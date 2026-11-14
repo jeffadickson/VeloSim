@@ -19,6 +19,8 @@ const server = http.createServer((req, res) => {
     await lock.waitFor({timeout:60000});
     assert.equal(await lock.isChecked(),true);
     assert.equal(await lock.isDisabled(),true);
+    await lesson.getByLabel("Linear solver", {exact:true}).selectOption("Faer");
+    assert.equal(await lesson.getByLabel("Linear solver", {exact:true}).inputValue(),"Faer");
     const resistor = lesson.getByRole("button",{name:"Select R1",exact:true});
     const before = await resistor.locator("..").getAttribute("transform");
     await lesson.getByRole("button",{name:"Reset example",exact:true}).click();
@@ -31,10 +33,14 @@ const server = http.createServer((req, res) => {
     await lesson.getByRole("button",{name:"Run RC transient",exact:true}).click();
     const plot=lesson.getByRole("img",{name:"RC probe voltage against time"});
     await plot.waitFor({timeout:60000});
+    await lesson.getByText(/Faer linear solver/).waitFor();
     assert.ok((await plot.locator("polyline").getAttribute("points")).split(" ").length > 2);
+    await lesson.getByLabel("AC sources (ID magnitude phase°)", {exact:true}).fill("V1 1 0");
+    await lesson.getByRole("button",{name:"Analyze Ac",exact:true}).click();
+    await lesson.getByTestId("bridge-backend").filter({hasText:"Faer"}).waitFor();
     assert.deepEqual(errors,[]);
     await page.screenshot({path:process.argv[4],fullPage:true});
     await plot.screenshot({path:process.argv[4].replace(/\.png$/, "-waveform.png")});
-    console.log("Embedded author-locked RC: reset refused, value changed, geometry preserved, real waveform rendered.");
+    console.log("Embedded author-locked RC: Faer selected, reset refused, value changed, geometry preserved, real Faer RC waveform and AC rendered.");
   } finally { await browser.close(); }
 })().catch(error => {console.error(error);process.exitCode=1;}).finally(()=>server.close());

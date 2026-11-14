@@ -14,7 +14,7 @@ public sealed partial class NativeRcSolver(string? executable)
     public async Task<IReadOnlyList<TransientSample>> SolveAsync(RcInput input, CancellationToken cancellation)
     {
         if (!input.IsValid) throw new RcSolverException("RC values are outside the supported range.");
-        return await ExchangeAsync(Request(input), Parse, 256 * 1024, cancellation);
+        return await ExchangeAsync(Request(input), json => Parse(json, input.Backend), 256 * 1024, cancellation);
     }
 
     private async Task<T> ExchangeAsync<T>(string request, Func<string, T> parse, int outputLimit, CancellationToken cancellation)
@@ -86,7 +86,7 @@ public sealed partial class NativeRcSolver(string? executable)
 
     private static string Request(RcInput input) => JsonSerializer.Serialize(new
     {
-        schema_version = "1", case_id = "schematic-rc", backend = "lu",
+        schema_version = "1", case_id = "schematic-rc", backend = input.Backend.WireName(),
         circuit = new
         {
             nodes = new[] { "0", "in", "out" },
@@ -117,10 +117,11 @@ public sealed partial class NativeRcSolver(string? executable)
         }
     });
 
-    private static IReadOnlyList<TransientSample> Parse(string json)
+    private static IReadOnlyList<TransientSample> Parse(string json, SolverBackend backend)
     {
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
+        CheckBackend(root, backend);
         if (root.GetProperty("schema_version").GetString() != "1" ||
             root.GetProperty("status").GetString() != "succeeded" || !root.GetProperty("complete").GetBoolean())
             throw new RcSolverException("The native solver returned an incomplete run.");
@@ -135,6 +136,15 @@ public sealed partial class NativeRcSolver(string? executable)
             index++;
         }
         throw new RcSolverException("The solver did not return the selected voltage signal.");
+    }
+
+    /// <summary>Do not accept a silent fallback or a host that ignored provider selection.</summary>
+    internal static void CheckBackend(JsonElement root, SolverBackend expected)
+    {
+        if (!Enum.IsDefined(expected) || root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("backend", out var backend) ||
+            backend.ValueKind != JsonValueKind.Object || !backend.TryGetProperty("id", out var id) ||
+            id.ValueKind != JsonValueKind.String || id.GetString() != expected.ProviderId())
+            throw new RcSolverException("The native solver returned a missing or different linear provider.");
     }
 
     private static async Task<string> ReadBoundedAsync(StreamReader reader, int limit, CancellationToken cancellation)

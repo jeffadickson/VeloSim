@@ -10,6 +10,14 @@
         }
     </div>
     <div class="inspector">
+        <label for="linear-backend">Linear solver</label>
+        <select id="linear-backend" value="@Session.SelectedBackend" @onchange="SetBackend">
+            @foreach (var backend in Enum.GetValues<SolverBackend>())
+            {
+                <option value="@backend">@backend@(backend == SolverBackend.Qr ? " (DC/transient only)" : "")</option>
+            }
+        </select>
+        <p>LU and QR are dense reference adapters; Faer is the CPU sparse adapter.</p>
         @foreach (var field in fields)
         {
             <label for="@field.Key">@field.Label</label>
@@ -59,6 +67,7 @@
             @if (response.Bridge is { } run)
             {
                 <p data-testid="bridge-count">@run.Samples.Count samples · @run.ProbeId · @run.Analysis</p>
+                <p data-testid="bridge-backend">Linear solver: @run.Backend</p>
                 @if (run.Version != Session.Version) { <p>These samples are from an earlier revision.</p> }
                 <table aria-label="Probe samples">
                     <thead><tr><th>@AxisLabel(run.Analysis)</th><th>Real (V)</th><th>Imaginary (V)</th></tr></thead>
@@ -76,6 +85,7 @@
 
 @code {
     [Parameter, EditorRequired] public LessonSession Session { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
     private CommandResult? result;
     private bool running;
     private string modelName = "";
@@ -132,6 +142,13 @@
 
     private void Set(BridgeField field, ChangeEventArgs change) =>
         Session.Execute(new SetBridgeDraft(field, change.Value?.ToString() ?? ""));
+
+    private async Task SetBackend(ChangeEventArgs change)
+    {
+        if (Enum.TryParse<SolverBackend>(change.Value?.ToString(), out var backend))
+            result = Session.Execute(new SetSolverBackend(Session.Version, backend));
+        await Changed.InvokeAsync();
+    }
 
     private async Task Run(BridgeAnalysis analysis)
     {

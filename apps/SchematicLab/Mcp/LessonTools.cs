@@ -6,6 +6,16 @@ using SchematicLab.Solver;
 [McpServerToolType]
 internal sealed class LessonTools(LessonSession session, NativeRcSolver solver)
 {
+    [McpServerTool(Name = "schematic_read_solver_backends", ReadOnly = true, UseStructuredContent = true)]
+    [Description("Read the selected CPU linear provider and supported LU, QR and Faer choices.")]
+    public CommandResult ReadBackends(CancellationToken cancellationToken) =>
+        session.Execute(new ReadSolverBackends(), cancellationToken);
+
+    [McpServerTool(Name = "schematic_set_solver_backend", UseStructuredContent = true)]
+    [Description("Select LU, QR or Faer at an expected revision. RC and general analyses inherit this choice.")]
+    public CommandResult SetBackend(Guid documentId, long revision, SolverBackend backend, CancellationToken cancellationToken) =>
+        session.Execute(new SetSolverBackend(new(documentId, revision), backend), cancellationToken);
+
     [McpServerTool(Name = "schematic_read_interaction_policy", ReadOnly = true, UseStructuredContent = true)]
     [Description("Read the current layout lock and the author's immutable unlock permission.")]
     public CommandResult ReadPolicy(CancellationToken cancellationToken) =>

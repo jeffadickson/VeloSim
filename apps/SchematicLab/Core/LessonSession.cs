@@ -60,6 +60,12 @@ public sealed partial class LessonSession
                 SetNetLabel or SetWireRoute or DeleteWire or JoinRoutes or DeleteJunction or AttachChildSheet or LoadHierarchyDemo or LoadDocument ? board.Copy() : null;
             switch (command)
             {
+                case ReadSolverBackends:
+                    return Result(CommandCode.Ok, "Available CPU linear solver adapters read.") with { Backend = SelectedBackend, Backends = Enum.GetValues<SolverBackend>(), BackendCapabilities = SolverBackendNames.Providers() };
+                case SetSolverBackend backend:
+                    return Enum.IsDefined(backend.Backend)
+                        ? ApplyFields(new Dictionary<BridgeField, string> { [BridgeField.Backend] = backend.Backend.WireName() })
+                        : Result(CommandCode.InvalidInput, "Choose LU, QR or Faer.");
                 case ReadInteractionPolicy:
                     return Result(CommandCode.Ok, "Interaction policy read.") with { Interaction = Interaction };
                 case SetLayoutLocked mode:
@@ -140,8 +146,9 @@ public sealed partial class LessonSession
                 case ReadAnalysisFields:
                     return Result(CommandCode.Ok, "Analysis settings read.") with { AnalysisFields = BridgeDraft.Snapshot() };
                 case ApplyAnalysisFields settings:
-                    return BridgeDraft.Apply(settings.Fields) ? Result(CommandCode.Ok, "Analysis settings applied.")
-                        : Result(CommandCode.InvalidInput, "Invalid analysis settings.");
+                    return ApplyFields(settings.Fields);
+                case SetBridgeDraft draftBackend when draftBackend.Field == BridgeField.Backend:
+                    return ApplyFields(new Dictionary<BridgeField, string> { [BridgeField.Backend] = draftBackend.Text });
                 case SetBridgeDraft draftChange:
                     return BridgeDraft.Set(draftChange.Field, draftChange.Text)
                         ? Result(CommandCode.Ok, "Analysis draft updated.")
@@ -362,7 +369,7 @@ public sealed partial class LessonSession
                 return Result(CommandCode.StaleRevision, "The document changed. Run the current revision.");
             if (board.ChargingInput(command.ProbeId) is not { } charging)
                 return Result(CommandCode.UnsupportedCircuit, "Wire the selected probe to a valid RC charging circuit.") with { Findings = board.Check() };
-            input = charging;
+            input = charging with { Backend = BridgeDraft.Backend };
             generation = sessionGeneration;
         }
 

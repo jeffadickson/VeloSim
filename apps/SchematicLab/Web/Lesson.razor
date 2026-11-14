@@ -294,7 +294,7 @@
         }
     </section>
     }
-    <BridgePanel Session="session" />
+    <BridgePanel Session="session" Changed="StateHasChanged" />
     @if (IsRc && transientResult is { } rc)
     {
         <section class="results" aria-label="RC transient results">
@@ -325,7 +325,7 @@
                         <foreignObject x="192" y="185" width="175" height="25"><span>Time (ms)</span></foreignObject>
                         <foreignObject x="424" y="182" width="90" height="25"><span>@((run.Input.StopSeconds * 1000).ToString("G4")) ms</span></foreignObject>
                     </svg>
-                    <figcaption><span class="legend"></span> @run.ProbeId voltage (V) · @run.Samples.Count samples</figcaption>
+                    <figcaption><span class="legend"></span> @run.ProbeId voltage (V) · @run.Samples.Count samples · @run.Input.Backend linear solver</figcaption>
                 </figure>
             }
         </section>
