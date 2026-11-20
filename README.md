@@ -60,6 +60,8 @@ Coverage source hashes preserve application dependency locks and lock metadata, 
 
 word-seeded-conformance records a deterministic seed and known/four-state phases across five width dimensions, all ten strict operations and NBA history, then compares repeated full native traces. For example: word-seeded-conformance --output-dir artifacts/seeded --seed 3735928559 --steps 256 --workers 1,4,8 --repetitions 3. Individual word differential runs preserve completed evidence on cancellation; pre-cancel and oracle preflight can stop before a run directory is created.
 
+See [structural compilation](docs/structural-compilation.md) for the separate `compile-rtl` source-to-RTL-artifact command, provenance contract and verification limits.
+
 ### Actual synchronous FIFO milestone
 
 VeloSim now executes `examples/surelog_fifo.sv` through a separate bounded native RTL compilation backend: actual source → Surelog/UHDM → structural `velosim.rtl.v1` IR → generated C++ → CMake/Ninja executable. This is not a hardcoded FIFO model. The existing flat-process IR/kernel remains available; its counter frontend is unchanged.
