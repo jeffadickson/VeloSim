@@ -479,6 +479,8 @@ public sealed partial class RtlDesign
                 .SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(t => SignalId(TargetOwner(t))).Distinct().Order().ToArray()
             : [];
         bool hasFixedMemWrites = useFastEvent && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index");
+        if (CanUseNarrow64(useFastEvent))
+            return EmitNarrow64ModelHeader(top, names, seqIds, hasFixedMemWrites, hasRuntimeLoops, canThrow);
 
         bool hasInit = Statements(Initialization).Any(st => Kind(st) is not "block");
         bool needsAssoc = !useFastEvent || hasInit || Memories.Any(m => m.Associative);

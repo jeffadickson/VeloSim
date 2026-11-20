@@ -146,6 +146,59 @@ int main(){
   auto cond128=conditional(parse("x"),w128a,w128a,128);
   check(exact(cond128,w128a));
  }
+ // Verify narrow 32-byte vsrtl::w64 matches 256-bit vsrtl::W across widths 1..64 and 4-state cases.
+ {
+  static_assert(sizeof(w64::W64)<=32);
+  auto same=[](w64::W64 a,const W& b){return exact(w64::from(a),b)&&a.w==b.w;};
+  const W samples[]={parse("0"),parse("1"),parse("x"),parse("z"),parse("1011"),parse("1x0z"),parse("1111111111111101"),parse("0000000000000111"),parse(std::string(64,'1')),parse("1"+std::string(62,'0')+"1"),parse("10xz"+std::string(60,'1'))};
+  for(const W& a:samples){
+   auto a64=w64::to(a);
+   check(w64::truth(a64)==truth(a)&&w64::yes(a64)==yes(a));
+   check(same(w64::lnot(a64),logical_not(a)));
+   check(same(w64::two_state(a64),two_state(a)));
+   for(int rw:{1,4,16,32,64}){
+    check(same(w64::resize(a64,rw),resize(a,rw)));
+    check(same(w64::sresize(a64,rw),signed_resize(a,rw)));
+    check(same(w64::bnot(a64,rw),bit_not(a,rw)));
+   }
+   for(int op=0;op<6;++op)check(same(w64::red(a64,op),reduce(a,op)));
+   for(const W& b:samples){
+    auto b64=w64::to(b);
+    check(same(w64::land(a64,b64),logical_and(a,b)));
+    check(same(w64::lor(a64,b64),logical_or(a,b)));
+    check(same(w64::eq(a64,b64),equal(a,b)));
+    check(w64::exact(a64,b64)==exact(a,b));
+    if(a.w==b.w){
+     for(int op=0;op<4;++op){
+      check(same(w64::cmp(a64,b64,op),compare(a,b,op)));
+      check(same(w64::scmp(a64,b64,op),signed_compare(a,b,op)));
+     }
+    }
+    int mw=std::max(a.w,b.w);
+    for(int op=0;op<3;++op){
+     check(same(w64::bbin(a64,b64,mw,op),bit_binary(a,b,mw,op)));
+     check(same(w64::product(a64,b64,mw,op),product(a,b,mw,op)));
+     check(same(w64::sproduct(a64,b64,mw,op),signed_product(a,b,mw,op)));
+    }
+    check(same(w64::arith(a64,b64,mw,false),arithmetic(a,b,mw,false)));
+    check(same(w64::arith(a64,b64,mw,true),arithmetic(a,b,mw,true)));
+    check(same(w64::cond(w64::lit(0,1,0,1),a64,b64,mw),conditional(parse("x"),a,b,mw)));
+    if(a.w+b.w<=64)check(same(w64::concat(a64,b64),concat(a,b)));
+    if(a.w==1&&b.w==1){
+     check(w64::edge(a64,b64,true)==edge_event(a,b,true));
+     check(w64::edge(a64,b64,false)==edge_event(a,b,false));
+    }
+   }
+  }
+  std::vector<std::vector<W>> mems{std::vector<W>(4,unknown(8))};
+  w64::MemLog64<2> log64;
+  log64.push(0,mems[0].size(),w64::lit(0,2),w64::lit(0xab,8),8);
+  log64.push(0,mems[0].size(),w64::lit(1,2),w64::lit(0xcd,8),8);
+  log64.push(0,mems[0].size(),w64::lit(2,2),w64::lit(0xef,8),8);
+  log64.push(0,mems[0].size(),w64::lit(1,2),w64::lit(0x42,8),8);
+  log64.commit(mems);
+  check(mems[0][0].v==0xab&&mems[0][1].v==0x42&&mems[0][2].v==0xef&&mems[0][3].x==0xff);
+ }
 }
 
 

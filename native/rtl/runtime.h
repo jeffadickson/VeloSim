@@ -693,3 +693,254 @@ inline W signed_product(const W& a,const W& b,int width,int op){
  return word(neg?~result+1:result,0,0,width);
 }
 }
+
+namespace vsrtl::w64 {
+// Register-resident 4-state word for 1..64-bit fast-path codegen.
+// Storage in Model::s/mem remains ABI-compatible 256-bit W with upper limbs zeroed.
+struct W64 { uint64_t v, x, z; int w; };
+
+inline constexpr W64 lit(uint64_t v, int w) noexcept { return W64{v, 0, 0, w}; }
+inline constexpr W64 lit(uint64_t v, uint64_t x, uint64_t z, int w) noexcept { return W64{v, x, z, w}; }
+inline constexpr W64 unknown(int w) noexcept { return W64{0, mask64_unchecked(w), 0, w}; }
+inline W64 to(const W& a) noexcept { return W64{a.v.limb[0], a.x.limb[0], a.z.limb[0], a.w}; }
+inline W from(W64 a) noexcept { return W{Bits(a.v), Bits(a.x), Bits(a.z), a.w}; }
+inline void store(W& dst, W64 a) noexcept {
+ dst.v.limb[0] = a.v;
+ dst.x.limb[0] = a.x;
+ dst.z.limb[0] = a.z;
+}
+inline constexpr W64 word(uint64_t v, uint64_t x, uint64_t z, int w) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t zv = z & m;
+ const uint64_t xv = x & ~zv & m;
+ const uint64_t vv = v & ~(xv | zv) & m;
+ return W64{vv, xv, zv, w};
+}
+inline constexpr W64 resize(W64 a, int w) noexcept {
+ if (a.w == w) return a;
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t zv = a.z & m;
+ const uint64_t xv = a.x & ~zv & m;
+ const uint64_t vv = a.v & ~(xv | zv) & m;
+ return W64{vv, xv, zv, w};
+}
+inline constexpr W64 two_state(W64 a) noexcept {
+ const uint64_t m = mask64_unchecked(a.w);
+ return W64{a.v & m, 0, 0, a.w};
+}
+inline constexpr W64 sresize(W64 a, int w) noexcept {
+ if (w == a.w) return a;
+ if (w < a.w) return resize(a, w);
+ const uint64_t fill = mask64_unchecked(w) ^ mask64_unchecked(a.w);
+ const uint64_t sign = uint64_t(1) << (a.w - 1);
+ return W64{a.v | ((a.v & sign) ? fill : 0ULL),
+            a.x | ((a.x & sign) ? fill : 0ULL),
+            a.z | ((a.z & sign) ? fill : 0ULL),
+            w};
+}
+inline constexpr bool edge(W64 before, W64 after, bool positive) noexcept {
+ const int a = before.x ? 2 : before.z ? 3 : before.v ? 1 : 0;
+ const int b = after.x ? 2 : after.z ? 3 : after.v ? 1 : 0;
+ return positive ? ((a == 0 && b != 0) || (a >= 2 && b == 1))
+                 : ((a == 1 && b != 1) || (a >= 2 && b == 0));
+}
+inline constexpr int truth(W64 a) noexcept { return a.v ? 1 : (a.x | a.z) ? 2 : 0; }
+inline constexpr bool yes(W64 a) noexcept { return a.v != 0; }
+inline constexpr W64 lnot(W64 a) noexcept {
+ const int t = truth(a);
+ return t == 2 ? W64{0, 1, 0, 1} : W64{uint64_t(!t), 0, 0, 1};
+}
+inline constexpr W64 land(W64 a, W64 b) noexcept {
+ const int l = truth(a), r = truth(b);
+ return l == 0 || r == 0 ? W64{0, 0, 0, 1} : l == 1 && r == 1 ? W64{1, 0, 0, 1} : W64{0, 1, 0, 1};
+}
+inline constexpr W64 lor(W64 a, W64 b) noexcept {
+ const int l = truth(a), r = truth(b);
+ return l == 1 || r == 1 ? W64{1, 0, 0, 1} : l == 0 && r == 0 ? W64{0, 0, 0, 1} : W64{0, 1, 0, 1};
+}
+inline constexpr W64 bnot(W64 a, int w) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t u = (a.x | a.z) & m;
+ return W64{~(a.v | u) & m, u, 0, w};
+}
+inline constexpr W64 bbin(W64 a, W64 b, int w, int op) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t au = (a.x | a.z) & m, bu = (b.x | b.z) & m;
+ const uint64_t av = a.v & ~au & m, bv = b.v & ~bu & m;
+ if (op == 2) { const uint64_t u = au | bu; return W64{(av ^ bv) & ~u, u, 0, w}; }
+ const uint64_t az = ~(av | au), bz = ~(bv | bu);
+ if (op == 0) { const uint64_t v = av & bv; return W64{v, ~(az | bz | v) & m, 0, w}; }
+ const uint64_t v = av | bv;
+ return W64{v, ~(v | (az & bz)) & m, 0, w};
+}
+inline constexpr bool exact(W64 a, W64 b) noexcept {
+ return a.v == b.v && a.x == b.x && a.z == b.z;
+}
+inline constexpr W64 eq(W64 a, W64 b) noexcept {
+ const uint64_t u = a.x | a.z | b.x | b.z;
+ if ((a.v ^ b.v) & ~u) return W64{0, 0, 0, 1};
+ return u ? W64{0, 1, 0, 1} : W64{1, 0, 0, 1};
+}
+inline constexpr W64 cmp(W64 a, W64 b, int op) noexcept {
+ if (a.x | a.z | b.x | b.z) return W64{0, 1, 0, 1};
+ const bool v = op == 0 ? a.v < b.v : op == 1 ? a.v <= b.v : op == 2 ? a.v > b.v : a.v >= b.v;
+ return W64{uint64_t(v), 0, 0, 1};
+}
+inline constexpr bool neg(W64 a) noexcept { return (a.v & (uint64_t(1) << (a.w - 1))) != 0; }
+inline constexpr W64 scmp(W64 a, W64 b, int op) noexcept {
+ if (a.x | a.z | b.x | b.z) return W64{0, 1, 0, 1};
+ const bool an = neg(a), bn = neg(b);
+ if (an == bn) return cmp(a, b, op);
+ return W64{uint64_t(op < 2 ? an : !an), 0, 0, 1};
+}
+inline constexpr W64 shift(W64 a, W64 amount, int w, bool right) noexcept {
+ if (amount.x | amount.z) return unknown(w);
+ if (amount.v >= uint64_t(w)) return W64{0, 0, 0, w};
+ const unsigned n = unsigned(amount.v);
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t av = a.v & m, ax = a.x & m, az = a.z & m;
+ return right ? W64{av >> n, ax >> n, az >> n, w}
+              : W64{(av << n) & m, (ax << n) & m, (az << n) & m, w};
+}
+inline constexpr W64 sshift(W64 a, W64 amount, int w) noexcept {
+ a = sresize(a, w);
+ if (amount.x | amount.z) return unknown(w);
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t sign = uint64_t(1) << (w - 1);
+ const uint64_t fv = (a.v & sign) ? m : 0ULL, fx = (a.x & sign) ? m : 0ULL, fz = (a.z & sign) ? m : 0ULL;
+ if (amount.v >= uint64_t(w)) return W64{fv, fx, fz, w};
+ const unsigned n = unsigned(amount.v);
+ const uint64_t fill = m ^ mask64_unchecked(w - int(n));
+ return W64{(a.v >> n) | (fv & fill), (a.x >> n) | (fx & fill), (a.z >> n) | (fz & fill), w};
+}
+inline constexpr W64 red(W64 a, int op) noexcept {
+ const uint64_t m = mask64_unchecked(a.w);
+ const uint64_t u = a.x | a.z;
+ W64 r;
+ if (op < 2) r = (~(a.v | u) & m) ? W64{0, 0, 0, 1} : u ? W64{0, 1, 0, 1} : W64{1, 0, 0, 1};
+ else if (op < 4) r = a.v ? W64{1, 0, 0, 1} : u ? W64{0, 1, 0, 1} : W64{0, 0, 0, 1};
+ else r = u ? W64{0, 1, 0, 1} : W64{uint64_t(std::popcount(a.v) & 1), 0, 0, 1};
+ return (op & 1) ? lnot(r) : r;
+}
+inline constexpr W64 product(W64 a, W64 b, int w, int op) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t ax = (a.x | a.z) & m, bx = (b.x | b.z) & m;
+ const uint64_t av = a.v & m, bv = b.v & m;
+ if ((ax | bx) || (op != 0 && bv == 0)) return W64{0, m, 0, w};
+ const uint64_t r = op == 0 ? av * bv : op == 1 ? av / bv : av % bv;
+ return W64{r & m, 0, 0, w};
+}
+inline constexpr W64 sproduct(W64 a, W64 b, int w, int op) noexcept {
+ if (a.w != w) a = sresize(a, w);
+ if (b.w != w) b = sresize(b, w);
+ const uint64_t m = mask64_unchecked(w);
+ if (op == 0) {
+  if ((a.x | a.z | b.x | b.z) & m) return W64{0, m, 0, w};
+  return W64{(a.v * b.v) & m, 0, 0, w};
+ }
+ if ((a.x | a.z | b.x | b.z) || !b.v) return W64{0, m, 0, w};
+ const bool an = neg(a), bn = neg(b);
+ const uint64_t av = an ? ((~a.v + 1) & m) : a.v;
+ const uint64_t bv = bn ? ((~b.v + 1) & m) : b.v;
+ const uint64_t result = op == 1 ? av / bv : av % bv;
+ const bool rneg = op == 1 ? (an != bn) : an;
+ return W64{(rneg ? (~result + 1) : result) & m, 0, 0, w};
+}
+inline constexpr W64 cond(W64 c, W64 a, W64 b, int w) noexcept {
+ const int t = truth(c);
+ if (t == 1) return resize(a, w);
+ if (t == 0) return resize(b, w);
+ a = resize(a, w); b = resize(b, w);
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t diff = (a.v ^ b.v) | (a.x ^ b.x) | (a.z ^ b.z);
+ const uint64_t same = (~diff) & m;
+ return W64{a.v & same, (a.x & same) | (diff & m), a.z & same, w};
+}
+inline constexpr W64 arith(W64 a, W64 b, int w, bool subtract) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ if (a.x | a.z | b.x | b.z) return W64{0, m, 0, w};
+ return W64{(subtract ? a.v - b.v : a.v + b.v) & m, 0, 0, w};
+}
+inline constexpr W64 concat(W64 a, W64 b) noexcept {
+ return W64{(a.v << b.w) | b.v, (a.x << b.w) | b.x, (a.z << b.w) | b.z, a.w + b.w};
+}
+inline constexpr W64 selbit(W64 a, W64 index) noexcept {
+ if ((index.x | index.z) || index.v >= uint64_t(a.w)) return W64{0, 1, 0, 1};
+ const unsigned n = unsigned(index.v);
+ return W64{(a.v >> n) & 1u, (a.x >> n) & 1u, (a.z >> n) & 1u, 1};
+}
+inline constexpr W64 selpart(W64 a, int left, int right) noexcept {
+ const int w = left - right + 1;
+ if (right >= a.w) return unknown(w);
+ const int avail = a.w - right;
+ const int valid = avail < w ? avail : w;
+ const uint64_t vm = mask64_unchecked(valid);
+ const uint64_t oob = mask64_unchecked(w) & ~vm;
+ return W64{(a.v >> right) & vm, ((a.x >> right) & vm) | oob, (a.z >> right) & vm, w};
+}
+inline W64 selidx(W64 a, W64 base, int width, bool descending) {
+ if (base.x | base.z) return unknown(width);
+ if (base.v > 2147483647ULL) throw std::out_of_range("known indexed base exceeds qualified range0..INT32_MAX");
+ const int64_t lo = descending ? int64_t(base.v) - (width - 1) : int64_t(base.v);
+ const int64_t src_lo = lo < 0 ? 0 : lo;
+ const int64_t src_hi = (lo + width) < a.w ? (lo + width) : a.w;
+ if (src_lo >= src_hi) return unknown(width);
+ const int count = int(src_hi - src_lo);
+ const int dst_lo = int(src_lo - lo);
+ const int s_lo = int(src_lo);
+ const uint64_t cm = mask64_unchecked(count);
+ const uint64_t dst_mask = cm << dst_lo;
+ return W64{((a.v >> s_lo) & cm) << dst_lo,
+            (((a.x >> s_lo) & cm) << dst_lo) | (mask64_unchecked(width) & ~dst_mask),
+            ((a.z >> s_lo) & cm) << dst_lo,
+            width};
+}
+inline W64 depidx(W64 before, W64 base, int width, bool descending, W64 value) {
+ if (base.x | base.z) return before;
+ if (base.v > 2147483647ULL) throw std::out_of_range("known selected write base exceeds qualified range0..INT32_MAX");
+ value = resize(value, width);
+ const int64_t lo = descending ? int64_t(base.v) - (width - 1) : int64_t(base.v);
+ const int64_t dst_lo = lo < 0 ? 0 : lo;
+ const int64_t dst_hi = (lo + width) < before.w ? (lo + width) : before.w;
+ if (dst_lo >= dst_hi) return before;
+ const int count = int(dst_hi - dst_lo);
+ const int src_lo = int(dst_lo - lo);
+ const int d_lo = int(dst_lo);
+ const uint64_t cm = mask64_unchecked(count);
+ const uint64_t dmask = cm << d_lo;
+ before.v = (before.v & ~dmask) | (((value.v >> src_lo) & cm) << d_lo);
+ before.x = (before.x & ~dmask) | (((value.x >> src_lo) & cm) << d_lo);
+ before.z = (before.z & ~dmask) | (((value.z >> src_lo) & cm) << d_lo);
+ return before;
+}
+inline constexpr W64 memidx(W64 index, int lower) noexcept {
+ if ((index.x | index.z) || index.v < uint64_t(lower)) return W64{0, 1, 0, 1};
+ return word(index.v - uint64_t(lower), 0, 0, index.w);
+}
+inline W64 read(const std::vector<W>& m, W64 index, int w) noexcept {
+ if ((index.x | index.z) || index.v >= m.size()) return unknown(w);
+ return to(m[size_t(index.v)]);
+}
+struct MemWrite64 { uint16_t mem_id; uint32_t index; W64 value; };
+template <size_t InlineCap = 16>
+struct MemLog64 {
+ MemWrite64 inline_buf[InlineCap];
+ std::vector<MemWrite64> overflow;
+ size_t count = 0;
+ inline void push(uint16_t mem_id, size_t mem_size, W64 index, W64 value, int w) {
+  if ((index.x | index.z) || index.v >= mem_size) return;
+  const MemWrite64 entry{mem_id, uint32_t(index.v), resize(value, w)};
+  if (count < InlineCap) inline_buf[count++] = entry;
+  else overflow.push_back(entry);
+ }
+ inline void commit(std::vector<std::vector<W>>& mem) noexcept {
+  for (size_t i = 0; i < count; ++i) {
+   const auto& e = inline_buf[i];
+   store(mem[e.mem_id][e.index], e.value);
+  }
+  for (const auto& e : overflow) store(mem[e.mem_id][e.index], e.value);
+  count = 0;
+  if (!overflow.empty()) overflow.clear();
+ }
+};
+} // namespace vsrtl::w64
