@@ -17,6 +17,8 @@ public sealed class RtlDesign
     private IEnumerable<string> EventSignals => (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]).Where(p => Kind(p) == "process").SelectMany(p => p.GetProperty("events").EnumerateArray()).Select(e => e.GetProperty("signal").GetString()!).Distinct();
     private readonly Dictionary<string, int> signalIds;
     private readonly Dictionary<string, int> memoryIds;
+    private readonly int[] sequentialSignalIds;
+    private readonly bool hasMemoryWrites;
     private int nodes;
     private static int Arity(string kind) => kind switch
     {
@@ -45,6 +47,8 @@ public sealed class RtlDesign
         Clock = root.GetProperty("clock").GetString()!; var clock = Signals[SignalId(Clock)];
         if (clock.Width != 1 || clock.Direction != "input") throw new IrValidationException("Clock must be a scalar input.");
         Body = root.GetProperty("body").Clone(); var sequential = new HashSet<string>(); ValidateStatement(Body, sequential, 0);
+        sequentialSignalIds = sequential.Where(signalIds.ContainsKey).Select(SignalId).Order().ToArray();
+        hasMemoryWrites = sequential.Any(memoryIds.ContainsKey);
         _ = StatementCost(Body);
         if (EventDriven && Kind(Body) == "parallel" && Body.GetProperty("items").EnumerateArray().Any(p => Kind(p) != "process")) throw new IrValidationException("Explicit and implicit event processes cannot be mixed.");
         var continuous = root.GetProperty("continuous").EnumerateArray().Select(e => e.Clone()).ToList(); if (continuous.Count > 256) throw new IrValidationException("Too many continuous assignments.");
@@ -193,96 +197,274 @@ public sealed class RtlDesign
         "cond"=>e.GetProperty("args").EnumerateArray().Skip(1).All(ExpressionSigned),
         _=>e.GetProperty("args").EnumerateArray().All(ExpressionSigned)
     };
-    private string Expression(JsonElement e, int context = 0, bool? forceSigned = null)
+    private static string ConstantLiteral(string bits)
     {
-        string kind = Kind(e);bool signed=forceSigned??ExpressionSigned(e);
-        string Extend(string value)=>signed&&context>ExpressionWidth(e)?$"signed_resize({value},{context})":value;
-        if (kind == "ref") return Extend($"s[{SignalId(Name(e))}]");
-        if (kind == "const") return Extend("parse(\"" + e.GetProperty("bits").GetString() + "\")");
-        if (kind == "index") { int id = MemoryId(Name(e)); return Extend($"read(mem[{id}],{MemoryIndex(e.GetProperty("index"),id)},{Memories[id].Width})"); }
-        if (kind == "bitselect") return $"select_bit({Expression(e.GetProperty("value"))},{Expression(e.GetProperty("index"))})";
-        if (kind == "partselect") return $"select_part({Expression(e.GetProperty("value"))},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
-        if (kind == "indexedselect") return $"select_indexed({Expression(e.GetProperty("value"))},{Expression(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
+        ulong vLo = 0, vHi = 0, xLo = 0, xHi = 0, zLo = 0, zHi = 0;
+        int w = bits.Length;
+        for (int i = 0; i < w; i++)
+        {
+            int bit = w - 1 - i;
+            ulong bitMask = 1UL << (bit & 63);
+            char c = bits[i];
+            if (bit < 64)
+            {
+                if (c == '1') vLo |= bitMask;
+                else if (c == 'x') xLo |= bitMask;
+                else if (c == 'z') zLo |= bitMask;
+            }
+            else
+            {
+                if (c == '1') vHi |= bitMask;
+                else if (c == 'x') xHi |= bitMask;
+                else if (c == 'z') zHi |= bitMask;
+            }
+        }
+        if (vHi == 0 && xLo == 0 && xHi == 0 && zLo == 0 && zHi == 0)
+            return $"lit(0x{vLo:x}ULL,{w})";
+        return $"lit(0x{vLo:x}ULL,0x{vHi:x}ULL,0x{xLo:x}ULL,0x{xHi:x}ULL,0x{zLo:x}ULL,0x{zHi:x}ULL,{w})";
+    }
+    private static ulong ConstantUnsignedValue(string bits, int targetWidth, bool signed)
+    {
+        ulong value = 0;
+        foreach (char c in bits) value = (value << 1) | (c == '1' ? 1UL : 0UL);
+        if (signed && targetWidth > bits.Length && bits[0] == '1')
+        {
+            ulong targetMask = targetWidth == 64 ? ulong.MaxValue : (1UL << targetWidth) - 1;
+            ulong origMask = bits.Length == 64 ? ulong.MaxValue : (1UL << bits.Length) - 1;
+            value |= targetMask ^ origMask;
+        }
+        return value;
+    }
+    private bool IsExactWidth(JsonElement e, int targetWidth) => Kind(e) switch
+    {
+        "ref" => Signals[SignalId(Name(e))].Width == targetWidth,
+        "const" => e.GetProperty("bits").GetString()!.Length == targetWidth,
+        "index" => Memories[MemoryId(Name(e))].Width == targetWidth,
+        "bitselect" => targetWidth == 1,
+        "partselect" => e.GetProperty("left").GetInt32() - e.GetProperty("right").GetInt32() + 1 == targetWidth,
+        "indexedselect" => e.GetProperty("width").GetInt32() == targetWidth,
+        var kind when Scalar(kind) => targetWidth == 1,
+        "add" or "sub" or "bitnot" or "neg" or "pos" or "mul" or "div" or "mod" or "cond" or "shl" or "shr" or "ashr" or "bitand" or "bitor" or "bitxor" or "bitxnor" => ExpressionWidth(e) <= targetWidth,
+        "concat" => ExpressionWidth(e) == targetWidth,
+        _ => false
+    };
+    private string Expression(JsonElement e, int context = 0, bool? forceSigned = null, HashSet<int>? blockingScope = null)
+    {
+        string kind = Kind(e); bool signed = forceSigned ?? ExpressionSigned(e);
+        string Extend(string value) => signed && context > ExpressionWidth(e) ? $"signed_resize({value},{context})" : value;
+        if (kind == "ref") { int id = SignalId(Name(e)); return Extend(blockingScope is not null && blockingScope.Contains(id) ? $"next[{id}]" : $"s[{id}]"); }
+        if (kind == "const") return Extend(ConstantLiteral(e.GetProperty("bits").GetString()!));
+        if (kind == "index") { int id = MemoryId(Name(e)); return Extend($"read(mem[{id}],{MemoryIndex(e.GetProperty("index"), id, blockingScope)},{Memories[id].Width})"); }
+        if (kind == "bitselect") return $"select_bit({Expression(e.GetProperty("value"), blockingScope: blockingScope)},{Expression(e.GetProperty("index"), blockingScope: blockingScope)})";
+        if (kind == "partselect") return $"select_part({Expression(e.GetProperty("value"), blockingScope: blockingScope)},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
+        if (kind == "indexedselect") return $"select_indexed({Expression(e.GetProperty("value"), blockingScope: blockingScope)},{Expression(e.GetProperty("base"), blockingScope: blockingScope)},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
         var args = e.GetProperty("args").EnumerateArray().ToArray(); int width = Math.Max(context, ExpressionWidth(e));
         return kind switch
         {
-            "castsigned" or "castunsigned"=>Extend(Expression(args[0])),
-            "add" or "sub" => $"arithmetic({Expression(args[0], width,signed)},{Expression(args[1], width,signed)},{width},{(kind == "sub" ? "true" : "false")})",
-            "bitnot" => $"bit_not({Expression(args[0], width,signed)},{width})",
-            "neg" => $"arithmetic(W{{0,0,0,{width}}},{Expression(args[0], width,signed)},{width},true)",
-            "pos" => $"resize({Expression(args[0], width,signed)},{width})",
-            "mul" or "div" or "mod" => $"{(signed?"signed_product":"product")}({Expression(args[0], width,signed)},{Expression(args[1], width,signed)},{width},{(kind == "mul" ? 0 : kind == "div" ? 1 : 2)})",
-            "cond" => $"conditional({Expression(args[0])},{Expression(args[1], width,signed)},{Expression(args[2], width,signed)},{width})",
-            "ashr" when signed=>$"signed_shift({Expression(args[0],width,true)},{Expression(args[1])},{width})",
-            "shl" or "shr" or "ashr" => $"shift({Expression(args[0], width,signed)},{Expression(args[1])},{width},{(kind == "shl" ? "false" : "true")})",
-            "redand" or "rednand" or "redor" or "rednor" or "redxor" or "redxnor" => $"reduce({Expression(args[0])},{(kind == "redand" ? 0 : kind == "rednand" ? 1 : kind == "redor" ? 2 : kind == "rednor" ? 3 : kind == "redxor" ? 4 : 5)})",
-            "bitxnor" => $"bit_not(bit_binary({Expression(args[0], width,signed)},{Expression(args[1], width,signed)},{width},2),{width})",
-            "bitand" or "bitor" or "bitxor" => $"bit_binary({Expression(args[0], width,signed)},{Expression(args[1], width,signed)},{width},{(kind == "bitand" ? 0 : kind == "bitor" ? 1 : 2)})",
-            "not" => $"logical_not({Expression(args[0])})", "and" => $"logical_and({Expression(args[0])},{Expression(args[1])})",
-            "or" => $"logical_or({Expression(args[0])},{Expression(args[1])})",
-            "eq" or "neq" => (kind == "neq" ? "logical_not(" : "") + $"equal({Expression(args[0], args.Max(ExpressionWidth),args.All(ExpressionSigned))},{Expression(args[1], args.Max(ExpressionWidth),args.All(ExpressionSigned))})" + (kind == "neq" ? ")" : ""),
-            "caseeq" or "caseneq" => $"W{{uint64_t({(kind == "caseneq" ? "!" : "")}exact({Expression(args[0], args.Max(ExpressionWidth),args.All(ExpressionSigned))},{Expression(args[1], args.Max(ExpressionWidth),args.All(ExpressionSigned))})),0,0,1}}",
-            "lt" or "le" or "gt" or "ge" => $"{(args.All(ExpressionSigned)?"signed_compare":"compare")}({Expression(args[0], args.Max(ExpressionWidth),args.All(ExpressionSigned))},{Expression(args[1], args.Max(ExpressionWidth),args.All(ExpressionSigned))},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
-            "concat" => $"concat({Expression(args[0])},{Expression(args[1])})", _ => throw new IrValidationException("Unsupported expression.")
+            "castsigned" or "castunsigned" => Extend(Expression(args[0], blockingScope: blockingScope)),
+            "add" or "sub" => $"arithmetic({Expression(args[0], width, signed, blockingScope)},{Expression(args[1], width, signed, blockingScope)},{width},{(kind == "sub" ? "true" : "false")})",
+            "bitnot" => $"bit_not({Expression(args[0], width, signed, blockingScope)},{width})",
+            "neg" => $"arithmetic(W{{0,0,0,{width}}},{Expression(args[0], width, signed, blockingScope)},{width},true)",
+            "pos" => $"resize({Expression(args[0], width, signed, blockingScope)},{width})",
+            "mul" or "div" or "mod" => $"{(signed ? "signed_product" : "product")}({Expression(args[0], width, signed, blockingScope)},{Expression(args[1], width, signed, blockingScope)},{width},{(kind == "mul" ? 0 : kind == "div" ? 1 : 2)})",
+            "cond" => $"conditional({Expression(args[0], blockingScope: blockingScope)},{Expression(args[1], width, signed, blockingScope)},{Expression(args[2], width, signed, blockingScope)},{width})",
+            "ashr" when signed => $"signed_shift({Expression(args[0], width, true, blockingScope)},{Expression(args[1], blockingScope: blockingScope)},{width})",
+            "shl" or "shr" or "ashr" => $"shift({Expression(args[0], width, signed, blockingScope)},{Expression(args[1], blockingScope: blockingScope)},{width},{(kind == "shl" ? "false" : "true")})",
+            "redand" or "rednand" or "redor" or "rednor" or "redxor" or "redxnor" => $"reduce({Expression(args[0], blockingScope: blockingScope)},{(kind == "redand" ? 0 : kind == "rednand" ? 1 : kind == "redor" ? 2 : kind == "rednor" ? 3 : kind == "redxor" ? 4 : 5)})",
+            "bitxnor" => $"bit_not(bit_binary({Expression(args[0], width, signed, blockingScope)},{Expression(args[1], width, signed, blockingScope)},{width},2),{width})",
+            "bitand" or "bitor" or "bitxor" => $"bit_binary({Expression(args[0], width, signed, blockingScope)},{Expression(args[1], width, signed, blockingScope)},{width},{(kind == "bitand" ? 0 : kind == "bitor" ? 1 : 2)})",
+            "not" => $"logical_not({Expression(args[0], blockingScope: blockingScope)})",
+            "and" => $"logical_and({Expression(args[0], blockingScope: blockingScope)},{Expression(args[1], blockingScope: blockingScope)})",
+            "or" => $"logical_or({Expression(args[0], blockingScope: blockingScope)},{Expression(args[1], blockingScope: blockingScope)})",
+            "eq" or "neq" => (kind == "neq" ? "logical_not(" : "") + $"equal({Expression(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned), blockingScope)},{Expression(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned), blockingScope)})" + (kind == "neq" ? ")" : ""),
+            "caseeq" or "caseneq" => $"W{{uint64_t({(kind == "caseneq" ? "!" : "")}exact({Expression(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned), blockingScope)},{Expression(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned), blockingScope)})),0,0,1}}",
+            "lt" or "le" or "gt" or "ge" => $"{(args.All(ExpressionSigned) ? "signed_compare" : "compare")}({Expression(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned), blockingScope)},{Expression(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned), blockingScope)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
+            "concat" => $"concat({Expression(args[0], blockingScope: blockingScope)},{Expression(args[1], blockingScope: blockingScope)})",
+            _ => throw new IrValidationException("Unsupported expression.")
         };
     }
-    private string MemoryIndex(JsonElement index,int id)=>Memories[id].LowerBound==0?Expression(index):$"memory_index({Expression(index)},{Memories[id].LowerBound})";
-    private void WordWrite(StringBuilder code, JsonElement target, string value)
+    private string MemoryIndex(JsonElement index, int id, HashSet<int>? blockingScope = null) => Memories[id].LowerBound == 0 ? Expression(index, blockingScope: blockingScope) : $"memory_index({Expression(index, blockingScope: blockingScope)},{Memories[id].LowerBound})";
+    private void WordWrite(StringBuilder code, JsonElement target, string value, HashSet<int>? blockingScope = null, bool exactWidth = false)
     {
-        if (Kind(target) == "ref") { int id = SignalId(Name(target)); code.AppendLine($"next[{id}]={StoreWord(value,Signals[id])};"); return; }
+        if (Kind(target) == "ref") { int id = SignalId(Name(target)); code.AppendLine($"next[{id}]={StoreWord(value, Signals[id], exactWidth)};"); return; }
         int selectedId = SignalId(Name(target.GetProperty("value"))), width = ExpressionWidth(target);
-        string basis = Kind(target) == "bitselect" ? Expression(target.GetProperty("index")) : Kind(target) == "indexedselect" ? Expression(target.GetProperty("base")) : $"W{{{target.GetProperty("right").GetInt32()},0,0,64}}";
+        string basis = Kind(target) == "bitselect" ? Expression(target.GetProperty("index"), blockingScope: blockingScope) : Kind(target) == "indexedselect" ? Expression(target.GetProperty("base"), blockingScope: blockingScope) : $"W{{{target.GetProperty("right").GetInt32()},0,0,64}}";
         bool descending = Kind(target) == "indexedselect" && target.GetProperty("descending").GetBoolean();
-        string deposited=$"deposit_indexed(next[{selectedId}],{basis},{width},{(descending ? "true" : "false")},{value})";code.AppendLine($"next[{selectedId}]={(Signals[selectedId].TwoState?"two_state("+deposited+")":deposited)};");
+        string deposited = $"deposit_indexed(next[{selectedId}],{basis},{width},{(descending ? "true" : "false")},{value})"; code.AppendLine($"next[{selectedId}]={(Signals[selectedId].TwoState ? "two_state(" + deposited + ")" : deposited)};");
     }
-    private static string StoreWord(string value,RtlSignal signal)=>signal.TwoState?$"two_state(resize({value},{signal.Width}))":$"resize({value},{signal.Width})";
-    private void Statement(StringBuilder code, JsonElement e, ref int unique)
+    private static string StoreWord(string value, RtlSignal signal, bool exactWidth = false)
+    {
+        string sized = exactWidth ? value : $"resize({value},{signal.Width})";
+        return signal.TwoState ? $"two_state({sized})" : sized;
+    }
+    private void Statement(StringBuilder code, JsonElement e, ref int unique, HashSet<int>? blockingScope = null)
     {
         switch (Kind(e))
         {
             case "blocking":
-                int blockingId=SignalId(Name(e.GetProperty("target")));code.AppendLine($"next[{blockingId}]={StoreWord(Expression(e.GetProperty("value"),Signals[blockingId].Width),Signals[blockingId])};s[{blockingId}]=next[{blockingId}];");break;
+                int blockingId = SignalId(Name(e.GetProperty("target")));
+                var bval = e.GetProperty("value");
+                code.AppendLine($"next[{blockingId}]={StoreWord(Expression(bval, Signals[blockingId].Width, blockingScope: blockingScope), Signals[blockingId], IsExactWidth(bval, Signals[blockingId].Width))};");
+                break;
             case "repeat":
-                string loop="repeat"+unique++;code.AppendLine($"for(int {loop}=0;{loop}<{e.GetProperty("count").GetInt32()};++{loop}){{");Statement(code,e.GetProperty("body"),ref unique);code.AppendLine("}");break;
+                string loop = "repeat" + unique++;
+                code.AppendLine($"for(int {loop}=0;{loop}<{e.GetProperty("count").GetInt32()};++{loop}){{");
+                Statement(code, e.GetProperty("body"), ref unique, blockingScope);
+                code.AppendLine("}");
+                break;
             case "process":
                 code.AppendLine("if(" + string.Join("||", e.GetProperty("events").EnumerateArray().Select(trigger => { int id = SignalId(trigger.GetProperty("signal").GetString()!); return $"edge_event(previous_events[{id}],s[{id}],{(trigger.GetProperty("edge").GetString() == "posedge" ? "true" : "false")})"; })) + "){");
-                ProcessStatement(code, e.GetProperty("body"), ref unique); code.AppendLine("}"); break;
-            case "parallel": foreach(var item in e.GetProperty("items").EnumerateArray())ProcessStatement(code,item,ref unique);break;
-            case "block": foreach (var item in e.GetProperty("items").EnumerateArray()) Statement(code, item, ref unique); break;
+                ProcessStatement(code, e.GetProperty("body"), ref unique);
+                code.AppendLine("}");
+                break;
+            case "parallel":
+                foreach (var item in e.GetProperty("items").EnumerateArray()) ProcessStatement(code, item, ref unique);
+                break;
+            case "block":
+                foreach (var item in e.GetProperty("items").EnumerateArray()) Statement(code, item, ref unique, blockingScope);
+                break;
             case "nba":
                 var target = e.GetProperty("target");
+                var rhsExpr = e.GetProperty("value");
                 if (Kind(target) == "concat")
                 {
                     int total = ExpressionWidth(target), remaining = total; string rhs = "nba" + unique++;
-                    code.AppendLine($"{{auto {rhs}=resize({Expression(e.GetProperty("value"), total)},{total});");
-                    foreach (var leaf in TargetLeaves(target)) { int width = ExpressionWidth(leaf); remaining -= width; WordWrite(code, leaf, $"select_part({rhs},{remaining + width - 1},{remaining})"); }
+                    string rhsCode = Expression(rhsExpr, total, blockingScope: blockingScope);
+                    code.AppendLine(IsExactWidth(rhsExpr, total) ? $"{{auto {rhs}={rhsCode};" : $"{{auto {rhs}=resize({rhsCode},{total});");
+                    foreach (var leaf in TargetLeaves(target)) { int width = ExpressionWidth(leaf); remaining -= width; WordWrite(code, leaf, $"select_part({rhs},{remaining + width - 1},{remaining})", blockingScope, exactWidth: true); }
                     code.AppendLine("}");
                 }
-                else if (Kind(target) is "ref" or "bitselect" or "partselect" or "indexedselect") WordWrite(code, target, Expression(e.GetProperty("value"), ExpressionWidth(target)));
-                else { int id = MemoryId(Name(target)); code.AppendLine($"write(nextMem[{id}],{MemoryIndex(target.GetProperty("index"),id)},{Expression(e.GetProperty("value"), Memories[id].Width)},{Memories[id].Width});"); } break;
-            case "if": code.AppendLine($"if(yes({Expression(e.GetProperty("condition"))})){{"); Statement(code, e.GetProperty("then"), ref unique); code.AppendLine("}else{"); Statement(code, e.GetProperty("else"), ref unique); code.AppendLine("}"); break;
+                else if (Kind(target) is "ref" or "bitselect" or "partselect" or "indexedselect")
+                {
+                    int targetWidth = ExpressionWidth(target);
+                    WordWrite(code, target, Expression(rhsExpr, targetWidth, blockingScope: blockingScope), blockingScope, exactWidth: Kind(target) == "ref" && IsExactWidth(rhsExpr, targetWidth));
+                }
+                else
+                {
+                    int id = MemoryId(Name(target));
+                    code.AppendLine($"mem_log.push({id},mem[{id}].size(),{MemoryIndex(target.GetProperty("index"), id, blockingScope)},{Expression(rhsExpr, Memories[id].Width, blockingScope: blockingScope)},{Memories[id].Width});");
+                }
+                break;
+            case "if":
+                code.AppendLine($"if(yes({Expression(e.GetProperty("condition"), blockingScope: blockingScope)})){{");
+                Statement(code, e.GetProperty("then"), ref unique, blockingScope);
+                code.AppendLine("}else{");
+                Statement(code, e.GetProperty("else"), ref unique, blockingScope);
+                code.AppendLine("}");
+                break;
             case "case":
-                var label = "case" + unique++; var items = e.GetProperty("items").EnumerateArray().ToArray(); int caseWidth = Math.Max(ExpressionWidth(e.GetProperty("value")), items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).Select(i => ExpressionWidth(i.GetProperty("match"))).DefaultIfEmpty(1).Max()); bool caseSigned=ExpressionSigned(e.GetProperty("value"))&&items.Where(i=>i.GetProperty("match").ValueKind!=JsonValueKind.Null).All(i=>ExpressionSigned(i.GetProperty("match"))); code.AppendLine($"{{auto {label}={Expression(e.GetProperty("value"), caseWidth,caseSigned)};"); bool first = true;
-                foreach (var item in items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null)) { code.AppendLine($"{(first ? "if" : "else if")}(exact({label},{Expression(item.GetProperty("match"),caseWidth,caseSigned)})){{"); Statement(code, item.GetProperty("body"), ref unique); code.AppendLine("}"); first = false; }
-                var defaultItem = items.FirstOrDefault(i => i.GetProperty("match").ValueKind == JsonValueKind.Null); if (defaultItem.ValueKind != JsonValueKind.Undefined) { code.AppendLine(first ? "{" : "else{"); Statement(code, defaultItem.GetProperty("body"), ref unique); code.AppendLine("}"); } code.AppendLine("}"); break;
+                var label = "case" + unique++;
+                var items = e.GetProperty("items").EnumerateArray().ToArray();
+                var nonDefaults = items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).ToArray();
+                int caseWidth = Math.Max(ExpressionWidth(e.GetProperty("value")), nonDefaults.Select(i => ExpressionWidth(i.GetProperty("match"))).DefaultIfEmpty(1).Max());
+                bool caseSigned = ExpressionSigned(e.GetProperty("value")) && nonDefaults.All(i => ExpressionSigned(i.GetProperty("match")));
+                code.AppendLine($"{{auto {label}={Expression(e.GetProperty("value"), caseWidth, caseSigned, blockingScope)};");
+                var defaultItem = items.FirstOrDefault(i => i.GetProperty("match").ValueKind == JsonValueKind.Null);
+                bool canSwitch = caseWidth <= 64 && nonDefaults.Length > 0 && nonDefaults.All(i =>
+                {
+                    string b = i.GetProperty("match").GetProperty("bits").GetString()!;
+                    return !b.Contains('x') && !b.Contains('z');
+                });
+                if (canSwitch)
+                {
+                    var seenCases = new HashSet<ulong>();
+                    if (defaultItem.ValueKind != JsonValueKind.Undefined)
+                    {
+                        code.AppendLine($"bool {label}_d=({label}.x|{label}.z)!=0;if(!{label}_d){{switch(uint64_t({label}.v)){{");
+                        foreach (var item in nonDefaults)
+                        {
+                            ulong v = ConstantUnsignedValue(item.GetProperty("match").GetProperty("bits").GetString()!, caseWidth, caseSigned);
+                            if (!seenCases.Add(v)) continue;
+                            code.AppendLine($"case 0x{v:x}ULL:{{");
+                            Statement(code, item.GetProperty("body"), ref unique, blockingScope);
+                            code.AppendLine("break;}");
+                        }
+                        code.AppendLine($"default:{label}_d=true;break;}}}}if({label}_d){{");
+                        Statement(code, defaultItem.GetProperty("body"), ref unique, blockingScope);
+                        code.AppendLine("}");
+                    }
+                    else
+                    {
+                        code.AppendLine($"if(!({label}.x|{label}.z)){{switch(uint64_t({label}.v)){{");
+                        foreach (var item in nonDefaults)
+                        {
+                            ulong v = ConstantUnsignedValue(item.GetProperty("match").GetProperty("bits").GetString()!, caseWidth, caseSigned);
+                            if (!seenCases.Add(v)) continue;
+                            code.AppendLine($"case 0x{v:x}ULL:{{");
+                            Statement(code, item.GetProperty("body"), ref unique, blockingScope);
+                            code.AppendLine("break;}");
+                        }
+                        code.AppendLine("}}");
+                    }
+                }
+                else
+                {
+                    bool first = true;
+                    foreach (var item in nonDefaults)
+                    {
+                        code.AppendLine($"{(first ? "if" : "else if")}(exact({label},{Expression(item.GetProperty("match"), caseWidth, caseSigned, blockingScope)})){{");
+                        Statement(code, item.GetProperty("body"), ref unique, blockingScope);
+                        code.AppendLine("}");
+                        first = false;
+                    }
+                    if (defaultItem.ValueKind != JsonValueKind.Undefined)
+                    {
+                        code.AppendLine(first ? "{" : "else{");
+                        Statement(code, defaultItem.GetProperty("body"), ref unique, blockingScope);
+                        code.AppendLine("}");
+                    }
+                }
+                code.AppendLine("}");
+                break;
         }
     }
-    private void ProcessStatement(StringBuilder code,JsonElement body,ref int unique)
+    private void ProcessStatement(StringBuilder code, JsonElement body, ref int unique)
     {
-        if(Kind(body) is "process" or "parallel"||!Statements(body).Any(e=>Kind(e)=="blocking")){Statement(code,body,ref unique);return;}
-        var process=new StringBuilder();Statement(process,body,ref unique);
-        // Rewrite generated numeric storage accesses, never HDL source or identifiers.
-        code.AppendLine("{auto local=s;auto localMem=mem;");code.Append(process.ToString().Replace("s[","local[",StringComparison.Ordinal).Replace("mem[","localMem[",StringComparison.Ordinal));code.AppendLine("}");
+        if (Kind(body) is "process" or "parallel") { Statement(code, body, ref unique); return; }
+        HashSet<int>? blockingScope = null;
+        foreach (var st in Statements(body))
+            if (Kind(st) == "blocking") (blockingScope ??= []).Add(SignalId(Name(st.GetProperty("target"))));
+        Statement(code, body, ref unique, blockingScope);
+    }
+    private void StageSequential(StringBuilder code)
+    {
+        foreach (int id in sequentialSignalIds) code.Append($"next[{id}]=s[{id}];");
+        if (sequentialSignalIds.Length > 0) code.AppendLine();
+        if (hasMemoryWrites) code.AppendLine("mem_log.count=0;if(!mem_log.overflow.empty())mem_log.overflow.clear();");
+    }
+    private void CommitSequential(StringBuilder code)
+    {
+        foreach (int id in sequentialSignalIds) code.Append($"s[{id}]=next[{id}];");
+        if (sequentialSignalIds.Length > 0) code.AppendLine();
+        if (hasMemoryWrites) code.AppendLine("mem_log.commit(mem);");
     }
     private void EventEvaluation(StringBuilder code)
     {
-        code.AppendLine("settle();auto next=s;auto nextMem=mem;"); int unique=0; ProcessStatement(code,Body,ref unique);
-        code.AppendLine("s=std::move(next);mem=std::move(nextMem);settle();");
-        foreach(string signal in EventSignals){int id=SignalId(signal);code.AppendLine($"previous_events[{id}]=s[{id}];");}
+        if (Continuous.Count > 0) code.AppendLine("settle();");
+        var processes = Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body];
+        var triggers = new string[processes.Length];
+        for (int i = 0; i < processes.Length; i++)
+        {
+            triggers[i] = "ev" + i;
+            code.AppendLine($"const bool {triggers[i]}=" + string.Join("||", processes[i].GetProperty("events").EnumerateArray().Select(trigger => { int id = SignalId(trigger.GetProperty("signal").GetString()!); return $"edge_event(previous_events[{id}],s[{id}],{(trigger.GetProperty("edge").GetString() == "posedge" ? "true" : "false")})"; })) + ";");
+        }
+        code.AppendLine("if(" + string.Join("||", triggers) + "){");
+        StageSequential(code);
+        int unique = 0;
+        for (int i = 0; i < processes.Length; i++)
+        {
+            code.AppendLine($"if({triggers[i]}){{");
+            ProcessStatement(code, processes[i].GetProperty("body"), ref unique);
+            code.AppendLine("}");
+        }
+        CommitSequential(code);
+        if (Continuous.Count > 0) code.AppendLine("settle();");
+        code.AppendLine("}");
+        foreach (string signal in EventSignals) { int id = SignalId(signal); code.AppendLine($"previous_events[{id}]=s[{id}];"); }
     }
     public IReadOnlyDictionary<string, string> ExternalPortNames()
     {
-        var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part select_indexed deposit_indexed parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index").Split(' ').ToHashSet(StringComparer.Ordinal);
+        var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem next mem_log MemWrite MemLog time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish evalNeeded requestEval started state std vsrtl simd Model Port W Signal word mask mask_unchecked mask64_unchecked lit resize unknown select_bit select_part select_indexed deposit_indexed parse parse_span text append_text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index").Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal); var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var signal in Signals.Where(s => s.Direction != "internal"))
         {
@@ -299,34 +481,103 @@ public sealed class RtlDesign
         // Avoid a legal HDL port hiding the generated C++ constructor's class name.
         if (names.Values.Contains(className)) throw new ArgumentException("Port conflicts with generated class name.", nameof(top));
         var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
-        code.AppendLine($"class {className} final : public vsrtl::Model {{\nbool previous_clock=false;\nstd::vector<W> previous_events;\nvoid settle(){{");
-        foreach (var assignment in Continuous) { int id = SignalId(Name(assignment.GetProperty("target"))); code.AppendLine($"s[{id}]={StoreWord(Expression(assignment.GetProperty("value"), Signals[id].Width),Signals[id])};"); }
-        code.AppendLine("}\nvoid evaluate() override {");
-        if(EventDriven)EventEvaluation(code);
-        else {code.AppendLine($"auto clock=s[{SignalId(Clock)}];if(clock.x||clock.z)throw std::runtime_error(\"external clock must be known0/1\");settle();\nif(!previous_clock&&clock.v){{auto next=s;auto nextMem=mem;");int unique=0;ProcessStatement(code,Body,ref unique);code.AppendLine("s=std::move(next);mem=std::move(nextMem);settle();}\nprevious_clock=clock.v!=0;");}
+        code.AppendLine($"class {className} final : public vsrtl::Model {{");
+        if (!EventDriven) code.AppendLine("bool previous_clock=false;");
+        else code.AppendLine($"W previous_events[{Signals.Count}];");
+        if (sequentialSignalIds.Length > 0) code.AppendLine($"W next[{Signals.Count}];");
+        if (hasMemoryWrites) code.AppendLine("MemLog<16> mem_log;");
+        if (Continuous.Count > 0)
+        {
+            code.AppendLine("inline void settle(){");
+            foreach (var assignment in Continuous)
+            {
+                int id = SignalId(Name(assignment.GetProperty("target")));
+                var rhs = assignment.GetProperty("value");
+                code.AppendLine($"s[{id}]={StoreWord(Expression(rhs, Signals[id].Width), Signals[id], IsExactWidth(rhs, Signals[id].Width))};");
+            }
+            code.AppendLine("}");
+        }
+        code.AppendLine("void evaluate() override {");
+        if (EventDriven) EventEvaluation(code);
+        else
+        {
+            code.AppendLine($"auto clock=s[{SignalId(Clock)}];if(clock.x|clock.z)throw std::runtime_error(\"external clock must be known0/1\");");
+            if (Continuous.Count > 0) code.AppendLine("settle();");
+            code.AppendLine("if(!previous_clock&&clock.v){");
+            StageSequential(code);
+            int unique = 0; ProcessStatement(code, Body, ref unique);
+            CommitSequential(code);
+            if (Continuous.Count > 0) code.AppendLine("settle();");
+            code.AppendLine("}\nprevious_clock=clock.v!=0;");
+        }
         code.AppendLine("}\npublic:");
         foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.AppendLine($"vsrtl::Port {names[signal.Name]};");
         code.Append($"{className}():vsrtl::Model(\"{top}\",{{");
-        code.AppendJoin(',', Signals.Select(s => $"{{\"{s.SourcePath ?? s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")},{(s.Signed?"true":"false")},{(s.TwoState?"true":"false")}}}"));
+        code.AppendJoin(',', Signals.Select(s => $"{{\"{s.SourcePath ?? s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")},{(s.Signed ? "true" : "false")},{(s.TwoState ? "true" : "false")}}}"));
         code.Append($"}},{SignalId(Clock)})");
         foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)})");
-        code.AppendLine("{mem={"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},unknown({m.Width}))"));
-        code.AppendLine($"}};previous_events.assign({Signals.Count},unknown(1));");
-        code.AppendLine($"previous_events[{SignalId(Clock)}]=word(0,0,0,1);");
-        foreach(var signal in Signals.Where(s=>s.TwoState&&s.Width==1))code.AppendLine($"previous_events[{SignalId(signal.Name)}]=word(0,0,0,1);");
+        code.AppendLine("{");
+        if (Memories.Count > 0)
+        {
+            code.Append("mem={"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},unknown({m.Width}))")); code.AppendLine("};");
+        }
+        if (EventDriven)
+        {
+            code.AppendLine($"for(int i=0;i<{Signals.Count};++i)previous_events[i]=unknown(1);");
+            code.AppendLine($"previous_events[{SignalId(Clock)}]=word(0,0,0,1);");
+            foreach (var signal in Signals.Where(s => s.TwoState && s.Width == 1)) code.AppendLine($"previous_events[{SignalId(signal.Name)}]=word(0,0,0,1);");
+        }
         return code.AppendLine("}\n};").ToString();
     }
     public string EmitCpp()
     {
-        var code = new StringBuilder("#include \"runtime.h\"\n#include <iostream>\n#include <fstream>\n#include <sstream>\nusing namespace vsrtl;\nint main(int argc,char**argv){try{if(argc!=3)throw std::runtime_error(\"stimulus and workers required\");int workers=std::stoi(argv[2]);if(workers<1||workers>256)throw std::runtime_error(\"workers out of range\");\nstd::vector<W>s{\n");
-        code.AppendJoin(',', Signals.Select(s => s.TwoState?$"word(0,0,0,{s.Width})":$"unknown({s.Width})")); code.AppendLine("};std::vector<std::vector<W>>mem{"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},unknown({m.Width}))")); code.AppendLine("};auto settle=[&](){");
-        foreach (var assignment in Continuous) { int id = SignalId(Name(assignment.GetProperty("target"))); code.AppendLine($"s[{id}]={StoreWord(Expression(assignment.GetProperty("value"), Signals[id].Width),Signals[id])};"); } code.AppendLine("};");
-        if(EventDriven){code.AppendLine($"std::vector<W> previous_events({Signals.Count},unknown(1));previous_events[{SignalId(Clock)}]=word(0,0,0,1);");foreach(var signal in Signals.Where(s=>s.TwoState&&s.Width==1))code.AppendLine($"previous_events[{SignalId(signal.Name)}]=word(0,0,0,1);");code.AppendLine("auto evaluate=[&](){");EventEvaluation(code);code.AppendLine("};");}
-        code.AppendLine("std::ifstream input(argv[1]);if(!input)throw std::runtime_error(\"stimulus missing\");std::string line;int cycle=0;while(std::getline(input,line)){if(++cycle>100000)throw std::runtime_error(\"cycle budget\");std::istringstream row(line);std::string value;");
-        foreach (var signal in Signals.Where(s => s.Direction == "input" && s.Name != Clock)) code.AppendLine($"if(!(row>>value)||value.size()!={signal.Width})throw std::runtime_error(\"invalid input width\");s[{SignalId(signal.Name)}]={(signal.TwoState?"two_state(parse(value))":"parse(value)")};");
-        if(EventDriven)code.AppendLine($"if(row>>value)throw std::runtime_error(\"extra input\");s[{SignalId(Clock)}]=W{{0,0,0,1}};evaluate();s[{SignalId(Clock)}]=W{{1,0,0,1}};evaluate();std::cout<<\"VS_RTL \"<<cycle;");
-        else{code.AppendLine($"if(row>>value)throw std::runtime_error(\"extra input\");s[{SignalId(Clock)}]=W{{0,0,0,1}};settle();s[{SignalId(Clock)}]=W{{1,0,0,1}};auto next=s;auto nextMem=mem;");int unique=0;ProcessStatement(code,Body,ref unique);code.AppendLine("s=std::move(next);mem=std::move(nextMem);settle();std::cout<<\"VS_RTL \"<<cycle;");}
-        foreach (var signal in Signals.Where(s => s.Direction == "output")) code.AppendLine($"std::cout<<' '<<text(s[{SignalId(signal.Name)}]);");
-        return code.AppendLine("std::cout<<'\\n';}return 0;}catch(const std::exception&e){std::cerr<<e.what()<<'\\n';return 1;}}\n").ToString();
+        var code = new StringBuilder("#include \"runtime.h\"\n#include <iostream>\n#include <fstream>\nusing namespace vsrtl;\nint main(int argc,char**argv){try{std::ios::sync_with_stdio(false);std::cin.tie(nullptr);if(argc!=3)throw std::runtime_error(\"stimulus and workers required\");int workers=std::stoi(argv[2]);if(workers<1||workers>256)throw std::runtime_error(\"workers out of range\");\nW s[");
+        code.Append(Signals.Count).AppendLine("]={");
+        code.AppendJoin(',', Signals.Select(s => s.TwoState ? $"lit(0ULL,{s.Width})" : $"unknown({s.Width})"));
+        code.AppendLine("};");
+        if (sequentialSignalIds.Length > 0) code.AppendLine($"W next[{Signals.Count}];");
+        if (Memories.Count > 0)
+        {
+            code.Append("std::vector<std::vector<W>>mem{"); code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},unknown({m.Width}))")); code.AppendLine("};");
+        }
+        if (hasMemoryWrites) code.AppendLine("MemLog<16> mem_log;");
+        if (Continuous.Count > 0)
+        {
+            code.AppendLine("auto settle=[&](){");
+            foreach (var assignment in Continuous)
+            {
+                int id = SignalId(Name(assignment.GetProperty("target")));
+                var rhs = assignment.GetProperty("value");
+                code.AppendLine($"s[{id}]={StoreWord(Expression(rhs, Signals[id].Width), Signals[id], IsExactWidth(rhs, Signals[id].Width))};");
+            }
+            code.AppendLine("};");
+        }
+        if (EventDriven)
+        {
+            code.AppendLine($"W previous_events[{Signals.Count}];for(int i=0;i<{Signals.Count};++i)previous_events[i]=unknown(1);previous_events[{SignalId(Clock)}]=lit(0ULL,1);");
+            foreach (var signal in Signals.Where(s => s.TwoState && s.Width == 1)) code.AppendLine($"previous_events[{SignalId(signal.Name)}]=lit(0ULL,1);");
+            code.AppendLine("auto evaluate=[&](){"); EventEvaluation(code); code.AppendLine("};");
+        }
+        code.AppendLine("std::ifstream input(argv[1]);if(!input)throw std::runtime_error(\"stimulus missing\");std::string line,out_buf;out_buf.reserve(256);int cycle=0;");
+        code.AppendLine("auto next_tok=[](const std::string& str,size_t& pos,const char*& ptr,size_t& len)->bool{const size_t n=str.size();while(pos<n){unsigned char c=str[pos];if(c!=' '&&c!='\\t'&&c!='\\r'&&c!='\\v'&&c!='\\f')break;++pos;}if(pos>=n)return false;const size_t start=pos;while(pos<n){unsigned char c=str[pos];if(c==' '||c=='\\t'||c=='\\r'||c=='\\v'||c=='\\f')break;++pos;}ptr=str.data()+start;len=pos-start;return true;};");
+        code.AppendLine("while(std::getline(input,line)){if(++cycle>100000)throw std::runtime_error(\"cycle budget\");size_t pos=0;const char* tok=nullptr;size_t tok_len=0;");
+        foreach (var signal in Signals.Where(s => s.Direction == "input" && s.Name != Clock))
+            code.AppendLine($"if(!next_tok(line,pos,tok,tok_len)||tok_len!={signal.Width})throw std::runtime_error(\"invalid input width\");s[{SignalId(signal.Name)}]={(signal.TwoState ? "two_state(parse_span(tok,tok_len))" : "parse_span(tok,tok_len)")};");
+        if (EventDriven)
+            code.AppendLine($"if(next_tok(line,pos,tok,tok_len))throw std::runtime_error(\"extra input\");s[{SignalId(Clock)}]=lit(0ULL,1);evaluate();s[{SignalId(Clock)}]=lit(1ULL,1);evaluate();");
+        else
+        {
+            code.AppendLine($"if(next_tok(line,pos,tok,tok_len))throw std::runtime_error(\"extra input\");s[{SignalId(Clock)}]=lit(0ULL,1);");
+            if (Continuous.Count > 0) code.AppendLine("settle();");
+            code.AppendLine($"s[{SignalId(Clock)}]=lit(1ULL,1);");
+            StageSequential(code);
+            int unique = 0; ProcessStatement(code, Body, ref unique);
+            CommitSequential(code);
+            if (Continuous.Count > 0) code.AppendLine("settle();");
+        }
+        code.AppendLine("out_buf.clear();out_buf+=\"VS_RTL \";out_buf+=std::to_string(cycle);");
+        foreach (var signal in Signals.Where(s => s.Direction == "output"))
+            code.AppendLine($"out_buf+=' ';append_text(out_buf,s[{SignalId(signal.Name)}]);");
+        return code.AppendLine("out_buf+='\\n';std::cout.write(out_buf.data(),static_cast<std::streamsize>(out_buf.size()));}return 0;}catch(const std::exception&e){std::cerr<<e.what()<<'\\n';return 1;}}\n").ToString();
     }
 }
