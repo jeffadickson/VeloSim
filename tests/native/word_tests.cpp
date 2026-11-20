@@ -45,5 +45,27 @@ int main(){
   }
   auto e=vs_ir_new();CHECK(e);CHECK(vs_ir_signal(e,1,0,0,0)==0);
   CHECK(vs_ir_process_v2(e,0,0,0,1,0,0,6)<0);CHECK(vs_ir_process_v2(e,0,0,0,0,0,0,13)<0);CHECK(vs_ir_process(e,0,0,0,0,0,6)<0);vs_ir_free(e);
+  // Exercise AVX2 4x64-bit SIMD process batching and persistent worker pool.
+  for(int N:{128,2048})for(uint32_t workers:{1U,4U}){
+    void* sim=vs_ir_new();CHECK(sim);
+    CHECK(vs_ir_signal(sim,1,0,0,0)==0); // clk
+    CHECK(vs_ir_signal(sim,1,1,0,0)==1); // rst_n = 1
+    for(int i=0;i<N;++i){
+      int sig=vs_ir_signal(sim,32,uint64_t(i),i==7?0xfULL:0ULL,0);
+      CHECK(sig==2+i);
+      CHECK(vs_ir_process(sim,0,uint32_t(sig),uint32_t(sig),1,0,5)==0);
+    }
+    uint32_t clkId=0;uint64_t zero=0,one=1;
+    for(int c=0;c<10;++c){
+      CHECK(vs_ir_drive(sim,&clkId,&zero,&zero,&zero,1,workers)==0);
+      CHECK(vs_ir_drive(sim,&clkId,&one,&zero,&zero,1,workers)==N);
+    }
+    for(int i=0;i<N;++i){
+      uint64_t v=0,x=0,z=0;CHECK(vs_ir_read(sim,uint32_t(2+i),&v,&x,&z)==32);
+      if(i==7){CHECK(v==0&&x==0xffffffffULL&&z==0);}
+      else{CHECK(v==uint64_t(i+10)&&x==0&&z==0);}
+    }
+    vs_ir_free(sim);
+  }
   return 0;
 }

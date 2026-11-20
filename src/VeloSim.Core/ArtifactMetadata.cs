@@ -26,8 +26,10 @@ public sealed class RecordingProcessRunner(IProcessRunner inner) : IProcessRunne
         }
     }
 }
-public sealed record ArtifactMetadata(IReadOnlyList<FileFingerprint> Sources, FileFingerprint? NativeLibrary, IReadOnlyList<RecordedCommand> Commands, IReadOnlyDictionary<string, string> ToolVersions, IReadOnlyList<FileFingerprint>? ToolBinaries = null)
+public sealed partial record ArtifactMetadata(IReadOnlyList<FileFingerprint> Sources, FileFingerprint? NativeLibrary, IReadOnlyList<RecordedCommand> Commands, IReadOnlyDictionary<string, string> ToolVersions, IReadOnlyList<FileFingerprint>? ToolBinaries = null)
 {
+    [GeneratedRegex("^`include\\s+\"([^\"]+)\"", RegexOptions.CultureInvariant)]
+    private static partial Regex IncludePattern();
     public static string? ResolveExecutable(string executable, string? workingDirectory = null)
     {
         workingDirectory = System.IO.Path.GetFullPath(workingDirectory ?? Environment.CurrentDirectory);
@@ -47,7 +49,7 @@ public sealed record ArtifactMetadata(IReadOnlyList<FileFingerprint> Sources, Fi
     }
     public static IReadOnlyList<FileFingerprint> SourceClosure(IEnumerable<string> sources)
     {
-        var visited = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal); var result = new List<FileFingerprint>();
+        HashSet<string> visited = [with(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal)]; var result = new List<FileFingerprint>();
         long bytes = 0;
         void Visit(string source, int depth)
         {
@@ -58,7 +60,7 @@ public sealed record ArtifactMetadata(IReadOnlyList<FileFingerprint> Sources, Fi
             foreach (var line in File.ReadLines(path))
             {
                 var trimmed = line.TrimStart(); if (!trimmed.StartsWith("`include", StringComparison.Ordinal)) continue;
-                var match = Regex.Match(trimmed, "^`include\\s+\"([^\"]+)\"", RegexOptions.CultureInvariant);
+                var match = IncludePattern().Match(trimmed);
                 if (!match.Success) throw new IOException("Cannot fingerprint macro-based include in " + path);
                 Visit(System.IO.Path.GetFullPath(match.Groups[1].Value, System.IO.Path.GetDirectoryName(path)!), depth + 1);
             }

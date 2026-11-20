@@ -69,7 +69,7 @@ public class RtlIndexedTests
             case 69: lhs.AsObject().Remove("base"); break;
             case 70:
                 node["body"]!["value"] = JsonSerializer.SerializeToNode(new { kind = "shl", args = new object[] { new { kind = "bitselect", value = Ref("a"), index = new { kind = "const", bits = "0" } }, new { kind = "const", bits = "11" } } });
-                Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("shift(select_bit(s[1],parse(\"0\")),parse(\"11\"),4,false)")); break;
+                Assert.That(RtlDesign.Parse(node.ToJsonString()).EmitCpp(), Does.Contain("shift(select_bit(s[1],lit(0x0ULL,1)),lit(0x3ULL,2),4,false)")); break;
         }
         if (id is >= 65 and <= 69) Assert.Throws<IrValidationException>(() => RtlDesign.Parse(node.ToJsonString()));
         TestContext.Progress.WriteLine($"RTL_CYCLE {id} PASS indexed-word NBA IR");

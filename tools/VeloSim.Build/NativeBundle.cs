@@ -22,19 +22,21 @@ public static class NativeBundle
         }
         File.WriteAllText(Path.Combine(directory, "build.txt"), buildMetadata);
         var files = Walk(directory).Order(StringComparer.Ordinal).ToArray();
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
+        using (var file = new FileStream(Path.Combine(directory, "manifest.json"), FileMode.Create, FileAccess.Write))
         {
-            writer.WriteStartObject(); writer.WriteString("format", "velosim.native.bundle.v2"); writer.WriteString("runtime", "linux-x64"); writer.WriteString("source_revision", revision);
-            writer.WriteStartArray("files");
-            foreach (var relative in files)
+            using (var writer = new Utf8JsonWriter(file, new() { Indented = true }))
             {
-                var path = SafePath(directory, relative); writer.WriteStartObject(); writer.WriteString("path", relative); writer.WriteNumber("bytes", new FileInfo(path).Length); writer.WriteString("sha256", Digest(path));
-                writer.WriteBoolean("executable", !OperatingSystem.IsWindows() && (File.GetUnixFileMode(path) & UnixFileMode.UserExecute) != 0); writer.WriteEndObject();
+                writer.WriteStartObject(); writer.WriteString("format", "velosim.native.bundle.v2"); writer.WriteString("runtime", "linux-x64"); writer.WriteString("source_revision", revision);
+                writer.WriteStartArray("files");
+                foreach (var relative in files)
+                {
+                    var path = SafePath(directory, relative); writer.WriteStartObject(); writer.WriteString("path", relative); writer.WriteNumber("bytes", new FileInfo(path).Length); writer.WriteString("sha256", Digest(path));
+                    writer.WriteBoolean("executable", !OperatingSystem.IsWindows() && (File.GetUnixFileMode(path) & UnixFileMode.UserExecute) != 0); writer.WriteEndObject();
+                }
+                writer.WriteEndArray(); writer.WriteEndObject();
             }
-            writer.WriteEndArray(); writer.WriteEndObject();
+            file.WriteByte((byte)'\n');
         }
-        File.WriteAllText(Path.Combine(directory, "manifest.json"), Encoding.UTF8.GetString(stream.ToArray()) + "\n");
         Validate(directory);
     }
     public static void Validate(string directory)
@@ -48,7 +50,7 @@ public static class NativeBundle
         RequireFields(root, ["format", "runtime", "source_revision", "files"]);
         if (root.GetProperty("format").GetString() != "velosim.native.bundle.v2" || root.GetProperty("runtime").GetString() != "linux-x64" || string.IsNullOrWhiteSpace(root.GetProperty("source_revision").GetString())) throw new IOException("Unsupported bundle metadata.");
         var actual = Walk(directory).ToHashSet(StringComparer.Ordinal);
-        var expected = new HashSet<string>(StringComparer.Ordinal) { "manifest.json" };
+        HashSet<string> expected = [with(StringComparer.Ordinal), "manifest.json"];
         if (root.GetProperty("files").GetArrayLength() > 4096) throw new IOException("Bundle manifest has too many files.");
         foreach (var entry in root.GetProperty("files").EnumerateArray())
         {
@@ -67,16 +69,24 @@ public static class NativeBundle
         if (destination.StartsWith(directory + Path.DirectorySeparatorChar, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) throw new IOException("Archive destination must be outside its input directory.");
         Validate(directory);
         using var file = new FileStream(destination, FileMode.CreateNew, FileAccess.Write);
-        using var compressed = new GZipStream(file, CompressionLevel.SmallestSize);
-        TarFile.CreateFromDirectory(directory, compressed, includeBaseDirectory: true);
+        if (destination.EndsWith(".zst", StringComparison.OrdinalIgnoreCase))
+        {
+            using var compressed = new ZstandardStream(file, CompressionLevel.Optimal);
+            TarFile.CreateFromDirectory(directory, compressed, includeBaseDirectory: true);
+        }
+        else
+        {
+            using var compressed = new GZipStream(file, CompressionLevel.SmallestSize);
+            TarFile.CreateFromDirectory(directory, compressed, includeBaseDirectory: true);
+        }
     }
     private static string Digest(string path)
     {
-        using var input = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant();
+        using var input = File.OpenRead(path); return Convert.ToHexStringLower(SHA256.HashData(input));
     }
     private static void RequireFields(JsonElement element, string[] names)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        HashSet<string> seen = [with(StringComparer.Ordinal)];
         if (element.ValueKind != JsonValueKind.Object) throw new IOException("Bundle metadata must be an object.");
         foreach (var field in element.EnumerateObject()) if (!names.Contains(field.Name, StringComparer.Ordinal) || !seen.Add(field.Name)) throw new IOException("Unknown or duplicate bundle metadata field.");
         if (seen.Count != names.Length) throw new IOException("Missing bundle metadata field.");

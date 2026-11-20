@@ -9,9 +9,27 @@
 #endif
 namespace vsrtl {
 struct Signal { const char* name; int width, direction; bool is_signed=false; bool two_state=false; };
+class Port;
 class VS_VPI_API Model {
+ friend class Port;
  struct State;
  std::unique_ptr<State> state;
+ std::thread::id owner_thread;
+ bool fast_eligible = false;
+ bool fast_eval_ok = false;
+ bool fast_port_ok = true;
+ bool fast_evaluating = false;
+ bool fast_dirty = true;
+ void evalSlow();
+ void refreshFastFlags() noexcept;
+ inline bool canFastPortWrite() const noexcept {
+  return fast_port_ok && owner_thread == std::this_thread::get_id();
+ }
+ inline void markDirty() noexcept { fast_dirty = true; }
+ inline W fastGet(size_t id) const {
+  if (owner_thread == std::this_thread::get_id() && id < s.size()) [[likely]] return s[id];
+  return get(id);
+ }
 protected:
  std::vector<W> s;
  std::vector<std::vector<W>> mem;
@@ -21,7 +39,26 @@ public:
  virtual ~Model();
  Model(const Model&) = delete; Model& operator=(const Model&) = delete;
  Model(Model&&) = delete; Model& operator=(Model&&) = delete;
- void eval(); void final(); void timeInc(uint64_t delta);
+ inline void eval() {
+  if (fast_eval_ok && owner_thread == std::this_thread::get_id()) [[likely]] {
+   fast_eval_ok = false;
+   fast_evaluating = true;
+   fast_dirty = false;
+   try {
+    evaluate();
+   } catch (...) {
+    fast_evaluating = false;
+    fast_dirty = true;
+    fast_eval_ok = fast_eligible;
+    throw;
+   }
+   fast_evaluating = false;
+   fast_eval_ok = fast_eligible;
+   return;
+  }
+  evalSlow();
+ }
+ void final(); void timeInc(uint64_t delta);
  uint64_t time() const; bool gotFinish() const; bool evalNeeded() const; bool started() const;
  void requestEval();
  void finish(); void useVpi(); void loadVpi(const std::string& path);
@@ -29,16 +66,38 @@ public:
  W get(size_t id) const; void put(size_t id, W value);
  std::weak_ptr<int> lifetime() const;
  void checkThread() const;
+ void notifyCallbackStateChanged(bool active) noexcept;
 };
 class Port {
- Model* model; size_t id;
+ Model* model; size_t id; int width; bool is_input;
 public:
- Port(Model& owner, size_t index):model(&owner),id(index){}
+ Port(Model& owner, size_t index)
+  : model(&owner), id(index),
+    width(index < owner.signals().size() ? owner.signals()[index].width : 0),
+    is_input(index < owner.signals().size() && owner.signals()[index].direction == vpiInput) {}
  Port(const Port&) = delete; Port& operator=(const Port&) = delete;
- Port& operator=(uint64_t value){model->put(id,word(value,0,0,model->signals().at(id).width));return *this;}
- void bits(const std::string& value){if(value.size()!=size_t(model->signals().at(id).width))throw std::invalid_argument("port binary width mismatch");model->put(id,parse(value));}
- std::string bits() const{return text(model->get(id));}
- W value() const{return model->get(id);}
- explicit operator uint64_t() const{auto v=value();if(v.x||v.z)throw std::runtime_error("integer conversion of X/Z port");if(v.v>UINT64_MAX)throw std::overflow_error("port exceeds uint64_t");return uint64_t(v.v);}
+ Port& operator=(uint64_t value) {
+  if (model->canFastPortWrite() && is_input && width > 0) [[likely]] {
+   const uint64_t m = width >= 64 ? ~uint64_t(0) : ((uint64_t(1) << width) - 1);
+   model->s[id] = W{Bits(value & m), 0, 0, width};
+   model->markDirty();
+   return *this;
+  }
+  model->put(id, word(value, 0, 0, model->signals().at(id).width));
+  return *this;
+ }
+ void bits(const std::string& value) {
+  if (value.size() != size_t(width > 0 ? width : model->signals().at(id).width))
+   throw std::invalid_argument("port binary width mismatch");
+  model->put(id, parse(value));
+ }
+ std::string bits() const { return text(model->fastGet(id)); }
+ W value() const { return model->fastGet(id); }
+ explicit operator uint64_t() const {
+  const W v = model->fastGet(id);
+  if (v.x | v.z) throw std::runtime_error("integer conversion of X/Z port");
+  if (v.v > UINT64_MAX) throw std::overflow_error("port exceeds uint64_t");
+  return uint64_t(v.v);
+ }
 };
 }

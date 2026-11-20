@@ -91,14 +91,25 @@ namespace vsrtl {
 struct Model::State {
  std::string name; std::vector<std::string> names; std::vector<Signal> signals;
  std::shared_ptr<int> life=std::make_shared<int>(0); std::thread::id owner=std::this_thread::get_id();
- uint64_t now=0; bool finished=false,finishRequested=false,started=false,evaluating=false,dispatching=false,readOnly=false,dirty=true,requested=false;
+ uint64_t now=0; bool finished=false,finishRequested=false,started=false,evaluating=false,dispatching=false,readOnly=false,requested=false;
+ bool hasCallbacks=false;
  std::unordered_map<size_t,W> pending; std::vector<void*> plugins;
 };
-Model::Model(std::string name,std::vector<Signal> signals,int clock):state(std::make_unique<State>()){
+void Model::refreshFastFlags() noexcept {
+ fast_port_ok = !state->finished && !state->finishRequested && !state->readOnly && !state->dispatching;
+ fast_eligible = state->started && !state->finished && !state->finishRequested && !state->hasCallbacks && state->pending.empty() && !state->dispatching && !state->readOnly;
+ fast_eval_ok = fast_eligible && !fast_evaluating && !state->evaluating;
+}
+void Model::notifyCallbackStateChanged(bool active) noexcept {
+ if (active) state->hasCallbacks = true;
+ refreshFastFlags();
+}
+Model::Model(std::string name,std::vector<Signal> signals,int clock):state(std::make_unique<State>()),owner_thread(state->owner){
  if(name.empty()||signals.empty()||signals.size()>256||clock<0||size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)throw std::invalid_argument("invalid external model interface");
- state->name=std::move(name);state->names.reserve(signals.size());
+ state->name=std::move(name);state->names.reserve(signals.size());s.reserve(signals.size());
  for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>128||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(sig.two_state?word(0,0,0,sig.width):unknown(sig.width));}
  for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction,signals[i].is_signed,signals[i].two_state});s[clock]=word(0,0,0,1);
+ refreshFastFlags();
 }
 Model::~Model(){
  // Derived state is already gone; destruction invalidates callbacks, never calls HDL or plugins.
@@ -116,34 +127,43 @@ std::weak_ptr<int> Model::lifetime() const{return state->life;}
 const std::string& Model::name() const{return state->name;}
 const std::vector<Signal>& Model::signals() const{return state->signals;}
 W Model::get(size_t id) const{checkThread();return s.at(id);}
-void Model::put(size_t id,W value){checkThread();if(state->finished||state->finishRequested||state->readOnly)throw std::runtime_error("model is finished or in read-only callback");if(state->signals.at(id).direction!=vpiInput)throw std::runtime_error("only input ports may be deposited");value=word(value.v,value.x,value.z,state->signals[id].width);if(state->signals[id].two_state)value=two_state(value);if(state->dispatching)state->pending[id]=value;else s.at(id)=value;state->dirty=true;}
+void Model::put(size_t id,W value){checkThread();if(state->finished||state->finishRequested||state->readOnly)throw std::runtime_error("model is finished or in read-only callback");if(state->signals.at(id).direction!=vpiInput)throw std::runtime_error("only input ports may be deposited");value=word(value.v,value.x,value.z,state->signals[id].width);if(state->signals[id].two_state)value=two_state(value);if(state->dispatching){state->pending[id]=value;refreshFastFlags();}else s.at(id)=value;fast_dirty=true;}
 void Model::useVpi(){checkThread();current=this;currentLife=state->life;}
 uint64_t Model::time() const{checkThread();return state->now;}
-void Model::timeInc(uint64_t delta){checkThread();if(state->evaluating||gotFinish()||delta>UINT64_MAX-state->now)throw std::runtime_error("invalid time advance");state->now+=delta;}
+void Model::timeInc(uint64_t delta){checkThread();if(fast_evaluating||state->evaluating||gotFinish()||delta>UINT64_MAX-state->now)throw std::runtime_error("invalid time advance");state->now+=delta;}
 bool Model::gotFinish() const{checkThread();return state->finished||state->finishRequested;}
-bool Model::evalNeeded() const{checkThread();return !gotFinish()&&state->dirty;}
+bool Model::evalNeeded() const{checkThread();return !gotFinish()&&fast_dirty;}
 bool Model::started() const{checkThread();return state->started;}
-void Model::requestEval(){checkThread();if(gotFinish())throw std::runtime_error("finished model evaluation request");state->requested=true;state->dirty=true;}
-void Model::finish(){checkThread();state->finishRequested=true;}
-void Model::eval(){
- checkThread();if(state->evaluating||gotFinish())throw std::runtime_error("reentrant or finished model evaluation");Activation active(*this);state->evaluating=true;
+void Model::requestEval(){checkThread();if(gotFinish())throw std::runtime_error("finished model evaluation request");state->requested=true;fast_dirty=true;}
+void Model::finish(){checkThread();state->finishRequested=true;refreshFastFlags();}
+void Model::evalSlow(){
+ checkThread();if(fast_evaluating||state->evaluating||gotFinish())throw std::runtime_error("reentrant or finished model evaluation");
+ if(!state->hasCallbacks&&state->pending.empty()){
+  state->started=true;state->evaluating=true;state->requested=false;fast_dirty=false;refreshFastFlags();
+  try{evaluate();}catch(...){state->evaluating=false;fast_dirty=true;refreshFastFlags();throw;}
+  state->evaluating=false;fast_dirty=!state->pending.empty()||state->requested;refreshFastFlags();return;
+ }
+ Activation active(*this);state->evaluating=true;refreshFastFlags();
  try{
  state->requested=false;
  auto list=callbacks(*this);
- if(!state->started){state->started=true;state->dispatching=true;for(auto h:list)if(h->cb.reason==cbStartOfSimulation){invoke(*h);h->active=false;}state->dispatching=false;}
- if(state->finishRequested){state->evaluating=false;return;}
+ if(!state->started){state->started=true;state->dispatching=true;refreshFastFlags();for(auto h:list)if(h->cb.reason==cbStartOfSimulation){invoke(*h);h->active=false;}state->dispatching=false;refreshFastFlags();}
+ if(state->finishRequested){state->evaluating=false;refreshFastFlags();return;}
  list=callbacks(*this); // Include value callbacks registered by simulation-start callbacks.
- for(auto [id,w]:state->pending)s[id]=w;state->pending.clear();state->dirty=false;evaluate();
+ for(auto [id,w]:state->pending)s[id]=w;state->pending.clear();fast_dirty=false;evaluate();
  // Snapshot changed values before any callback can queue a new drive.
  std::vector<Handle*> changed;for(auto h:list)if(h->active&&h->cb.reason==cbValueChange){auto w=get(signal(h->cb.obj).id);if(!exact(w,h->previous)){h->previous=w;changed.push_back(h);}}
- state->dispatching=true;for(auto h:changed)invoke(*h);
- state->readOnly=true;for(auto h:callbacks(*this))if(h->active&&h->cb.reason==cbReadOnlySynch){invoke(*h);h->active=false;}state->readOnly=false;state->dispatching=false;state->evaluating=false;
- state->dirty=!state->pending.empty()||state->requested;for(auto h:callbacks(*this))if(h->cb.reason==cbReadOnlySynch)state->dirty=true;
- }catch(...){state->readOnly=false;state->dispatching=false;state->evaluating=false;state->dirty=true;throw;}
+ state->dispatching=true;refreshFastFlags();for(auto h:changed)invoke(*h);
+ state->readOnly=true;refreshFastFlags();for(auto h:callbacks(*this))if(h->active&&h->cb.reason==cbReadOnlySynch){invoke(*h);h->active=false;}state->readOnly=false;state->dispatching=false;state->evaluating=false;
+ auto remaining=callbacks(*this);
+ state->hasCallbacks=!remaining.empty();
+ fast_dirty=!state->pending.empty()||state->requested;for(auto h:remaining)if(h->cb.reason==cbReadOnlySynch)fast_dirty=true;
+ refreshFastFlags();
+ }catch(...){state->readOnly=false;state->dispatching=false;state->evaluating=false;fast_dirty=true;refreshFastFlags();throw;}
 }
-void Model::final(){checkThread();if(state->evaluating)throw std::runtime_error("reentrant final()");if(state->finished)return;Activation active(*this);state->finished=true;state->evaluating=true;state->readOnly=true;try{for(auto h:callbacks(*this))if(h->cb.reason==cbEndOfSimulation){invoke(*h);h->active=false;}state->evaluating=false;state->readOnly=false;}catch(...){state->evaluating=false;state->readOnly=false;throw;}}
+void Model::final(){checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("reentrant final()");if(state->finished)return;Activation active(*this);state->finished=true;state->evaluating=true;state->readOnly=true;refreshFastFlags();try{if(state->hasCallbacks)for(auto h:callbacks(*this))if(h->cb.reason==cbEndOfSimulation){invoke(*h);h->active=false;}state->evaluating=false;state->readOnly=false;refreshFastFlags();}catch(...){state->evaluating=false;state->readOnly=false;refreshFastFlags();throw;}}
 void Model::loadVpi(const std::string& path){
- checkThread();if(state->evaluating||state->started||gotFinish()||state->plugins.size()>=64)throw std::runtime_error("load VPI plugins before first eval; maximum64");Activation active(*this);
+ checkThread();if(fast_evaluating||state->evaluating||state->started||gotFinish()||state->plugins.size()>=64)throw std::runtime_error("load VPI plugins before first eval; maximum64");Activation active(*this);
 #if defined(_WIN32)
  auto module=LoadLibraryA(path.c_str());if(!module)throw std::runtime_error("cannot load VPI plugin");auto startup=reinterpret_cast<void(**)()>(GetProcAddress(module,"vlog_startup_routines"));
 #else
@@ -180,7 +200,7 @@ vpiHandle vpi_register_cb(p_cb_data data){return api([&]()->vpiHandle{
  if(!data||!data->cb_rtn)throw std::runtime_error("callback routine required");auto& m=selected();if(m.gotFinish())throw std::runtime_error("finished model");if(data->reason!=cbValueChange&&data->reason!=cbReadOnlySynch&&data->reason!=cbStartOfSimulation&&data->reason!=cbEndOfSimulation)throw std::runtime_error("unsupported callback reason");if(data->time&&(data->time->type!=vpiSimTime&&data->time->type!=vpiSuppressTime||data->time->high||data->time->low))throw std::runtime_error("only zero-delay callbacks supported");if(data->value)valueFormat(data->value->format);
  vpiHandle object=nullptr;W previous{};if(data->reason==cbValueChange){auto& obj=signal(data->obj);if(obj.model!=&m)throw std::runtime_error("callback model mismatch");previous=m.get(obj.id);if(data->value&&data->value->format==vpiScalarVal&&previous.w!=1)throw std::runtime_error("scalar callback format requires width1");object=make(m,vpiReg,obj.id);}else if(data->obj)throw std::runtime_error("lifecycle callback object must be null");
  if(data->reason==cbStartOfSimulation&&m.started())throw std::runtime_error("start callbacks must be registered before first eval");
- size_t order=handles.size();auto key=make(m,vpiCallback,order);auto& h=handle(key);h.cb=*data;h.cb.obj=object;h.previous=previous;if(data->time){h.callbackTime=*data->time;h.cb.time=&h.callbackTime;}if(data->value){h.callbackValue=*data->value;h.cb.value=&h.callbackValue;}if(data->reason==cbReadOnlySynch)m.requestEval();return key;
+ size_t order=handles.size();auto key=make(m,vpiCallback,order);auto& h=handle(key);h.cb=*data;h.cb.obj=object;h.previous=previous;if(data->time){h.callbackTime=*data->time;h.cb.time=&h.callbackTime;}if(data->value){h.callbackValue=*data->value;h.cb.value=&h.callbackValue;}m.notifyCallbackStateChanged(true);if(data->reason==cbReadOnlySynch)m.requestEval();return key;
  },vpiHandle{});}
 PLI_INT32 vpi_remove_cb(vpiHandle object){return api([&](){auto& h=handle(object);if(h.kind!=vpiCallback)throw std::runtime_error("callback handle required");h.active=false;return PLI_INT32(1);},PLI_INT32(0));}
 PLI_INT32 vpi_chk_error(p_vpi_error_info info){if(error.empty())return 0;if(info)*info={vpiRun,vpiError,error.data(),const_cast<char*>("VeloSim"),const_cast<char*>("VS_VPI"),nullptr,0};return vpiError;}

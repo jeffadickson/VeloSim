@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
@@ -14,7 +15,7 @@ internal static partial class NativeMethods
 {
     internal static string? LoadedLibraryPath { get; private set; }
     internal static string? LoadedSchedulerPath { get; private set; }
-    private static readonly object libraryGate = new();
+    private static readonly Lock libraryGate = new();
     private static readonly Dictionary<string, nint> loadedModules = new(StringComparer.Ordinal);
     static NativeMethods() => NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, Resolve);
     private static nint Resolve(string name, Assembly assembly, DllImportSearchPath? search)
@@ -60,14 +61,15 @@ internal static partial class NativeMethods
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_signal")] internal static partial int Signal(EngineHandle handle, uint width, ulong value, ulong x, ulong z);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_process")] internal static partial int Process(EngineHandle handle, uint clock, uint dst, uint source, uint reset, byte edge, byte op);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_process_v2")] internal static partial int ProcessV2(EngineHandle handle, uint clock, uint dst, uint source, uint sourceB, uint reset, byte edge, byte op);
-    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_read")] internal static partial int Read(EngineHandle handle, uint id, out ulong value, out ulong x, out ulong z);
+    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_read"), SuppressGCTransition] internal static partial int Read(EngineHandle handle, uint id, out ulong value, out ulong x, out ulong z);
     [LibraryImport("velosim_ir", EntryPoint = "vs_ir_drive")] internal static unsafe partial int Drive(EngineHandle handle, uint* ids, ulong* values, ulong* xs, ulong* zs, uint count, uint workers);
-    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_ticks")] internal static partial ulong Ticks(EngineHandle handle);
-    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_build_profile")] internal static partial uint BuildProfile();
+    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_ticks"), SuppressGCTransition] internal static partial ulong Ticks(EngineHandle handle);
+    [LibraryImport("velosim_ir", EntryPoint = "vs_ir_build_profile"), SuppressGCTransition] internal static partial uint BuildProfile();
 }
 
 public sealed class Simulation : IDisposable
 {
+    private const int StackDriveLimit = 64;
     public static string NativeBuildProfile => NativeMethods.BuildProfile() switch { 0 => "debug", 1 => "optimized", _ => throw new InvalidOperationException("Unknown native build profile.") };
     public static string NativeLibraryPath
     {
@@ -78,13 +80,16 @@ public sealed class Simulation : IDisposable
         }
     }
     private readonly EngineHandle handle;
-    private readonly Dictionary<string, (uint Id, int Width)> signals = new(StringComparer.Ordinal);
-    private readonly object gate = new();
+    private readonly Dictionary<string, (uint Id, int Width)> signals;
+    private readonly int[] signalWidths;
+    private readonly Lock gate = new();
     public IrDesign Design { get; }
     public ulong Ticks { get { lock (gate) { ObjectDisposedException.ThrowIf(handle.IsClosed, this); return NativeMethods.Ticks(handle); } } }
     public Simulation(IrDesign design)
     {
         Design = design ?? throw new ArgumentNullException(nameof(design));
+        signals = new(design.Signals.Count, StringComparer.Ordinal);
+        signalWidths = new int[design.Signals.Count];
         handle = NativeMethods.New();
         if (handle.IsInvalid) { handle.Dispose(); throw new InvalidOperationException("Native engine allocation failed."); }
         try
@@ -94,6 +99,7 @@ public sealed class Simulation : IDisposable
                 var w = s.Initial; var id = NativeMethods.Signal(handle, (uint)w.Width, w.Value, w.XMask, w.ZMask);
                 if (id < 0) throw new InvalidOperationException("Native signal registration failed.");
                 signals.Add(s.Name, ((uint)id, w.Width));
+                signalWidths[id] = w.Width;
             }
             foreach (var p in design.Processes)
                 if ((design.Format == "velosim.ir.v2" ? NativeMethods.ProcessV2(handle, signals[p.Clock].Id, signals[p.Destination].Id, signals[p.Source].Id, signals[p.SourceB ?? p.Source].Id, signals[p.Reset].Id, (byte)p.Edge, (byte)p.Operation) : NativeMethods.Process(handle, signals[p.Clock].Id, signals[p.Destination].Id, signals[p.Source].Id, signals[p.Reset].Id, (byte)p.Edge, (byte)p.Operation)) != 0)
@@ -101,6 +107,7 @@ public sealed class Simulation : IDisposable
         }
         catch { handle.Dispose(); throw; }
     }
+    public uint SignalId(string name) => signals[name].Id;
     public FourStateWord Read(string name)
     {
         lock (gate)
@@ -111,6 +118,59 @@ public sealed class Simulation : IDisposable
             return new(width, value, x, z);
         }
     }
+    public unsafe int Drive(ReadOnlySpan<(uint Id, FourStateWord Value)> updates, int workers = 1)
+    {
+        if (workers is < 1 or > 256) throw new ArgumentOutOfRangeException(nameof(workers));
+        lock (gate)
+        {
+            ObjectDisposedException.ThrowIf(handle.IsClosed, this);
+            int count = updates.Length;
+            if (count <= StackDriveLimit)
+            {
+                uint* ids = stackalloc uint[count];
+                ulong* vals = stackalloc ulong[count];
+                ulong* xs = stackalloc ulong[count];
+                ulong* zs = stackalloc ulong[count];
+                for (int i = 0; i < count; i++)
+                {
+                    var (id, value) = updates[i];
+                    if (id >= (uint)signalWidths.Length || value.Width != signalWidths[id]) throw new ArgumentException("Drive signal or width mismatch.");
+                    ids[i] = id; vals[i] = value.Value; xs[i] = value.XMask; zs[i] = value.ZMask;
+                }
+                var result = NativeMethods.Drive(handle, ids, vals, xs, zs, (uint)count, (uint)workers);
+                if (result < 0) throw new InvalidOperationException("Native drive failed: " + result);
+                return result;
+            }
+            uint[]? pooledIds = null;
+            ulong[]? pooledVals = null, pooledXs = null, pooledZs = null;
+            try
+            {
+                pooledIds = ArrayPool<uint>.Shared.Rent(count);
+                pooledVals = ArrayPool<ulong>.Shared.Rent(count);
+                pooledXs = ArrayPool<ulong>.Shared.Rent(count);
+                pooledZs = ArrayPool<ulong>.Shared.Rent(count);
+                for (int i = 0; i < count; i++)
+                {
+                    var (id, value) = updates[i];
+                    if (id >= (uint)signalWidths.Length || value.Width != signalWidths[id]) throw new ArgumentException("Drive signal or width mismatch.");
+                    pooledIds[i] = id; pooledVals[i] = value.Value; pooledXs[i] = value.XMask; pooledZs[i] = value.ZMask;
+                }
+                fixed (uint* ip = pooledIds) fixed (ulong* vp = pooledVals, xp = pooledXs, zp = pooledZs)
+                {
+                    var result = NativeMethods.Drive(handle, ip, vp, xp, zp, (uint)count, (uint)workers);
+                    if (result < 0) throw new InvalidOperationException("Native drive failed: " + result);
+                    return result;
+                }
+            }
+            finally
+            {
+                if (pooledIds is not null) ArrayPool<uint>.Shared.Return(pooledIds);
+                if (pooledVals is not null) ArrayPool<ulong>.Shared.Return(pooledVals);
+                if (pooledXs is not null) ArrayPool<ulong>.Shared.Return(pooledXs);
+                if (pooledZs is not null) ArrayPool<ulong>.Shared.Return(pooledZs);
+            }
+        }
+    }
     public unsafe int Drive(IReadOnlyDictionary<string, FourStateWord> updates, int workers = 1)
     {
         ArgumentNullException.ThrowIfNull(updates);
@@ -118,19 +178,52 @@ public sealed class Simulation : IDisposable
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(handle.IsClosed, this);
-            var ids = new uint[updates.Count]; var vals = new ulong[updates.Count]; var xs = new ulong[updates.Count]; var zs = new ulong[updates.Count];
-            int i = 0;
-            foreach (var (name, value) in updates)
+            int count = updates.Count;
+            if (count <= StackDriveLimit)
             {
-                var signal = signals[name];
-                if (value.Width != signal.Width) throw new ArgumentException("Drive width mismatch: " + name);
-                ids[i] = signal.Id; vals[i] = value.Value; xs[i] = value.XMask; zs[i] = value.ZMask; i++;
-            }
-            fixed (uint* ip = ids) fixed (ulong* vp = vals, xp = xs, zp = zs)
-            {
-                var result = NativeMethods.Drive(handle, ip, vp, xp, zp, (uint)i, (uint)workers);
+                uint* ids = stackalloc uint[count];
+                ulong* vals = stackalloc ulong[count];
+                ulong* xs = stackalloc ulong[count];
+                ulong* zs = stackalloc ulong[count];
+                int i = 0;
+                foreach (var (name, value) in updates)
+                {
+                    var signal = signals[name];
+                    if (value.Width != signal.Width) throw new ArgumentException("Drive width mismatch: " + name);
+                    ids[i] = signal.Id; vals[i] = value.Value; xs[i] = value.XMask; zs[i] = value.ZMask; i++;
+                }
+                var result = NativeMethods.Drive(handle, ids, vals, xs, zs, (uint)i, (uint)workers);
                 if (result < 0) throw new InvalidOperationException("Native drive failed: " + result);
                 return result;
+            }
+            uint[]? pooledIds = null;
+            ulong[]? pooledVals = null, pooledXs = null, pooledZs = null;
+            try
+            {
+                pooledIds = ArrayPool<uint>.Shared.Rent(count);
+                pooledVals = ArrayPool<ulong>.Shared.Rent(count);
+                pooledXs = ArrayPool<ulong>.Shared.Rent(count);
+                pooledZs = ArrayPool<ulong>.Shared.Rent(count);
+                int i = 0;
+                foreach (var (name, value) in updates)
+                {
+                    var signal = signals[name];
+                    if (value.Width != signal.Width) throw new ArgumentException("Drive width mismatch: " + name);
+                    pooledIds[i] = signal.Id; pooledVals[i] = value.Value; pooledXs[i] = value.XMask; pooledZs[i] = value.ZMask; i++;
+                }
+                fixed (uint* ip = pooledIds) fixed (ulong* vp = pooledVals, xp = pooledXs, zp = pooledZs)
+                {
+                    var result = NativeMethods.Drive(handle, ip, vp, xp, zp, (uint)i, (uint)workers);
+                    if (result < 0) throw new InvalidOperationException("Native drive failed: " + result);
+                    return result;
+                }
+            }
+            finally
+            {
+                if (pooledIds is not null) ArrayPool<uint>.Shared.Return(pooledIds);
+                if (pooledVals is not null) ArrayPool<ulong>.Shared.Return(pooledVals);
+                if (pooledXs is not null) ArrayPool<ulong>.Shared.Return(pooledXs);
+                if (pooledZs is not null) ArrayPool<ulong>.Shared.Return(pooledZs);
             }
         }
     }

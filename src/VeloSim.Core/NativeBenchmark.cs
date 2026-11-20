@@ -64,7 +64,7 @@ public static class NativeBenchmark
         plan.Validate(); plan = plan with { Workers = Array.AsReadOnly(plan.Workers.ToArray()) }; cancellationToken.ThrowIfCancellationRequested();
         var native = Simulation.NativeLibraryPath; var profile = Simulation.NativeBuildProfile;
         var host = Environment.ProcessPath ?? throw new IOException("Host executable path unavailable.");
-        static string Hash(string file) { using var stream = File.OpenRead(file); return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant(); }
+        static string Hash(string file) { using var stream = File.OpenRead(file); return Convert.ToHexStringLower(SHA256.HashData(stream)); }
         string nativeHash = Hash(native), hostHash = Hash(host);
         var implementation = new List<FileFingerprint>();
         if (RuntimeFeature.IsDynamicCodeSupported)
@@ -88,7 +88,9 @@ public static class NativeBenchmark
                 for (int repetition = -plan.Warmups; repetition < plan.Repetitions; repetition++)
                 {
                     using var simulation = new Simulation(design);
-                    var low = new Dictionary<string, FourStateWord> { ["clk"] = new(1) }; var high = new Dictionary<string, FourStateWord> { ["clk"] = new(1, 1) };
+                    uint clkId = simulation.SignalId("clk");
+                    ReadOnlySpan<(uint Id, FourStateWord Value)> low = [(clkId, new(1))];
+                    ReadOnlySpan<(uint Id, FourStateWord Value)> high = [(clkId, new(1, 1))];
                     long start = Stopwatch.GetTimestamp();
                     for (int cycle = 0; cycle < plan.Cycles; cycle++)
                     {
@@ -104,7 +106,7 @@ public static class NativeBenchmark
                         var actual = simulation.Read(signal.Name); if (actual != expected) throw new InvalidOperationException("Benchmark result differs from independent expected counter.");
                         BinaryPrimitives.WriteUInt64LittleEndian(checksumBytes, actual.Value); digest.AppendData(checksumBytes);
                     }
-                    checksum = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant();
+                    checksum = Convert.ToHexStringLower(digest.GetHashAndReset());
                     if (commonChecksum is not null && commonChecksum != checksum) throw new InvalidOperationException("Benchmark worker checksums differ."); commonChecksum = checksum;
                     if (repetition >= 0) samples.Add(elapsed);
                 }

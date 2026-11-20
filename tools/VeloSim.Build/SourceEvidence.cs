@@ -7,7 +7,7 @@ public static class SourceEvidence
     public static IReadOnlyDictionary<string, string> Capture(string root)
     {
         root = Path.GetFullPath(root); var paths = new List<string>();
-        var extensions = new HashSet<string>([".cs", ".csproj", ".cpp", ".c", ".h", ".map", ".sv", ".svh", ".json", ".cmake", ".props", ".targets", ".config"], StringComparer.Ordinal);
+        HashSet<string> extensions = [with(StringComparer.Ordinal), ".cs", ".csproj", ".cpp", ".c", ".h", ".map", ".sv", ".svh", ".json", ".cmake", ".props", ".targets", ".config"];
         void Walk(DirectoryInfo directory)
         {
             if (directory.LinkTarget is not null) throw new IOException("Coverage source directories cannot be symbolic links.");
@@ -20,7 +20,7 @@ public static class SourceEvidence
         foreach (var relative in new[] { "src", "native", "tests", "tools/VeloSim.Build", "examples" }) { var path = Path.Combine(root, relative); if (Directory.Exists(path)) Walk(new(path)); }
         paths.AddRange(new[] { "CMakeLists.txt", "Makefile", "Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", "global.json", "NuGet.config", "coverage.runsettings", "VeloSim.slnx", ".config/dotnet-tools.json" }.Select(p => Path.Combine(root, p)).Where(File.Exists));
         if (paths.Any(p => new FileInfo(p).LinkTarget is not null)) throw new IOException("Coverage source files cannot be symbolic links.");
-        return paths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToDictionary(p => Path.GetRelativePath(root, p).Replace('\\', '/'), p => Convert.ToHexString(SHA256.HashData(Path.GetFileName(p) == "packages.lock.json" ? DependencySnapshot(p) : File.ReadAllBytes(p))).ToLowerInvariant(), StringComparer.Ordinal);
+        return paths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToDictionary(p => Path.GetRelativePath(root, p).Replace('\\', '/'), p => Convert.ToHexStringLower(SHA256.HashData(Path.GetFileName(p) == "packages.lock.json" ? DependencySnapshot(p) : File.ReadAllBytes(p))), StringComparer.Ordinal);
     }
     public static byte[] DependencySnapshot(string path)
     {
@@ -54,17 +54,17 @@ public static class SourceEvidence
             if (hash.Length != 64 || hash.Any(c => !char.IsAsciiDigit(c) && c is not (>= 'a' and <= 'f'))) throw new IOException("Invalid source fingerprint.");
             digest.AppendData(Encoding.UTF8.GetBytes(path + "\n")); digest.AppendData(Convert.FromHexString(hash));
         }
-        return Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant();
+        return Convert.ToHexStringLower(digest.GetHashAndReset());
     }
     public static void Save(string path, IReadOnlyDictionary<string, string> sources)
     {
-        using var stream = new MemoryStream();
-        using (var w = new Utf8JsonWriter(stream, new() { Indented = true }))
+        using var file = new FileStream(path, FileMode.Create, FileAccess.Write);
+        using (var w = new Utf8JsonWriter(file, new() { Indented = true }))
         {
             w.WriteStartObject(); w.WriteString("format", "velosim.coverage.sources.v1"); w.WriteString("scope", "repository_first_party_inputs_compiler_normalized_locks_excludes_generated_files_and_toolchain"); w.WriteString("source_sha256", Digest(sources));
-            w.WriteStartArray("sources"); foreach (var (file, hash) in sources.OrderBy(p => p.Key, StringComparer.Ordinal)) { w.WriteStartObject(); w.WriteString("path", file); w.WriteString("sha256", hash); w.WriteEndObject(); } w.WriteEndArray(); w.WriteEndObject();
+            w.WriteStartArray("sources"); foreach (var (filePath, hash) in sources.OrderBy(p => p.Key, StringComparer.Ordinal)) { w.WriteStartObject(); w.WriteString("path", filePath); w.WriteString("sha256", hash); w.WriteEndObject(); } w.WriteEndArray(); w.WriteEndObject();
         }
-        File.WriteAllText(path, Encoding.UTF8.GetString(stream.ToArray()) + "\n");
+        file.WriteByte((byte)'\n');
     }
     public static void VerifyCurrent(string root, string manifest)
     {

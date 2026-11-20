@@ -83,5 +83,54 @@ int main(){
  write(m,parse("x"),parse("1"),8);check(text(m[0])=="xxxxxxxx");write(m,parse("100"),parse("1"),8);check(text(m[0])=="xxxxxxxx");
  write(m,parse("01"),parse("xz"),8);check(text(read(m,parse("01"),8))=="000000xz");
  bool invalid=false;try{parse("bad");}catch(const std::exception&){invalid=true;}check(invalid);
+ // Verify compile-time lit(), parse_span(), append_text(), MemLog, and SSE2/AVX2 SIMD kernels.
+ check(exact(lit(0x5ULL,4),parse("0101")));
+ check(exact(lit(0x8ULL,0x1ULL,0x2ULL,0x0ULL,0x1ULL,0x0ULL,65),parse("1"+std::string(60,'0')+"10xz")));
+ check(exact(parse_span("10xz",4),parse("10xz")));
+ {
+  std::string buf;append_text(buf,parse("10xz01"));check(buf=="10xz01");
+  std::vector<std::vector<W>> mems{std::vector<W>(8,unknown(8))};
+  MemLog<4> log;
+  for(int i=0;i<6;++i)log.push(0,mems[0].size(),lit(uint64_t(i),8),lit(uint64_t(i+10),8),8);
+  log.push(0,mems[0].size(),lit(1ULL,8),lit(99ULL,8),8); // Later write to same slot wins.
+  log.push(0,mems[0].size(),parse("x"),lit(77ULL,8),8); // Unknown index ignored.
+  log.push(0,mems[0].size(),lit(8ULL,8),lit(77ULL,8),8); // OOB index ignored.
+  log.commit(mems);
+  check(mems[0][0].v==10&&mems[0][1].v==99&&mems[0][5].v==15&&mems[0][6].x==0xff);
+ }
+ {
+  constexpr size_t N=11;
+  uint64_t av[N],ax[N],bv[N],bx[N],rv[N],rx[N];
+  const uint64_t m=mask64_unchecked(17);
+  for(size_t i=0;i<N;++i){
+   av[i]=(0x12345ULL*(i+1))&m;ax[i]=((i%3==0)?0x55ULL:0ULL)&m;
+   bv[i]=(0x0fedcULL*(i+3))&m;bx[i]=((i%4==0)?0xaaULL:0ULL)&m;
+   av[i]&=~ax[i];bv[i]&=~bx[i];
+  }
+  for(int op=0;op<3;++op){
+   simd::bit_binary_u64_batch(av,ax,bv,bx,rv,rx,N,op,m);
+   for(size_t i=0;i<N;++i){
+    auto exp=bit_binary(word(av[i],ax[i],0,17),word(bv[i],bx[i],0,17),17,op);
+    check(rv[i]==uint64_t(exp.v)&&rx[i]==uint64_t(exp.x));
+   }
+  }
+  for(bool sub:{false,true}){
+   simd::add_sub_u64_batch(av,ax,bv,bx,rv,rx,N,sub,m);
+   for(size_t i=0;i<N;++i){
+    auto exp=arithmetic(word(av[i],ax[i],0,17),word(bv[i],bx[i],0,17),17,sub);
+    check(rv[i]==uint64_t(exp.v)&&rx[i]==uint64_t(exp.x));
+   }
+  }
+  // 128-bit SSE2 bitwise & conditional merge vs independent 4-state expectations.
+  auto w128a=parse(std::string(32,'1')+std::string(32,'0')+std::string(32,'x')+std::string(32,'z'));
+  auto w128b=parse(std::string(64,'1')+std::string(32,'0')+std::string(32,'x'));
+  check(text(bit_not(w128a,128))==std::string(32,'0')+std::string(32,'1')+std::string(64,'x'));
+  check(text(bit_binary(w128a,w128b,128,0))==std::string(32,'1')+std::string(32,'0')+std::string(32,'0')+std::string(32,'x'));
+  check(text(bit_binary(w128a,w128b,128,1))==std::string(64,'1')+std::string(64,'x'));
+  check(text(bit_binary(w128a,w128b,128,2))==std::string(32,'0')+std::string(32,'1')+std::string(64,'x'));
+  auto cond128=conditional(parse("x"),w128a,w128a,128);
+  check(exact(cond128,w128a));
+ }
 }
+
 

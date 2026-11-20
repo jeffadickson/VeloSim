@@ -1,7 +1,7 @@
 DOTNET ?= dotnet
 .DEFAULT_GOAL := build
 JOBS ?= 4
-BUILD_DLL := tools/VeloSim.Build/bin/Release/net10.0/VeloSim.Build.dll
+BUILD_DLL := tools/VeloSim.Build/bin/Release/net11.0/VeloSim.Build.dll
 NATIVE_BUILD_TOOL := artifacts/publish/VeloSim.Build/VeloSim.Build
 BUILD_SOURCES := $(wildcard tools/VeloSim.Build/*.cs tools/VeloSim.Build/*.csproj) Directory.Build.props Directory.Build.targets global.json
 .PHONY: build test coverage native-coverage benchmark publish bundle doctor coverage-check coverage-current

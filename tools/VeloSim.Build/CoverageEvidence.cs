@@ -28,7 +28,7 @@ public static class CoverageEvidence
                 if (!expected.Remove(path)) throw new IOException("Unexpected or duplicate coverage evidence file.");
                 var file = relative ? Path.Combine(directory, path) : path;
                 if (new FileInfo(file).LinkTarget is not null) throw new IOException("Coverage evidence files cannot be links.");
-                using var input = File.OpenRead(file); var hash = Convert.ToHexString(SHA256.HashData(input)).ToLowerInvariant();
+                using var input = File.OpenRead(file); var hash = Convert.ToHexStringLower(SHA256.HashData(input));
                 if (hash != entry.GetProperty("sha256").GetString()) throw new IOException("Coverage evidence file changed: " + path);
             }
             if (expected.Count != 0) throw new IOException("Coverage evidence omits required files.");
