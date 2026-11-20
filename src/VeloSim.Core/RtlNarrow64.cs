@@ -17,6 +17,12 @@ public sealed partial class RtlDesign
             if (e.TryGetProperty("base", out var basis) && !ExpressionFits64(basis)) return false;
             return true;
         }
+        if (kind == "urandom_range")
+        {
+            if (!ExpressionFits64(e.GetProperty("max"))) return false;
+            if (e.TryGetProperty("min", out var minEl) && !ExpressionFits64(minEl)) return false;
+            return true;
+        }
         if (e.TryGetProperty("args", out var args))
         {
             foreach (var a in args.EnumerateArray())
@@ -27,7 +33,7 @@ public sealed partial class RtlDesign
 
     private bool StatementFits64(JsonElement e)
     {
-        if (e.TryGetProperty("target", out var t) && !ExpressionFits64(t)) return false;
+        if (e.TryGetProperty("target", out var t) && t.ValueKind == JsonValueKind.Object && !ExpressionFits64(t)) return false;
         if (e.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Object && !ExpressionFits64(v)) return false;
         if (e.TryGetProperty("condition", out var c) && c.ValueKind == JsonValueKind.Object && !ExpressionFits64(c)) return false;
         if (e.TryGetProperty("count", out var cnt) && cnt.ValueKind == JsonValueKind.Object && !ExpressionFits64(cnt)) return false;
@@ -92,6 +98,14 @@ public sealed partial class RtlDesign
         if (kind == "bitselect") return $"vsrtl::w64::selbit({Expression64(e.GetProperty("value"))},{Expression64(e.GetProperty("index"))})";
         if (kind == "partselect") return $"vsrtl::w64::selpart({Expression64(e.GetProperty("value"))},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
         if (kind == "indexedselect") return $"vsrtl::w64::selidx({Expression64(e.GetProperty("value"))},{Expression64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
+        if (kind == "test_plusargs") return Extend($"vsrtl::w64::lit(testPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}),32)");
+        if (kind == "urandom") return Extend("vsrtl::w64::lit(nextUrandom(),32)");
+        if (kind == "urandom_range")
+        {
+            string maxExpr = $"uint32_t(({Expression64(e.GetProperty("max"))}).v)";
+            string minExpr = e.TryGetProperty("min", out var minEl) ? $"uint32_t(({Expression64(minEl)}).v)" : "0u";
+            return Extend($"vsrtl::w64::lit(nextUrandomRange({maxExpr},{minExpr}),32)");
+        }
         if (kind == "dpi_call")
         {
             string callArgs = string.Join(",", e.GetProperty("args").EnumerateArray().Select(a => $"({Expression64(a)}).v"));
@@ -102,6 +116,11 @@ public sealed partial class RtlDesign
         return kind switch
         {
             "castsigned" or "castunsigned" => Extend(Expression64(args[0])),
+            "countones" => Extend($"vsrtl::w64::countones({Expression64(args[0])})"),
+            "onehot" => $"vsrtl::w64::onehot({Expression64(args[0])})",
+            "onehot0" => $"vsrtl::w64::onehot0({Expression64(args[0])})",
+            "isunknown" => $"vsrtl::w64::isunknown({Expression64(args[0])})",
+            "clog2" => Extend($"vsrtl::w64::clog2({Expression64(args[0])})"),
             "add" or "sub" => $"vsrtl::w64::arith({Expression64(args[0], width, signed)},{Expression64(args[1], width, signed)},{width},{(kind == "sub" ? "true" : "false")})",
             "bitnot" => $"vsrtl::w64::bnot({Expression64(args[0], width, signed)},{width})",
             "neg" => $"vsrtl::w64::arith(vsrtl::w64::lit(0ULL,{width}),{Expression64(args[0], width, signed)},{width},true)",
@@ -233,6 +252,31 @@ public sealed partial class RtlDesign
                 code.AppendLine($"emitDisplay(vsrtl::format_display({fmt},{{{argList}}},{(nl ? "true" : "false")}));");
                 break;
             }
+            case "value_plusargs":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                code.AppendLine($"{{W _vs_vp=vsrtl::w64::from(_vs_next[{tid}]);uint32_t _vs_vpm=valuePlusargs({fmt},_vs_vp);if(_vs_vpm)_vs_next[{tid}]={StoreWord64("vsrtl::w64::to(_vs_vp)", Signals[tid])};");
+                if (e.TryGetProperty("matched", out var vpMatched) && vpMatched.ValueKind != JsonValueKind.Null)
+                {
+                    int mid = SignalId(vpMatched.GetString()!);
+                    code.AppendLine($"_vs_next[{mid}]={StoreWord64("vsrtl::w64::lit(_vs_vpm,32)", Signals[mid])};");
+                }
+                code.AppendLine("}");
+                break;
+            }
+            case "force":
+            {
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                code.AppendLine($"forceSignal({tid},vsrtl::w64::from({StoreWord64(Expression64(e.GetProperty("value")), Signals[tid])}));");
+                break;
+            }
+            case "release":
+            {
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                code.AppendLine($"releaseSignal({tid});");
+                break;
+            }
             case "case":
             {
                 int caseId = unique++;
@@ -342,7 +386,7 @@ public sealed partial class RtlDesign
             bodyCode.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_evaluating=false;fast_dirty=true;fast_eval_ok=fast_eligible;throw;}}");
         else
             bodyCode.AppendLine($"this->{className}::evaluate();");
-        bodyCode.AppendLine("fast_evaluating=false;fast_eval_ok=fast_eligible;return;}");
+        bodyCode.AppendLine("fast_evaluating=false;if(!fast_eligible)[[unlikely]]applyForces();fast_eval_ok=fast_eligible;return;}");
         bodyCode.AppendLine("evalSlow();}");
         foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.AppendLine($"vsrtl::Port {names[signal.Name]};");
         bodyCode.Append($"{className}():vsrtl::Model(\"{top}\",{{");
@@ -357,6 +401,7 @@ public sealed partial class RtlDesign
         bodyCode.AppendLine($"_vs_prev[{SignalId(Clock!)}]=vsrtl::w64::lit(0ULL,1);");
         foreach (var signal in Signals.Where(s => s.TwoState && s.Width == 1))
             bodyCode.AppendLine($"_vs_prev[{SignalId(signal.Name)}]=vsrtl::w64::lit(0ULL,1);");
+        if (enableCoverage) bodyCode.AppendLine("enableToggleCoverage(true);");
         bodyCode.AppendLine("}\n};");
 
         var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");

@@ -1,19 +1,19 @@
 # Compressed digital waveform output
 
-Requirement **VS-TRACE-COMPRESSED-001** is Draft in [StrictDoc](../requirements/velosim.sdoc), owned by [WP-17 / GitHub issue #18](https://github.com/jeffadickson/VeloSim/issues/18). The user requested compressed waveform output; implementation and verification remain open.
+Requirement **VS-TRACE-COMPRESSED-001** remains Draft in [StrictDoc](../requirements/velosim.sdoc), owned by [WP-17 / GitHub issue #18](https://github.com/jeffadickson/VeloSim/issues/18), while its first verified lossless compressed waveform vertical slice is active under **VS-RTL-VCD-001**.
 
-The product must provide losslessly compressed traces in a documented format that an independent reader can open. Planned acceptance checks preserve selected signal identities/hierarchy, declared widths, supported 0/1/X/Z values, timestamps and time precision. Errors and unsupported trace selections must be explicit. Existing `VS_RTL` comparison text alone does not meet the requirement. These detailed checks are inferred acceptance criteria pending implementation evidence.
+## Implemented lossless slice: RFC 1952 `.vcd.gz` (zero external dependencies)
 
-## Implementation information: libfst
+- **C++20 SDK (`native/rtl/gzip_stream.h`, `native/rtl/vcd_trace.h`, `native/rtl/external_model.h`, `native/rtl/vpi.cpp`):** `Model::openVcdGz(path, timescale, filter_prefixes)` writes an RFC 1952 GZIP stream containing RFC 1951 LZ77 fixed-Huffman DEFLATE blocks and IEEE CRC-32 / ISIZE trailers with zero external library dependencies. Both `openVcd` and `openVcdGz` support fail-closed hierarchical `filter_prefixes` signal selection (unmatched selectors throw `std::invalid_argument`) and explicit open/write/flush/close error reporting.
+- **C# (.NET 11) SDK (`src/VeloSim.Core/RtlCSharpEmitter.cs`):** Generated models provide `OpenVcdGz(path, timescale, filterPrefixes)` backed by `System.IO.Compression.GZipStream` with matching hierarchical `$scope` trees and fail-closed selector checks.
+- **Verification (`tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs`):** Independent decompression via .NET `GZipStream` verifies byte-for-byte equality with uncompressed VCD, strictly smaller file size on multi-cycle traces, preserved timescale/hierarchy/widths, and fail-closed rejection of unmatched trace selectors.
 
-**FST is the initial format candidate.** [GTKWave libfst](https://github.com/gtkwave/libfst) is the library candidate recorded as [LIB-11](library-opportunities.md#lib-11). It supplies format machinery; VeloSim still supplies signal/hierarchy metadata, values and correctly scheduled time samples. See the [GTKWave FST documentation](https://gtkwave.github.io/gtkwave/internals/fst-file-format.html).
+## Remaining optional follow-up: libfst and cross-platform qualification
 
-libfst is informational, not a mandatory dependency. Before adoption, pin a revision, review bundled compression/component notices, test the native build and exported-SDK packaging on the intended platforms, and document reader compatibility. No compression ratio, throughput gain, installed dependency or implemented waveform support is claimed by this requirement.
+**FST remains an optional binary-format follow-up.** [GTKWave libfst](https://github.com/gtkwave/libfst) is recorded as [LIB-11](library-opportunities.md#lib-11) for random-access binary waveforms (see the [GTKWave FST documentation](https://gtkwave.github.io/gtkwave/internals/fst-file-format.html)). libfst is informational, not a mandatory dependency. Before adoption, pin a revision, review bundled compression/component notices, test the native build and exported-SDK packaging on Windows and Linux, and document reader compatibility.
 
-## Planned verification
+## Remaining verification before closing VS-TRACE-COMPRESSED-001
 
-- Decode a generated compressed trace using an independent reader and compare every expected value transition and timestamp with a small golden design.
-- Include hierarchy, wide words, X/Z, unchanged values, trace selection, empty traces and clean shutdown.
-- Test invalid paths, write/flush failures, interrupted output and supported Windows/Linux builds.
-- Measure file size and write/read overhead on comparable traces; report the actual result without requiring an invented compression ratio.
-- Record source/tool/library hashes and implementation coverage. Keep requirement status Draft until the accepted verification scope supports closure.
+- Clean-machine Windows build/test qualification of `.vcd.gz` output and error-path handling (invalid paths, write/flush failures, interrupted output).
+- Optional FST writer qualification if binary random-access waveform support is prioritized beyond standard GTKWave-readable `.vcd.gz`.
+- Keep **VS-TRACE-COMPRESSED-001** Draft until cross-platform verification and final format scope support closure.

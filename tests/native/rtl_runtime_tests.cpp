@@ -387,6 +387,21 @@ int main(){
   svPutBitselLogic(lv,33,sv_z);
   svPutBitselLogic(lv,34,sv_1);
   check(svGetBitselLogic(lv,5)==sv_x&&svGetBitselLogic(lv,33)==sv_z&&svGetBitselLogic(lv,34)==sv_1&&svGetBitselLogic(lv,0)==sv_0);
+
+  // Wave 3: bit/count/state system queries across W, W64, and W2.
+  W mix=parse("10x1z010");
+  check(countones(mix).v==3&&onehot(mix).v==0&&onehot0(mix).v==0&&isunknown(mix).v==1);
+  W oh=parse("00x10z00");
+  check(countones(oh).v==1&&onehot(oh).v==1&&onehot0(oh).v==1&&isunknown(oh).v==1);
+  W zero=parse("00000000");
+  check(countones(zero).v==0&&onehot(zero).v==0&&onehot0(zero).v==1&&isunknown(zero).v==0);
+  check(clog2(word(0,0,0,16)).v==0&&clog2(word(1,0,0,16)).v==0&&clog2(word(2,0,0,16)).v==1&&clog2(word(5,0,0,16)).v==3&&clog2(word(256,0,0,16)).v==8);
+  check(clog2(parse("00x1")).v==0);
+
+  check(w64::countones(w64::to(mix)).v==3&&w64::onehot(w64::to(oh)).v==1&&w64::onehot0(w64::to(zero)).v==1&&w64::isunknown(w64::to(mix)).v==1&&w64::isunknown(w64::to(zero)).v==0);
+  check(w64::clog2(w64::lit(0,16)).v==0&&w64::clog2(w64::lit(1,16)).v==0&&w64::clog2(w64::lit(5,16)).v==3&&w64::clog2(w64::lit(256,16)).v==8);
+  check(w2::countones(0b10100101ULL,8)==4&&w2::onehot(0x08ULL,8)==1&&w2::onehot(0x09ULL,8)==0&&w2::onehot0(0ULL,8)==1&&w2::isunknown(0xFFULL,8)==0);
+  check(w2::clog2(0ULL,16)==0&&w2::clog2(1ULL,16)==0&&w2::clog2(2ULL,16)==1&&w2::clog2(5ULL,16)==3&&w2::clog2(256ULL,16)==8);
  }
 }
 

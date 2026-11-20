@@ -7,7 +7,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> RustPortNames()
     {
         var reserved = (
-            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model time time_inc default open_vcd dump_vcd close_vcd"
+            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model time time_inc default open_vcd dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range force_signal release_signal is_forced save_checkpoint restore_checkpoint"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -74,11 +74,24 @@ public sealed partial class RtlDesign
         if (kind == "bitselect") return $"w64::selbit({RsExpr64(e.GetProperty("value"))},{RsExpr64(e.GetProperty("index"))})";
         if (kind == "partselect") return $"w64::selpart({RsExpr64(e.GetProperty("value"))},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
         if (kind == "indexedselect") return $"w64::selidx({RsExpr64(e.GetProperty("value"))},{RsExpr64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})?";
+        if (kind == "test_plusargs") return Extend($"W64::lit(self.test_plusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}) as u64, 32)");
+        if (kind == "urandom") return Extend("W64::lit(self.next_urandom() as u64, 32)");
+        if (kind == "urandom_range")
+        {
+            string maxExpr = $"({RsExpr64(e.GetProperty("max"))}).v as u32";
+            string minExpr = e.TryGetProperty("min", out var minEl) ? $"({RsExpr64(minEl)}).v as u32" : "0u32";
+            return Extend($"{{ let _rmax = {maxExpr}; let _rmin = {minExpr}; W64::lit(self.next_urandom_range(_rmax, _rmin) as u64, 32) }}");
+        }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ExpressionWidth(e));
         return kind switch
         {
             "castsigned" or "castunsigned" => Extend(RsExpr64(args[0])),
+            "countones" => Extend($"w64::countones({RsExpr64(args[0])})"),
+            "onehot" => $"w64::onehot({RsExpr64(args[0])})",
+            "onehot0" => $"w64::onehot0({RsExpr64(args[0])})",
+            "isunknown" => $"w64::isunknown({RsExpr64(args[0])})",
+            "clog2" => Extend($"w64::clog2({RsExpr64(args[0])})"),
             "add" or "sub" => $"w64::arith({RsExpr64(args[0], width, signed)},{RsExpr64(args[1], width, signed)},{width},{(kind == "sub" ? "true" : "false")})",
             "bitnot" => $"w64::bnot({RsExpr64(args[0], width, signed)},{width})",
             "neg" => $"w64::arith(W64::lit(0u64,{width}),{RsExpr64(args[0], width, signed)},{width},true)",
@@ -130,11 +143,24 @@ public sealed partial class RtlDesign
             var valEl = e.GetProperty("value");
             return $"w2::selidx({RsExpr2(valEl)},{ExpressionWidth(valEl)},{RsExpr2(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})?";
         }
+        if (kind == "test_plusargs") return Extend($"(self.test_plusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}) as u64)");
+        if (kind == "urandom") return Extend("(self.next_urandom() as u64)");
+        if (kind == "urandom_range")
+        {
+            string maxExpr = $"({RsExpr2(e.GetProperty("max"))}) as u32";
+            string minExpr = e.TryGetProperty("min", out var minEl) ? $"({RsExpr2(minEl)}) as u32" : "0u32";
+            return Extend($"{{ let _rmax = {maxExpr}; let _rmin = {minExpr}; self.next_urandom_range(_rmax, _rmin) as u64 }}");
+        }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ew);
         return kind switch
         {
             "castsigned" or "castunsigned" => Extend(RsExpr2(args[0])),
+            "countones" => Extend($"w2::countones({RsExpr2(args[0])},{ExpressionWidth(args[0])})"),
+            "onehot" => $"w2::onehot({RsExpr2(args[0])},{ExpressionWidth(args[0])})",
+            "onehot0" => $"w2::onehot0({RsExpr2(args[0])},{ExpressionWidth(args[0])})",
+            "isunknown" => "0u64",
+            "clog2" => Extend($"w2::clog2({RsExpr2(args[0])},{ExpressionWidth(args[0])})"),
             "add" or "sub" => $"w2::arith({RsExpr2(args[0], width, signed)},{RsExpr2(args[1], width, signed)},{width},{(kind == "sub" ? "true" : "false")})",
             "bitnot" => $"w2::bnot({RsExpr2(args[0], width, signed)},{width})",
             "neg" => $"w2::arith(0u64,{RsExpr2(args[0], width, signed)},{width},true)",
@@ -311,6 +337,36 @@ public sealed partial class RtlDesign
                 code.AppendLine($"print!(\"{{}}\", w64::format_display({fmt}, &[{argList}], {(nl ? "true" : "false")}));");
                 break;
             }
+            case "value_plusargs":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                var tsig = Signals[tid];
+                code.AppendLine($"{{ let mut _vp = {(twoState ? $"W64::lit(next{tid},{tsig.Width})" : $"next{tid}")}; let _vpm = self.value_plusargs({fmt}, &mut _vp); if _vpm != 0 {{ next{tid} = {RsStore(twoState ? "_vp.v" : "_vp", tsig, twoState)}; }}");
+                if (e.TryGetProperty("matched", out var vpMatched) && vpMatched.ValueKind != JsonValueKind.Null)
+                {
+                    int mid = SignalId(vpMatched.GetString()!);
+                    code.AppendLine($"next{mid} = {RsStore(twoState ? "(_vpm as u64)" : "W64::lit(_vpm as u64, 32)", Signals[mid], twoState)};");
+                }
+                code.AppendLine("}");
+                break;
+            }
+            case "force":
+            {
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                var tsig = Signals[tid];
+                string valExpr = twoState
+                    ? $"W64::lit({RsStore(RsExpr2(e.GetProperty("value")), tsig, true)},{tsig.Width})"
+                    : RsStore(RsExpr64(e.GetProperty("value")), tsig, false);
+                code.AppendLine($"{{ let _fv = {valExpr}; self.force_signal({tid}, _fv); }}");
+                break;
+            }
+            case "release":
+            {
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                code.AppendLine($"self.release_signal({tid});");
+                break;
+            }
             case "case":
             {
                 string lbl = "cs" + unique++;
@@ -363,20 +419,28 @@ public sealed partial class RtlDesign
         var procs = CombinationalOnly ? Array.Empty<JsonElement>() : (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]);
         var eventIds = CombinationalOnly ? Array.Empty<int>() : EventSignals.Select(SignalId).ToArray();
         int[] seqIds = CombinationalOnly ? [] : Statements(Body).Where(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) != "index")
-            .SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(t => SignalId(TargetOwner(t))).Distinct().Order().ToArray();
+            .SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(t => SignalId(TargetOwner(t)))
+            .Concat(Statements(Body).Where(e => Kind(e) == "value_plusargs").SelectMany(e =>
+                e.TryGetProperty("matched", out var m) && m.ValueKind != JsonValueKind.Null
+                    ? new[] { SignalId(e.GetProperty("target").GetString()!), SignalId(m.GetString()!) }
+                    : new[] { SignalId(e.GetProperty("target").GetString()!) }))
+            .Distinct().Order().ToArray();
         bool hasFixedMemWrites = !CombinationalOnly && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index");
 
         var code = new StringBuilder();
         code.AppendLine("#![forbid(unsafe_code)]");
         code.AppendLine("#![allow(non_camel_case_types, non_snake_case, unused_variables, unused_mut, unused_parens, unused_imports, dead_code, clippy::all)]");
         code.AppendLine("pub mod runtime;");
-        code.AppendLine("use runtime::{w2, w64, MemLog2, MemLog64, VcdSlot, W64};");
+        code.AppendLine("use runtime::{checkpoint, w2, w64, MemLog2, MemLog64, PlusargStore, SplitMix64Rng, VcdSlot, W64};");
         code.AppendLine();
         code.AppendLine("#[derive(Clone)]");
         code.AppendLine($"pub struct {structName} {{");
         code.AppendLine("    time: u64,");
         code.AppendLine("    finished: bool,");
         code.AppendLine("    vcd: VcdSlot,");
+        code.AppendLine("    plusargs: PlusargStore,");
+        code.AppendLine("    rng: SplitMix64Rng,");
+        code.AppendLine($"    forced: Vec<(usize, {wordType})>,");
         for (int i = 0; i < Signals.Count; ++i)
             code.AppendLine($"    s{i}: {wordType},");
         foreach (int id in eventIds)
@@ -397,6 +461,9 @@ public sealed partial class RtlDesign
         code.AppendLine("            time: 0,");
         code.AppendLine("            finished: false,");
         code.AppendLine("            vcd: VcdSlot::new(),");
+        code.AppendLine("            plusargs: PlusargStore::new(),");
+        code.AppendLine("            rng: SplitMix64Rng::new(),");
+        code.AppendLine("            forced: Vec::new(),");
         for (int i = 0; i < Signals.Count; ++i)
         {
             var sig = Signals[i];
@@ -426,10 +493,46 @@ public sealed partial class RtlDesign
         code.AppendLine("    #[inline(always)] pub fn time_inc(&mut self, delta: u64) { self.time = self.time.wrapping_add(delta); }");
         code.AppendLine("    #[inline(always)] pub fn final_model(&mut self) { self.close_vcd(); }");
         code.AppendLine("    #[inline(always)] pub fn got_finish(&self) -> bool { self.finished }");
-        code.AppendLine("    pub fn open_vcd(&mut self, path: &str, timescale: &str) -> std::io::Result<()> {");
-        code.Append($"        self.vcd.open(path, \"{top}\", &[");
+        code.AppendLine("    pub fn set_plusargs<I, S>(&mut self, args: I) where I: IntoIterator<Item = S>, S: AsRef<str> { self.plusargs.set(args); }");
+        code.AppendLine("    pub fn add_plusarg(&mut self, arg: &str) { self.plusargs.add(arg); }");
+        code.AppendLine("    pub fn test_plusargs(&self, prefix: &str) -> u32 { self.plusargs.test(prefix) }");
+        code.AppendLine("    pub fn value_plusargs(&self, spec: &str, out: &mut W64) -> u32 { self.plusargs.value(spec, out) }");
+        code.AppendLine("    #[inline(always)] pub fn set_random_seed(&mut self, seed: u64) { self.rng.state = seed; }");
+        code.AppendLine("    #[inline(always)] pub fn random_seed(&self) -> u64 { self.rng.state }");
+        code.AppendLine("    #[inline(always)] pub fn next_urandom(&mut self) -> u32 { self.rng.next_u32() }");
+        code.AppendLine("    #[inline(always)] pub fn next_urandom_range(&mut self, max_val: u32, min_val: u32) -> u32 { self.rng.next_range(max_val, min_val) }");
+        code.AppendLine("    pub fn is_forced(&self, signal_id: usize) -> bool { self.forced.iter().any(|(id, _)| *id == signal_id) }");
+        code.AppendLine("    pub fn force_signal(&mut self, signal_id: usize, value: W64) {");
+        code.AppendLine("        let fv = match signal_id {");
+        for (int i = 0; i < Signals.Count; ++i)
+        {
+            var sig = Signals[i];
+            if (twoState)
+                code.AppendLine($"            {i} => {{ let v = w2::resize(value.v, {sig.Width}); self.s{i} = v; v }}");
+            else
+                code.AppendLine($"            {i} => {{ let v = {(sig.TwoState ? $"w64::two_state(w64::resize(value, {sig.Width}))" : $"w64::resize(value, {sig.Width})")}; self.s{i} = v; v }}");
+        }
+        code.AppendLine("            _ => panic!(\"invalid signal_id for force_signal\"),");
+        code.AppendLine("        };");
+        code.AppendLine("        if let Some(entry) = self.forced.iter_mut().find(|(id, _)| *id == signal_id) { entry.1 = fv; } else { self.forced.push((signal_id, fv)); }");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn release_signal(&mut self, signal_id: usize) { self.forced.retain(|(id, _)| *id != signal_id); }");
+        code.AppendLine("    #[inline(always)] fn apply_forces(&mut self) {");
+        code.AppendLine("        if self.forced.is_empty() { return; }");
+        code.AppendLine("        for idx in 0..self.forced.len() {");
+        code.AppendLine("            let (sid, val) = self.forced[idx];");
+        code.AppendLine("            match sid {");
+        for (int i = 0; i < Signals.Count; ++i)
+            code.AppendLine($"                {i} => self.s{i} = val,");
+        code.AppendLine("                _ => {}");
+        code.AppendLine("            }");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.Append("    const SIGNAL_SCHEMA: &'static [(&'static str, i32)] = &[");
         code.AppendJoin(", ", Signals.Select(s => $"({CppStringLiteral(s.SourcePath ?? s.Name)}, {s.Width})"));
-        code.AppendLine("], timescale)");
+        code.AppendLine("];");
+        code.AppendLine("    pub fn open_vcd(&mut self, path: &str, timescale: &str) -> std::io::Result<()> {");
+        code.AppendLine($"        self.vcd.open(path, \"{top}\", Self::SIGNAL_SCHEMA, timescale)");
         code.AppendLine("    }");
         code.AppendLine("    pub fn dump_vcd(&mut self) -> std::io::Result<()> {");
         code.Append("        self.vcd.dump(self.time, &[");
@@ -437,6 +540,40 @@ public sealed partial class RtlDesign
         code.AppendLine("])");
         code.AppendLine("    }");
         code.AppendLine("    pub fn close_vcd(&mut self) { self.vcd.close(); }");
+        code.AppendLine($"    fn checkpoint_schema_hash() -> u64 {{ checkpoint::schema_hash(\"{top}\", {(twoState ? "true" : "false")}, Self::SIGNAL_SCHEMA, &[{string.Join(", ", Memories.Select(m => $"({m.Depth}, {m.Width})"))}]) }}");
+        code.AppendLine("    pub fn save_checkpoint(&self, path: &str) -> std::io::Result<()> {");
+        code.Append("        let sigs: [W64; " + Signals.Count + "] = [");
+        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"W64::lit(self.s{idx}, {s.Width})" : $"self.s{idx}"));
+        code.AppendLine("];");
+        code.Append("        let prevs: [W64; " + eventIds.Length + "] = [");
+        code.AppendJoin(", ", eventIds.Select(id => twoState ? $"W64::lit(self.prev{id}, 1)" : $"self.prev{id}"));
+        code.AppendLine("];");
+        code.AppendLine($"        let mut mems: Vec<Vec<W64>> = Vec::with_capacity({Memories.Count});");
+        for (int i = 0; i < Memories.Count; ++i)
+        {
+            if (twoState)
+                code.AppendLine($"        mems.push(self.m{i}.iter().map(|&v| W64::lit(v, {Memories[i].Width})).collect());");
+            else
+                code.AppendLine($"        mems.push(self.m{i}.to_vec());");
+        }
+        code.AppendLine("        checkpoint::save(path, Self::checkpoint_schema_hash(), self.time, self.rng.state, &sigs, &prevs, &mems)");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn restore_checkpoint(&mut self, path: &str) -> std::io::Result<()> {");
+        code.AppendLine($"        let (t, rng_state, sigs, prevs, mems) = checkpoint::load(path, Self::checkpoint_schema_hash(), {Signals.Count}, {eventIds.Length}, &[{string.Join(", ", Memories.Select(m => m.Depth))}])?;");
+        code.AppendLine("        self.time = t; self.rng.state = rng_state;");
+        for (int i = 0; i < Signals.Count; ++i)
+            code.AppendLine(twoState ? $"        self.s{i} = w2::resize(sigs[{i}].v, {Signals[i].Width});" : $"        self.s{i} = sigs[{i}];");
+        for (int i = 0; i < eventIds.Length; ++i)
+            code.AppendLine(twoState ? $"        self.prev{eventIds[i]} = prevs[{i}].v & 1u64;" : $"        self.prev{eventIds[i]} = prevs[{i}];");
+        for (int i = 0; i < Memories.Count; ++i)
+        {
+            if (twoState)
+                code.AppendLine($"        for j in 0..self.m{i}.len() {{ self.m{i}[j] = w2::resize(mems[{i}][j].v, {Memories[i].Width}); }}");
+            else
+                code.AppendLine($"        self.m{i}.copy_from_slice(&mems[{i}]);");
+        }
+        code.AppendLine("        Ok(())");
+        code.AppendLine("    }");
         code.AppendLine();
         foreach (var sig in Signals.Where(s => s.Direction != "internal"))
         {
@@ -505,13 +642,17 @@ public sealed partial class RtlDesign
         {
             code.AppendLine("    fn eval_inner(&mut self) -> Result<(), &'static str> {");
             if (hasRuntimeLoops) code.AppendLine("        let mut budget: usize = 20000;");
+            code.AppendLine("        self.apply_forces();");
             code.AppendLine("        self.settle()?;");
+            code.AppendLine("        self.apply_forces();");
         }
         else
         {
             code.AppendLine("    #[inline(always)]");
             code.AppendLine("    pub fn eval(&mut self) {");
+            code.AppendLine("        self.apply_forces();");
             code.AppendLine("        self.settle();");
+            code.AppendLine("        self.apply_forces();");
         }
         if (!CombinationalOnly)
         {
@@ -560,6 +701,7 @@ public sealed partial class RtlDesign
                 code.AppendLine("            self.mlog.count = 0;");
             }
             code.AppendLine(canThrow ? "            self.settle()?;" : "            self.settle();");
+            code.AppendLine("            self.apply_forces();");
             code.AppendLine("        }");
             foreach (int id in eventIds) code.AppendLine($"        self.prev{id} = self.s{id};");
         }
@@ -920,6 +1062,36 @@ pub mod w64 {
     }
 
     #[inline(always)]
+    pub const fn countones(a: W64) -> W64 {
+        let ones = a.v & !a.x & !a.z & W64::mask(a.w);
+        W64 { v: ones.count_ones() as u64, x: 0, z: 0, w: 32 }
+    }
+
+    #[inline(always)]
+    pub const fn onehot(a: W64) -> W64 {
+        W64 { v: if countones(a).v == 1 { 1 } else { 0 }, x: 0, z: 0, w: 1 }
+    }
+
+    #[inline(always)]
+    pub const fn onehot0(a: W64) -> W64 {
+        W64 { v: if countones(a).v <= 1 { 1 } else { 0 }, x: 0, z: 0, w: 1 }
+    }
+
+    #[inline(always)]
+    pub const fn isunknown(a: W64) -> W64 {
+        W64 { v: if ((a.x | a.z) & W64::mask(a.w)) != 0 { 1 } else { 0 }, x: 0, z: 0, w: 1 }
+    }
+
+    #[inline(always)]
+    pub const fn clog2(a: W64) -> W64 {
+        let m = W64::mask(a.w);
+        if ((a.x | a.z) & m) != 0 { return W64 { v: 0, x: 0, z: 0, w: 32 }; }
+        let x = a.v & m;
+        if x <= 1 { return W64 { v: 0, x: 0, z: 0, w: 32 }; }
+        W64 { v: (64 - (x - 1).leading_zeros()) as u64, x: 0, z: 0, w: 32 }
+    }
+
+    #[inline(always)]
     pub const fn eq(a: W64, b: W64) -> W64 {
         if ((a.x | a.z) | (b.x | b.z)) != 0 {
             W64 { v: 0, x: 1, z: 0, w: 1 }
@@ -1179,6 +1351,28 @@ pub mod w64 {
 
 pub mod w2 {
     use super::W64;
+
+    #[inline(always)]
+    pub const fn countones(a: u64, w: i32) -> u64 {
+        (a & W64::mask(w)).count_ones() as u64
+    }
+
+    #[inline(always)]
+    pub const fn onehot(a: u64, w: i32) -> u64 {
+        if countones(a, w) == 1 { 1 } else { 0 }
+    }
+
+    #[inline(always)]
+    pub const fn onehot0(a: u64, w: i32) -> u64 {
+        if countones(a, w) <= 1 { 1 } else { 0 }
+    }
+
+    #[inline(always)]
+    pub const fn clog2(a: u64, w: i32) -> u64 {
+        let x = a & W64::mask(w);
+        if x <= 1 { return 0; }
+        (64 - (x - 1).leading_zeros()) as u64
+    }
 
     #[inline(always)]
     pub const fn sext(a: u64, w: i32) -> i64 {
@@ -1531,6 +1725,229 @@ impl VcdSlot {
     }
     pub fn close(&mut self) {
         if let Some(mut w) = self.0.take() { let _ = w.flush(); }
+    }
+}
+
+#[derive(Clone)]
+pub struct PlusargStore {
+    args: Vec<String>,
+}
+
+impl PlusargStore {
+    pub fn new() -> Self { Self { args: Vec::new() } }
+    pub fn set<I, S>(&mut self, args: I) where I: IntoIterator<Item = S>, S: AsRef<str> {
+        self.args.clear();
+        for a in args { self.add(a.as_ref()); }
+    }
+    pub fn add(&mut self, arg: &str) {
+        self.args.push(arg.strip_prefix('+').unwrap_or(arg).to_string());
+    }
+    pub fn test(&self, prefix: &str) -> u32 {
+        let p = prefix.strip_prefix('+').unwrap_or(prefix);
+        if self.args.iter().any(|a| a.starts_with(p)) { 1 } else { 0 }
+    }
+    pub fn value(&self, spec: &str, out: &mut W64) -> u32 {
+        let s = spec.strip_prefix('+').unwrap_or(spec);
+        let pct = match s.find('%') { Some(i) if i + 1 < s.len() => i, _ => return 0 };
+        let prefix = &s[..pct];
+        let rest = &s[pct + 1..];
+        let fmt_ch = match rest.as_bytes() {
+            [b'0', c, ..] => (*c as char).to_ascii_lowercase(),
+            [c, ..] => (*c as char).to_ascii_lowercase(),
+            _ => return 0,
+        };
+        for a in &self.args {
+            if let Some(raw) = a.strip_prefix(prefix) {
+                let clean: String = raw.chars().filter(|&c| c != '_').collect();
+                if clean.is_empty() { continue; }
+                if let Some(parsed) = Self::parse_val(&clean, fmt_ch, out.w) {
+                    *out = parsed;
+                    return 1;
+                }
+            }
+        }
+        0
+    }
+    fn parse_val(s: &str, fmt: char, width: i32) -> Option<W64> {
+        let m = W64::mask(width);
+        if fmt == 'd' || fmt == 'u' {
+            let (neg, digits) = if fmt == 'd' && s.starts_with('-') { (true, &s[1..]) }
+                else if let Some(d) = s.strip_prefix('+') { (false, d) }
+                else { (false, s) };
+            let mut v = digits.parse::<u64>().ok()?;
+            if neg { v = v.wrapping_neg(); }
+            return Some(W64 { v: v & m, x: 0, z: 0, w: width });
+        }
+        let shift: u32 = match fmt { 'h' | 'x' => 4, 'o' => 3, 'b' => 1, _ => return None };
+        let nib = (1u64 << shift) - 1;
+        let (mut vv, mut xx, mut zz) = (0u64, 0u64, 0u64);
+        for raw in s.chars() {
+            let c = raw.to_ascii_lowercase();
+            vv = vv.wrapping_shl(shift);
+            xx = xx.wrapping_shl(shift);
+            zz = zz.wrapping_shl(shift);
+            if c == 'x' { xx |= nib; }
+            else if c == 'z' { zz |= nib; }
+            else {
+                let d = c.to_digit(1u32 << shift)?;
+                vv |= d as u64;
+            }
+        }
+        let zv = zz & m;
+        let xv = xx & !zv & m;
+        Some(W64 { v: vv & !(xv | zv) & m, x: xv, z: zv, w: width })
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct SplitMix64Rng {
+    pub state: u64,
+}
+
+impl SplitMix64Rng {
+    pub const fn new() -> Self { Self { state: 0x9E3779B97F4A7C15u64 } }
+    #[inline(always)]
+    pub fn next_u32(&mut self) -> u32 {
+        self.state = self.state.wrapping_add(0x9E3779B97F4A7C15u64);
+        let mut z = self.state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9u64);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EBu64);
+        z ^= z >> 31;
+        z as u32
+    }
+    #[inline(always)]
+    pub fn next_range(&mut self, mut max_val: u32, mut min_val: u32) -> u32 {
+        if max_val < min_val { std::mem::swap(&mut max_val, &mut min_val); }
+        let span = (max_val as u64) - (min_val as u64) + 1u64;
+        let r = self.next_u32();
+        if span >= 0x100000000u64 { return r; }
+        min_val + ((r as u64) % span) as u32
+    }
+}
+
+pub mod checkpoint {
+    use super::W64;
+    use std::io::{Error, ErrorKind, Result};
+
+    const MAGIC: u32 = 0x31525356; // "VSR1"
+    const VERSION: u32 = 1;
+
+    fn fnv_mix(mut h: u64, v: u64) -> u64 {
+        for b in v.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(1099511628211u64);
+        }
+        h
+    }
+    fn fnv_bytes(data: &[u8]) -> u64 {
+        let mut h: u64 = 14695981039346656037u64;
+        for &b in data {
+            h ^= b as u64;
+            h = h.wrapping_mul(1099511628211u64);
+        }
+        h
+    }
+    pub fn schema_hash(top: &str, two_state: bool, signals: &[(&str, i32)], memories: &[(usize, i32)]) -> u64 {
+        let mut h: u64 = 14695981039346656037u64;
+        for b in top.bytes() { h = fnv_mix(h, b as u64); }
+        h = fnv_mix(h, if two_state { 2 } else { 4 });
+        h = fnv_mix(h, signals.len() as u64);
+        for &(name, width) in signals {
+            for b in name.bytes() { h = fnv_mix(h, b as u64); }
+            h = fnv_mix(h, width as u64);
+        }
+        h = fnv_mix(h, memories.len() as u64);
+        for &(depth, width) in memories {
+            h = fnv_mix(h, depth as u64);
+            h = fnv_mix(h, width as u64);
+        }
+        h
+    }
+    fn push_w64(buf: &mut Vec<u8>, w: W64) {
+        buf.extend_from_slice(&w.v.to_le_bytes());
+        buf.extend_from_slice(&w.x.to_le_bytes());
+        buf.extend_from_slice(&w.z.to_le_bytes());
+        buf.extend_from_slice(&w.w.to_le_bytes());
+    }
+    fn read_u32(data: &[u8], off: &mut usize) -> Result<u32> {
+        if *off + 4 > data.len() { return Err(Error::new(ErrorKind::InvalidData, "truncated checkpoint")); }
+        let v = u32::from_le_bytes([data[*off], data[*off+1], data[*off+2], data[*off+3]]);
+        *off += 4;
+        Ok(v)
+    }
+    fn read_i32(data: &[u8], off: &mut usize) -> Result<i32> {
+        Ok(read_u32(data, off)? as i32)
+    }
+    fn read_u64(data: &[u8], off: &mut usize) -> Result<u64> {
+        if *off + 8 > data.len() { return Err(Error::new(ErrorKind::InvalidData, "truncated checkpoint")); }
+        let v = u64::from_le_bytes([data[*off], data[*off+1], data[*off+2], data[*off+3], data[*off+4], data[*off+5], data[*off+6], data[*off+7]]);
+        *off += 8;
+        Ok(v)
+    }
+    fn read_w64(data: &[u8], off: &mut usize) -> Result<W64> {
+        let v = read_u64(data, off)?;
+        let x = read_u64(data, off)?;
+        let z = read_u64(data, off)?;
+        let w = read_i32(data, off)?;
+        Ok(W64 { v, x, z, w })
+    }
+    pub fn save(path: &str, schema: u64, time: u64, rng_state: u64, sigs: &[W64], prevs: &[W64], mems: &[Vec<W64>]) -> Result<()> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&time.to_le_bytes());
+        payload.extend_from_slice(&rng_state.to_le_bytes());
+        payload.extend_from_slice(&(sigs.len() as u32).to_le_bytes());
+        for &w in sigs { push_w64(&mut payload, w); }
+        payload.extend_from_slice(&(prevs.len() as u32).to_le_bytes());
+        for &w in prevs { push_w64(&mut payload, w); }
+        payload.extend_from_slice(&(mems.len() as u32).to_le_bytes());
+        for m in mems {
+            payload.extend_from_slice(&(m.len() as u32).to_le_bytes());
+            for &w in m { push_w64(&mut payload, w); }
+        }
+        let csum = fnv_bytes(&payload);
+        let mut file = Vec::with_capacity(32 + payload.len());
+        file.extend_from_slice(&MAGIC.to_le_bytes());
+        file.extend_from_slice(&VERSION.to_le_bytes());
+        file.extend_from_slice(&schema.to_le_bytes());
+        file.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        file.extend_from_slice(&csum.to_le_bytes());
+        file.extend_from_slice(&payload);
+        std::fs::write(path, file)
+    }
+    pub fn load(path: &str, expected_schema: u64, expected_sigs: usize, expected_prevs: usize, expected_mem_depths: &[usize]) -> Result<(u64, u64, Vec<W64>, Vec<W64>, Vec<Vec<W64>>)> {
+        let raw = std::fs::read(path)?;
+        if raw.len() < 32 { return Err(Error::new(ErrorKind::InvalidData, "checkpoint file truncated")); }
+        let mut off = 0usize;
+        if read_u32(&raw, &mut off)? != MAGIC { return Err(Error::new(ErrorKind::InvalidData, "invalid checkpoint magic")); }
+        if read_u32(&raw, &mut off)? != VERSION { return Err(Error::new(ErrorKind::InvalidData, "unsupported checkpoint version")); }
+        if read_u64(&raw, &mut off)? != expected_schema { return Err(Error::new(ErrorKind::InvalidData, "checkpoint schema mismatch")); }
+        let payload_len = read_u64(&raw, &mut off)? as usize;
+        let expected_csum = read_u64(&raw, &mut off)?;
+        if payload_len != raw.len() - 32 { return Err(Error::new(ErrorKind::InvalidData, "checkpoint payload length mismatch")); }
+        let payload = &raw[32..];
+        if fnv_bytes(payload) != expected_csum { return Err(Error::new(ErrorKind::InvalidData, "checkpoint checksum mismatch")); }
+        let mut poff = 0usize;
+        let time = read_u64(payload, &mut poff)?;
+        let rng_state = read_u64(payload, &mut poff)?;
+        let n_sigs = read_u32(payload, &mut poff)? as usize;
+        if n_sigs != expected_sigs { return Err(Error::new(ErrorKind::InvalidData, "checkpoint signal count mismatch")); }
+        let mut sigs = Vec::with_capacity(n_sigs);
+        for _ in 0..n_sigs { sigs.push(read_w64(payload, &mut poff)?); }
+        let n_prevs = read_u32(payload, &mut poff)? as usize;
+        if n_prevs != expected_prevs { return Err(Error::new(ErrorKind::InvalidData, "checkpoint event count mismatch")); }
+        let mut prevs = Vec::with_capacity(n_prevs);
+        for _ in 0..n_prevs { prevs.push(read_w64(payload, &mut poff)?); }
+        let n_mems = read_u32(payload, &mut poff)? as usize;
+        if n_mems != expected_mem_depths.len() { return Err(Error::new(ErrorKind::InvalidData, "checkpoint memory count mismatch")); }
+        let mut mems = Vec::with_capacity(n_mems);
+        for &exp_depth in expected_mem_depths {
+            let depth = read_u32(payload, &mut poff)? as usize;
+            if depth != exp_depth { return Err(Error::new(ErrorKind::InvalidData, "checkpoint memory depth mismatch")); }
+            let mut m = Vec::with_capacity(depth);
+            for _ in 0..depth { m.push(read_w64(payload, &mut poff)?); }
+            mems.push(m);
+        }
+        Ok((time, rng_state, sigs, prevs, mems))
     }
 }
 """;

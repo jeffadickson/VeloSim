@@ -128,7 +128,7 @@ public sealed partial class RtlDesign
         foreach(string field in new[]{"value","condition","count","amount"})
             if(statement.TryGetProperty(field,out var operand)&&operand.ValueKind==JsonValueKind.Object)
                 foreach(string name in References(operand))yield return name;
-        if(statement.TryGetProperty("target",out var target))foreach(var leaf in TargetLeaves(target))
+        if(statement.TryGetProperty("target",out var target)&&target.ValueKind==JsonValueKind.Object)foreach(var leaf in TargetLeaves(target))
             foreach(string field in new[]{"index","base"})if(leaf.TryGetProperty(field,out var operand))
                 foreach(string name in References(operand))yield return name;
     }

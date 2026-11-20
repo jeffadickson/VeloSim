@@ -12,6 +12,7 @@
 namespace vsrtl {
 struct Signal { const char* name; int width, direction; bool is_signed=false; bool two_state=false; };
 struct CoveragePoint { const char* id; const char* kind; uint64_t hits; };
+struct ToggleCoverage { const char* signal; int width; Bits rise; Bits fall; };
 class Port;
 class VS_VPI_API Model {
  friend class Port;
@@ -25,6 +26,7 @@ protected:
  bool fast_evaluating = false;
  bool fast_dirty = true;
  void evalSlow();
+ void applyForces() noexcept;
  void refreshFastFlags() noexcept;
  inline bool canFastPortWrite() const noexcept {
   return fast_port_ok && owner_thread == std::this_thread::get_id();
@@ -60,6 +62,7 @@ public:
     throw;
    }
    fast_evaluating = false;
+   if (!fast_eligible) [[unlikely]] applyForces();
    fast_eval_ok = fast_eligible;
    return;
   }
@@ -69,15 +72,37 @@ public:
  uint64_t time() const; bool gotFinish() const; bool evalNeeded() const; bool started() const;
  void requestEval();
  void finish(); void useVpi(); void loadVpi(const std::string& path);
- void openVcd(const std::string& path, const std::string& timescale = "1ns");
+ void openVcd(const std::string& path, const std::string& timescale = "1ns",
+              const std::vector<std::string>& filter_prefixes = {});
+ void openVcdGz(const std::string& path, const std::string& timescale = "1ns",
+                const std::vector<std::string>& filter_prefixes = {});
  void dumpVcd();
  void closeVcd();
  void saveCheckpoint(const std::string& path) const;
  void restoreCheckpoint(const std::string& path);
  size_t loadMemoryHex(size_t mem_id, const std::string& path, size_t start_addr = 0, size_t end_addr = SIZE_MAX);
  size_t loadMemoryBin(size_t mem_id, const std::string& path, size_t start_addr = 0, size_t end_addr = SIZE_MAX);
+ virtual size_t memoryCount() const { return mem.size(); }
+ virtual size_t memoryDepth(size_t mem_id) const { return mem_id < mem.size() ? mem[mem_id].size() : 0; }
+ virtual int memoryWidth(size_t mem_id) const { return (mem_id < mem.size() && !mem[mem_id].empty()) ? mem[mem_id][0].w : 0; }
+ virtual W readMemoryWord(size_t mem_id, size_t addr) const;
+ virtual void writeMemoryWord(size_t mem_id, size_t addr, W value);
  void setDisplaySink(std::function<void(const std::string&)> sink);
  void emitDisplay(const std::string& text);
+ void setPlusargs(std::vector<std::string> args);
+ void addPlusarg(std::string arg);
+ const std::vector<std::string>& plusargs() const;
+ uint32_t testPlusargs(const std::string& prefix) const;
+ uint32_t valuePlusargs(const std::string& spec, W& out) const;
+ void setRandomSeed(uint64_t seed);
+ uint64_t randomSeed() const;
+ uint32_t nextUrandom();
+ uint32_t nextUrandomRange(uint32_t max_val, uint32_t min_val = 0);
+ void forceSignal(size_t id, W value);
+ void releaseSignal(size_t id);
+ bool isForced(size_t id) const;
+ void enableToggleCoverage(bool enabled = true);
+ std::vector<ToggleCoverage> toggleCoverage() const;
  virtual std::vector<CoveragePoint> coveragePoints() const { return {}; }
  void writeCoverageJson(const std::string& path) const;
  const std::string& name() const; const std::vector<Signal>& signals() const;

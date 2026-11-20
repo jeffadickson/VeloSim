@@ -144,7 +144,7 @@ STATEMENT: >>>
 Independent BigInteger/bit-string oracles and multiple frontends cover widths255/256/257/512/1024, X/Z, signed overflow and casts; ABI changes are versioned and old hosts fail clearly.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-07, P1, relative scope L. Vertical slices implemented and verified under VS-RTL-WIDE512-001 (opt-in 512-bit packed words via RtlDesignLimits.Large / --large-design / VSRTL_MAX_WORD_BITS=512 / VELOSIM_LARGE_DESIGN=1, preserving 256-bit default) and VS-RTL-WILDCARD-001 (multi-label case, casez/casex, ==?/!=? across C++/C#/Rust + UHDM, plus UHDM $bits/$clog2). Arbitrary >512-bit widths, streaming/inside/cast operators and real/string types remain open. Dependencies: WP-01. Product IDs: VS-RTL-WORD-256-001, VS-RTL-WIDE512-001, VS-RTL-WILDCARD-001, VS-RTL-INTEGER-001, VS-RTL-TYPE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/8. Library evaluation: LIB-02, LIB-03, LIB-05, LIB-15.
+Inferred planning acceptance for WP-07, P1, relative scope L. Vertical slices implemented and verified under VS-RTL-WIDE512-001 (opt-in 512-bit packed words via RtlDesignLimits.Large / --large-design / VSRTL_MAX_WORD_BITS=512 / VELOSIM_LARGE_DESIGN=1, preserving 256-bit default), VS-RTL-WILDCARD-001 (multi-label case, casez/casex, ==?/!=? across C++/C#/Rust + UHDM), and VS-RTL-BITQUERY-001 ($bits, $clog2, $countones, $onehot, $onehot0, $isunknown across C++/C#/Rust + UHDM). Arbitrary >512-bit widths, streaming/inside/cast operators and real/string types remain open. Dependencies: WP-01. Product IDs: VS-RTL-WORD-256-001, VS-RTL-WIDE512-001, VS-RTL-WILDCARD-001, VS-RTL-BITQUERY-001, VS-RTL-INTEGER-001, VS-RTL-TYPE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/8. Library evaluation: LIB-02, LIB-03, LIB-05, LIB-15.
 <<<
 RELATIONS:
 - TYPE: File
@@ -163,6 +163,8 @@ RELATIONS:
   VALUE: native/uhdm/rtl.cpp
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave2Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-08
@@ -216,7 +218,7 @@ STATEMENT: >>>
 Self-checking HDL programs execute and fail with exact status/source diagnostics; file malformed/missing/error cases and time-format rounding are tested independently.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-10, P1, relative scope L. Vertical slice implemented and verified under VS-RTL-SYSTASK-001: IEEE 1364 $readmemh/$readmemb loader (loadMemoryHex/loadMemoryBin), formatted display IR/runtime and finish task across C++/C#/Rust backends, plus guarded UHDM lowering for $finish/$display/$write in native/uhdm/rtl.cpp. General file I/O ($fopen/$fscanf), strings, real values, plusargs and $readmemh UHDM lowering remain open. Dependencies: WP-03, WP-07. Product IDs: VS-RTL-PROC-001, VS-RTL-TYPE-001, VS-RTL-SYSTASK-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/11. Library evaluation: LIB-02, LIB-10.
+Inferred planning acceptance for WP-10, P1, relative scope L. Vertical slices implemented and verified under VS-RTL-SYSTASK-001 ($readmemh/$readmemb, formatted display, finish across C++/C#/Rust + UHDM) and VS-RTL-PLUSARGS-RNG-001 ($test$plusargs, $value$plusargs, $urandom, $urandom_range with deterministic SplitMix64 seeding across C++/C#/Rust + UHDM + vpi_get_vlog_info). General file I/O ($fopen/$fscanf), strings, real values, legacy $random/$dist_* and $readmemh UHDM lowering remain open. Dependencies: WP-03, WP-07. Product IDs: VS-RTL-PROC-001, VS-RTL-TYPE-001, VS-RTL-SYSTASK-001, VS-RTL-PLUSARGS-RNG-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/11. Library evaluation: LIB-02, LIB-10.
 <<<
 RELATIONS:
 - TYPE: File
@@ -232,9 +234,13 @@ RELATIONS:
 - TYPE: File
   VALUE: native/rtl/runtime.h
 - TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
   VALUE: native/uhdm/rtl.cpp
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-11
@@ -244,7 +250,7 @@ STATEMENT: >>>
 Independent resolution tables exercise Z, conflicting drivers, force/release and hierarchy; do not use mostly-two-state Verilator as the sole resolution oracle.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-11, P1, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02, WP-04, WP-06. Existing product IDs: VS-RTL-HIER-001, VS-RTL-TIME-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/12. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-17, LIB-19. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+Inferred planning acceptance for WP-11, P1, relative scope XL. Runtime signal force/release vertical slice implemented and verified under VS-RTL-FORCE-001 across C++, C# and safe Rust models (IR force/release statements plus host forceSignal/releaseSignal/isForced APIs with zero fast-path eval() overhead when unused). UHDM force/release lowering, multi-driver net resolution, inout ports, digital primitives/UDPs and delayed continuous assignments remain open. Dependencies: WP-02, WP-04, WP-06. Product IDs: VS-RTL-HIER-001, VS-RTL-TIME-001, VS-RTL-FORCE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/12. Library evaluation: LIB-17, LIB-19.
 <<<
 RELATIONS:
 - TYPE: File
@@ -257,6 +263,10 @@ RELATIONS:
   VALUE: docs/library-opportunities.md
 - TYPE: File
   VALUE: docs/library-opportunities.json
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-12
@@ -294,7 +304,7 @@ STATEMENT: >>>
 A documented API capability table links each supported operation to tests, including callback ordering, reentrancy, removed handles, multiple models and actual cocotb smoke/regressions.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-13, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02, WP-06, WP-08. Existing product IDs: new feature requirements to be drafted before implementation. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/14. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-16. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+Inferred planning acceptance for WP-13, P1, relative scope L. Vertical slice implemented and verified under VS-RTL-FORCE-001 and VS-RTL-PLUSARGS-RNG-001: vpiForceFlag/vpiReleaseFlag in vpi_put_value, cbAfterDelay and cbReadWriteSynch callbacks, vpiMemory/vpiMemoryWord iteration and get/put handles, and active model plusarg propagation via vpi_get_vlog_info in native/rtl/vpi.cpp. Full cocotb/GPI client qualification, inertial delay scheduling and broader hierarchy callbacks remain open. Dependencies: WP-02, WP-06, WP-08. Product IDs: VS-RTL-FORCE-001, VS-RTL-PLUSARGS-RNG-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/14. Library evaluation: LIB-16.
 <<<
 RELATIONS:
 - TYPE: File
@@ -307,6 +317,12 @@ RELATIONS:
   VALUE: docs/library-opportunities.md
 - TYPE: File
   VALUE: docs/library-opportunities.json
+- TYPE: File
+  VALUE: native/rtl/vpi_user.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: tests/native/external_tests.cpp
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-14
@@ -342,7 +358,7 @@ STATEMENT: >>>
 A tiny DUT produces independently predicted counts across merged runs; reports identify excluded constructs, reset semantics and source hashes. Simulator C# coverage is never reported as DUT coverage.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-15, P1, relative scope L. Vertical slice implemented and verified under VS-RTL-COVERAGE-001: opt-in rtl-export --coverage instruments DUT if/else branches and case items on C++ models (W, W64, W2) and exports velosim.dut.coverage.v1 JSON via Model::coveragePoints() and Model::writeCoverageJson() with zero overhead when disabled. Toggle coverage, multi-run merge tooling, source coordinates and SystemVerilog covergroups remain open. Dependencies: WP-14. Product IDs: VS-QUAL-001, VS-RTL-COVERAGE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/16. Library evaluation: LIB-18.
+Inferred planning acceptance for WP-15, P1, relative scope L. Vertical slice implemented and verified under VS-RTL-COVERAGE-001: opt-in rtl-export --coverage instruments DUT if/else branches, case items and per-signal bit-toggle rise/fall coverage (up to 512 bits) on C++ models (W, W64, W2), exports velosim.dut.coverage.v1 JSON via Model::writeCoverageJson() with zero overhead when disabled, and merges multi-run reports fail-closed via coverage-merge CLI / RtlCoverageMerge. Source coordinates and SystemVerilog covergroups remain open. Dependencies: WP-14. Product IDs: VS-QUAL-001, VS-RTL-COVERAGE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/16. Library evaluation: LIB-18.
 <<<
 RELATIONS:
 - TYPE: File
@@ -360,7 +376,11 @@ RELATIONS:
 - TYPE: File
   VALUE: native/rtl/vpi.cpp
 - TYPE: File
+  VALUE: src/VeloSim.Core/RtlCoverageMerge.cs
+- TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave2Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-16
@@ -392,7 +412,7 @@ STATEMENT: >>>
 Losslessly compressed waveforms satisfying VS-TRACE-COMPRESSED-001 and parsed by an independent reader match known traces; checkpoint restart reproduces future outputs/events exactly and rejects mismatched source/runtime versions.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-17, P1, relative scope L. Vertical slices implemented and verified under VS-RTL-VCD-001 (IEEE 1364 hierarchical four-state delta-compressed VCD writer across C++, C# and safe Rust backends, including opt-in 512-bit C++ words) and VS-RTL-CHECKPOINT-001 (versioned binary save/restore checkpoints with word-width-aware schema fingerprint and FNV-1a checksum across 256/512-bit W, W64 and W2 models). Compressed FST streaming (VS-TRACE-COMPRESSED-001), timed-frame checkpoint persistence and interactive source debugging remain open. Dependencies: WP-02, WP-06. Product IDs: VS-RTL-VCD-001, VS-RTL-CHECKPOINT-001, VS-TRACE-COMPRESSED-001 (Draft). GitHub issue: https://github.com/jeffadickson/VeloSim/issues/18. Library evaluation: LIB-06, LIB-10, LIB-11, LIB-12.
+Inferred planning acceptance for WP-17, P1, relative scope L. Vertical slices implemented and verified under VS-RTL-VCD-001 (IEEE 1364 hierarchical four-state delta-compressed VCD across C++/C#/Rust plus zero-dependency RFC 1952 .vcd.gz compressed waveforms via openVcdGz/OpenVcdGz and fail-closed hierarchical trace selection) and VS-RTL-CHECKPOINT-001 (versioned binary save/restore checkpoints with schema fingerprint, FNV-1a checksum and atomic rollback across 256/512-bit C++ W/W64/W2, C# and safe Rust models). Optional binary FST streaming (VS-TRACE-COMPRESSED-001), clean-machine Windows trace qualification, timed-frame checkpoint persistence and interactive source debugging remain open. Dependencies: WP-02, WP-06. Product IDs: VS-RTL-VCD-001, VS-RTL-CHECKPOINT-001, VS-TRACE-COMPRESSED-001 (Draft). GitHub issue: https://github.com/jeffadickson/VeloSim/issues/18. Library evaluation: LIB-06, LIB-10, LIB-11, LIB-12.
 <<<
 RELATIONS:
 - TYPE: File
@@ -408,6 +428,8 @@ RELATIONS:
 - TYPE: File
   VALUE: docs/compressed-waveforms.md
 - TYPE: File
+  VALUE: native/rtl/gzip_stream.h
+- TYPE: File
   VALUE: native/rtl/vcd_trace.h
 - TYPE: File
   VALUE: native/rtl/checkpoint.h
@@ -419,6 +441,8 @@ RELATIONS:
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave2Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-18

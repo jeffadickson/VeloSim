@@ -38,7 +38,7 @@ public class ExternalInterfaceTests
         await RtlExternalSdk.ExportAsync(source, "top", sdk);
         string moved = Path.Combine(root, "moved sdk"); Directory.Move(sdk, moved);
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(moved, "external-model.json")));
-        var inputs = manifest.RootElement.GetProperty("inputs").EnumerateArray().ToArray(); Assert.That(inputs.Length, Is.EqualTo(12));
+        var inputs = manifest.RootElement.GetProperty("inputs").EnumerateArray().ToArray(); Assert.That(inputs.Length, Is.EqualTo(13));
         Assert.That(File.ReadAllText(Path.Combine(moved,"timing-diagnostics.txt")),Does.Contain("absence does not prove race freedom"));
         foreach (var input in inputs)
         {
