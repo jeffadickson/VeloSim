@@ -186,6 +186,22 @@ public sealed partial class RtlDesign
                 Statement2(code, e.GetProperty("else"), ref unique, trackBudget);
                 code.AppendLine("}");
                 break;
+            case "assert":
+                code.AppendLine($"vsrtl::w2::check_assert({Expression2(e.GetProperty("condition"))},{CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "")});");
+                break;
+            case "finish":
+                code.AppendLine("finish();");
+                break;
+            case "display":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                bool nl = !e.TryGetProperty("newline", out var nlProp) || nlProp.GetBoolean();
+                string argList = e.TryGetProperty("args", out var dArgs)
+                    ? string.Join(",", dArgs.EnumerateArray().Select(a => $"vsrtl::w2::from({Expression2(a)},{ExpressionWidth(a)})"))
+                    : "";
+                code.AppendLine($"emitDisplay(vsrtl::format_display({fmt},{{{argList}}},{(nl ? "true" : "false")}));");
+                break;
+            }
             case "case":
                 var label = "case" + unique++;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
@@ -296,7 +312,29 @@ public sealed partial class RtlDesign
             if (hasFixedMemWrites) code.Append("_vs_mlog.count=0;_vs_mlog.overflow.clear();");
             code.AppendLine("throw;}");
         }
-        code.AppendLine("}\npublic:");
+        code.AppendLine("}\nvoid saveExtraState(std::vector<uint8_t>& out) const override {");
+        code.AppendLine("out.clear();");
+        if (!CombinationalOnly)
+            code.AppendLine($"{{const auto* p=reinterpret_cast<const uint8_t*>(_vs_prev);out.insert(out.end(),p,p+sizeof(_vs_prev));}}");
+        for (int i = 0; i < Memories.Count; ++i)
+            code.AppendLine($"{{const auto* p=reinterpret_cast<const uint8_t*>(_vs_m{i});out.insert(out.end(),p,p+sizeof(_vs_m{i}));}}");
+        code.AppendLine("}\nvoid restoreExtraState(const uint8_t* data,size_t len) override {");
+        code.AppendLine("size_t off=0;");
+        if (!CombinationalOnly)
+            code.AppendLine("if(off+sizeof(_vs_prev)>len)throw std::runtime_error(\"checkpoint W2 state size mismatch\");std::memcpy(_vs_prev,data+off,sizeof(_vs_prev));off+=sizeof(_vs_prev);");
+        for (int i = 0; i < Memories.Count; ++i)
+            code.AppendLine($"if(off+sizeof(_vs_m{i})>len)throw std::runtime_error(\"checkpoint W2 memory size mismatch\");std::memcpy(_vs_m{i},data+off,sizeof(_vs_m{i}));off+=sizeof(_vs_m{i});");
+        code.AppendLine("if(off!=len)throw std::runtime_error(\"checkpoint W2 extra trailing bytes\");");
+        code.AppendLine("}");
+        if (Memories.Count > 0)
+        {
+            code.AppendLine("bool loadDerivedMemory(size_t mem_id,const std::string& path,bool hex,size_t start_addr,size_t end_addr,size_t& loaded) override {");
+            code.AppendLine("switch(mem_id){");
+            for (int i = 0; i < Memories.Count; ++i)
+                code.AppendLine($"case {i}: loaded=vsrtl::load_mem_file_flat(_vs_m{i},{Memories[i].Depth},{Memories[i].Width},path,hex,start_addr,end_addr);return true;");
+            code.AppendLine("default: return false;}}");
+        }
+        code.AppendLine("public:");
         // Non-virtual inline fast-path lets GCC/Clang inline evaluate() directly into host loops.
         code.AppendLine("inline void eval(){");
         code.AppendLine("if(fast_eval_ok&&owner_thread==std::this_thread::get_id())[[likely]]{");

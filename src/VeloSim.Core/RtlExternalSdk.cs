@@ -3,11 +3,12 @@ namespace VeloSim;
 
 public static class RtlExternalSdk
 {
-    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp)
+    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null)
     {
-        if (new FileInfo(ir).Length > 4 * 1024 * 1024) throw new ArgumentException("RTL IR exceeds 4 MiB.");
+        var effectiveLimits = limits ?? RtlDesignLimits.Bounded;
+        if (new FileInfo(ir).Length > effectiveLimits.MaxIrBytes) throw new ArgumentException($"RTL IR exceeds {effectiveLimits.MaxIrBytes / (1024 * 1024)} MiB.");
         string json = await File.ReadAllTextAsync(ir, token).ConfigureAwait(false);
-        var design = RtlDesign.Parse(json);
+        var design = RtlDesign.Parse(json, effectiveLimits);
         directory = Path.GetFullPath(directory);
         for (DirectoryInfo? parent = new(directory); parent is not null; parent = parent.Parent)
             if (parent.Exists && (parent.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("External SDK output cannot traverse a symbolic link or reparse point.");
@@ -25,7 +26,7 @@ public static class RtlExternalSdk
         if (runtime is null) throw new IOException("Run rtl-export from a VeloSim checkout containing native/rtl/external_model.h.");
         Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(Path.Combine(directory, "V" + top + ".h"), header, token).ConfigureAwait(false);
-        foreach (string file in new[] { "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
+        foreach (string file in new[] { "runtime.h", "external_model.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
         if (design.Timed) File.Copy(Path.Combine(runtime, "hdl_scheduler.h"), Path.Combine(directory, "hdl_scheduler.h"));
         await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory,"timing-diagnostics.txt"),
@@ -65,6 +66,9 @@ public static class RtlExternalSdk
             Clockless models have no synthetic clock: eval() settles their DAG on startup and input changes.
             Bit inputs and destinations convert X/Z bits to zero.
             Use bits() for X/Z and up to 256-bit words; uint64 conversion rejects unknown or overflowing values.
+            Use openVcd()/dumpVcd()/closeVcd() for IEEE 1364 hierarchical 4-state VCD waveform output,
+            saveCheckpoint()/restoreCheckpoint() for versioned binary checkpoints, and
+            loadMemoryHex()/loadMemoryBin() for IEEE 1364 $readmemh/$readmemb memory initialization.
             loadVpi() accepts a native plugin with a null-terminated exported
             vlog_startup_routines table before the first eval().
             The VPI subset supports signal lookup, metadata, identity, immediate
@@ -95,7 +99,7 @@ public static class RtlExternalSdk
             SHA-256 hashes cover the generated/copied input files, excluding the
             manifest itself and any files you add later.
             """, token).ConfigureAwait(false);
-        var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
+        var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
         if (design.Timed) inputPaths.Add("hdl_scheduler.h");
         inputPaths.Add("timing-diagnostics.txt");
         var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();

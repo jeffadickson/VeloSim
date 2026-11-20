@@ -37,7 +37,8 @@ public static class ToolCli
                 _ => throw new ArgumentException("Unsupported rtl-export --target (expected cpp, csharp, or rust): " + targetText)
             };
             var stateMode = options.Flag("--two-state") ? RtlStateMode.TwoState : RtlStateMode.FourState;
-            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target).ConfigureAwait(false)); return 0;
+            var limits = options.Flag("--large-design") ? RtlDesignLimits.Large : RtlDesignLimits.Bounded;
+            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits).ConfigureAwait(false)); return 0;
         }
         if (args.Length > 0 && args[0] == "fifo-differential")
         {

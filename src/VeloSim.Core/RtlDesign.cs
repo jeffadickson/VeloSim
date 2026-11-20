@@ -8,6 +8,13 @@ public sealed record RtlSignal(string Name, int Width, string Direction, string?
 public sealed record RtlDimension(int Left,int Right);
 /// <summary>Word storage with optional fixed shape, dynamic/queue lifetime or typed sparse associative keys. Dynamic depth1 metadata denotes initially empty storage; two-state cells default to zero.</summary>
 public sealed record RtlMemory(string Name, int Width, int Depth, bool Signed = false, int LowerBound = 0, IReadOnlyList<RtlDimension>? Dimensions = null, bool TwoState = false, bool Dynamic = false, bool Queue = false, bool Associative = false, int KeyWidth = 0, bool KeySigned = false);
+/// <summary>Configurable resource limits for RTL IR validation. Bounded preserves the strict default contract; Large unlocks SoC/CPU scale.</summary>
+public sealed record RtlDesignLimits(int MaxIrBytes, int MaxSignals, int MaxMemories, int MaxMemoryDepth, int MaxContinuous, int MaxNodes, int MaxDepth)
+{
+    public static RtlDesignLimits Bounded { get; } = new(4 * 1024 * 1024, 256, 16, 256, 256, 20000, 64);
+    public static RtlDesignLimits Large { get; } = new(64 * 1024 * 1024, 65536, 1024, 1_048_576, 65536, 1_000_000, 128);
+}
+
 /// <summary>Validated bounded RTL IR with acyclic settling and process-local sequential blocking storage.</summary>
 public sealed partial class RtlDesign
 {
@@ -21,6 +28,7 @@ public sealed partial class RtlDesign
     public string? Clock { get; }
     public bool CombinationalOnly => Clock is null;
     public string Json { get; }
+    public RtlDesignLimits Limits { get; }
     public bool EventDriven => Kind(Body) == "process" || Kind(Body) == "parallel" && Body.GetProperty("items").EnumerateArray().Any(p => Kind(p) == "process");
     private IEnumerable<string> EventSignals => (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]).Where(p => Kind(p) == "process").SelectMany(p => p.GetProperty("events").EnumerateArray()).Select(e => e.GetProperty("signal").GetString()!).Distinct();
     private readonly Dictionary<string, int> signalIds;
@@ -39,15 +47,16 @@ public sealed partial class RtlDesign
     public int SignalId(string name) => signalIds.TryGetValue(name, out int id) ? id : throw new IrValidationException("Unknown RTL signal: " + name);
     private int MemoryId(string name) => memoryIds.TryGetValue(name, out int id) ? id : throw new IrValidationException("Unknown RTL memory: " + name);
     public static bool Identifier(string name) => Regex.IsMatch(name, "^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant);
-    private RtlDesign(string json)
+    private RtlDesign(string json, RtlDesignLimits limits)
     {
-        if (json.Length > 4 * 1024 * 1024) throw new IrValidationException("RTL IR too large.");
+        Limits = limits;
+        if (json.Length > limits.MaxIrBytes) throw new IrValidationException("RTL IR too large.");
         using var document = JsonDocument.Parse(json); var root = document.RootElement;
         JsonShape.Fields(root, ["format", "signals", "memories", "continuous", "clock", "body"], ["combinational", "initialization", "timed", "time_precision", "named_events"]);
         if (root.GetProperty("format").GetString() != "velosim.rtl.v1") throw new IrValidationException("Unsupported RTL IR.");
         Signals = root.GetProperty("signals").EnumerateArray().Select(e => { JsonShape.Fields(e, ["name", "width", "direction"], ["path", "signed", "two_state"]); return new RtlSignal(Name(e), e.GetProperty("width").GetInt32(), e.GetProperty("direction").GetString()!, e.TryGetProperty("path", out var path) ? path.GetString() : null, e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("two_state",out var two)&&two.GetBoolean()); }).ToArray();
         Memories = root.GetProperty("memories").EnumerateArray().Select(ParseMemory).ToArray();
-        if (Signals.Count is < 1 or > 256 || Memories.Count > 16 || Signals.Any(s => !Identifier(s.Name) || s.Width is < 1 or > 256 || s.Direction is not ("input" or "output" or "internal")) || Memories.Any(m => !Identifier(m.Name) || m.Width is < 1 or > 256 || m.Depth is < 1 or > 256 || m.LowerBound<0 || (long)m.LowerBound+m.Depth-1>int.MaxValue) || Signals.Select(s => s.Name).Concat(Memories.Select(m => m.Name)).Distinct().Count() != Signals.Count + Memories.Count) throw new IrValidationException("Invalid RTL declarations.");
+        if (Signals.Count < 1 || Signals.Count > limits.MaxSignals || Memories.Count > limits.MaxMemories || Signals.Any(s => !Identifier(s.Name) || s.Width is < 1 or > 256 || s.Direction is not ("input" or "output" or "internal")) || Memories.Any(m => !Identifier(m.Name) || m.Width is < 1 or > 256 || m.Depth < 1 || m.Depth > limits.MaxMemoryDepth || m.LowerBound<0 || (long)m.LowerBound+m.Depth-1>int.MaxValue) || Signals.Select(s => s.Name).Concat(Memories.Select(m => m.Name)).Distinct().Count() != Signals.Count + Memories.Count) throw new IrValidationException("Invalid RTL declarations.");
         signalIds = Signals.Select((s, i) => (s.Name, i)).ToDictionary(s => s.Name, s => s.i, StringComparer.Ordinal); memoryIds = Memories.Select((m, i) => (m.Name, i)).ToDictionary(m => m.Name, m => m.i, StringComparer.Ordinal);
         foreach(var memory in Memories)ValidateMemoryShape(memory);
         if (Signals.Any(s => s.SourcePath is not null && (s.Direction != "internal" || s.SourcePath.Length > 1024 || !Regex.IsMatch(s.SourcePath, "^[A-Za-z0-9_.$\\[\\]:]+$", RegexOptions.CultureInvariant))) || Signals.Select(s => s.SourcePath ?? s.Name).Distinct(StringComparer.Ordinal).Count() != Signals.Count) throw new IrValidationException("Invalid or duplicate source signal paths.");
@@ -67,7 +76,7 @@ public sealed partial class RtlDesign
         if (CombinationalOnly && (Kind(Body) != "block" || Body.GetProperty("items").GetArrayLength() != 0)) throw new IrValidationException("Clockless designs require an empty sequential body.");
         ValidateStatement(Body, sequential, 0); _ = StatementCost(Body);
         if (EventDriven && Kind(Body) == "parallel" && Body.GetProperty("items").EnumerateArray().Any(p => Kind(p) != "process")) throw new IrValidationException("Explicit and implicit event processes cannot be mixed.");
-        var continuous = root.GetProperty("continuous").EnumerateArray().Select(e => e.Clone()).ToList(); if (continuous.Count > 256) throw new IrValidationException("Too many continuous assignments.");
+        var continuous = root.GetProperty("continuous").EnumerateArray().Select(e => e.Clone()).ToList(); if (continuous.Count > limits.MaxContinuous) throw new IrValidationException("Too many continuous assignments.");
         var pending = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var assignment in continuous)
         {
@@ -83,12 +92,12 @@ public sealed partial class RtlDesign
         Continuous = sorted.AsReadOnly(); ValidateBlockingIsolation(); Json = json;
     }
     /// <summary>Parses the bounded IR and rejects unsupported, malformed or conflicting execution contracts.</summary>
-    public static RtlDesign Parse(string json)
+    public static RtlDesign Parse(string json, RtlDesignLimits? limits = null)
     {
-        try { return new(json); }
+        try { return new(json, limits ?? RtlDesignLimits.Bounded); }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or OverflowException or FormatException or ArgumentException && e is not IrValidationException) { throw new IrValidationException("Malformed RTL IR: " + e.Message); }
     }
-    private void Budget(int depth) { if (depth > 64 || ++nodes > 20000) throw new IrValidationException("RTL node/depth budget exceeded."); }
+    private void Budget(int depth) { if (depth > Limits.MaxDepth || ++nodes > Limits.MaxNodes) throw new IrValidationException("RTL node/depth budget exceeded."); }
     private void ValidateIndex(JsonElement e,int depth){ValidateExpression(e,depth);if(ExpressionSigned(e)&&!(Kind(e)=="const"&&e.GetProperty("bits").GetString()![0]=='0'))throw new IrValidationException("Signed indices require an explicit unsigned cast.");}
     private int ValidateExpression(JsonElement e, int depth)
     {
@@ -170,6 +179,26 @@ public sealed partial class RtlDesign
                 JsonShape.Fields(e, ["kind", "value", "items"]); ValidateExpression(e.GetProperty("value"), depth + 1); int defaults = 0;
                 foreach (var item in e.GetProperty("items").EnumerateArray()) { JsonShape.Fields(item, ["match", "body"]); var match = item.GetProperty("match"); if (match.ValueKind == JsonValueKind.Null) defaults++; else { if (Kind(match) != "const") throw new IrValidationException("Only constant case labels supported."); ValidateExpression(match, depth + 1); } ValidateStatement(item.GetProperty("body"), writers, depth + 1); }
                 if (defaults > 1) throw new IrValidationException("Duplicate default case."); break;
+            case "assert":
+                JsonShape.Fields(e, ["kind", "condition"], ["message"]);
+                ValidateExpression(e.GetProperty("condition"), depth + 1);
+                if (e.TryGetProperty("message", out var msgEl) && (msgEl.ValueKind != JsonValueKind.String || msgEl.GetString()!.Length > 256))
+                    throw new IrValidationException("Invalid assertion message.");
+                break;
+            case "finish":
+                JsonShape.Fields(e, ["kind"], ["code"]);
+                if (e.TryGetProperty("code", out var codeEl)) _ = codeEl.GetInt32();
+                break;
+            case "display":
+                JsonShape.Fields(e, ["kind", "format"], ["args", "newline"]);
+                if (e.GetProperty("format").GetString()!.Length > 1024) throw new IrValidationException("Display format exceeds 1024 characters.");
+                if (e.TryGetProperty("newline", out var nlEl)) _ = nlEl.GetBoolean();
+                if (e.TryGetProperty("args", out var dispArgs))
+                {
+                    if (dispArgs.GetArrayLength() > 32) throw new IrValidationException("Display supports at most 32 arguments.");
+                    foreach (var da in dispArgs.EnumerateArray()) ValidateExpression(da, depth + 1);
+                }
+                break;
             default: throw new IrValidationException("Unsupported RTL statement.");
         }
     }
@@ -226,6 +255,28 @@ public sealed partial class RtlDesign
         "cond"=>e.GetProperty("args").EnumerateArray().Skip(1).All(ExpressionSigned),
         _=>e.GetProperty("args").EnumerateArray().All(ExpressionSigned)
     };
+    internal static string CppStringLiteral(string value)
+    {
+        var sb = new StringBuilder(value.Length + 2);
+        sb.Append('"');
+        foreach (char c in value)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (c < 0x20 || c > 0x7e) sb.Append($"\\x{(int)c:x2}");
+                    else sb.Append(c);
+                    break;
+            }
+        }
+        sb.Append('"');
+        return sb.ToString();
+    }
     private static string EmitConst(string bits)
     {
         int w = bits.Length;
@@ -329,7 +380,7 @@ public sealed partial class RtlDesign
     private bool CanEvaluateThrow()
     {
         var allStmts = SettledSteps.Append(Body).SelectMany(Statements).ToArray();
-        if (allStmts.Any(e => Kind(e) is "while" or "do" or "runtime_repeat" or "allocate" or "queue_push" or "queue_pop" or "assoc_traverse")) return true;
+        if (allStmts.Any(e => Kind(e) is "while" or "do" or "runtime_repeat" or "allocate" or "queue_push" or "queue_pop" or "assoc_traverse" or "assert")) return true;
         if (Memories.Any(m => m.Associative || m.Queue || m.Dynamic)) return true;
         foreach (var st in allStmts)
         {
@@ -398,6 +449,22 @@ public sealed partial class RtlDesign
                 }
                 break;
             case "if": code.AppendLine($"if(yes({Expression(e.GetProperty("condition"))})){{"); Statement(code, e.GetProperty("then"), ref unique, trackBudget, useMemLog); code.AppendLine("}else{"); Statement(code, e.GetProperty("else"), ref unique, trackBudget, useMemLog); code.AppendLine("}"); break;
+            case "assert":
+                code.AppendLine($"vsrtl::check_assert({Expression(e.GetProperty("condition"))},{CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "")});");
+                break;
+            case "finish":
+                code.AppendLine("finish();");
+                break;
+            case "display":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                bool nl = !e.TryGetProperty("newline", out var nlProp) || nlProp.GetBoolean();
+                string argList = e.TryGetProperty("args", out var dArgs)
+                    ? string.Join(",", dArgs.EnumerateArray().Select(a => Expression(a)))
+                    : "";
+                code.AppendLine($"emitDisplay(vsrtl::format_display({fmt},{{{argList}}},{(nl ? "true" : "false")}));");
+                break;
+            }
             case "case":
                 var label = "case" + unique++; var items = e.GetProperty("items").EnumerateArray().ToArray(); int caseWidth = Math.Max(ExpressionWidth(e.GetProperty("value")), items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).Select(i => ExpressionWidth(i.GetProperty("match"))).DefaultIfEmpty(1).Max()); bool caseSigned=ExpressionSigned(e.GetProperty("value"))&&items.Where(i=>i.GetProperty("match").ValueKind!=JsonValueKind.Null).All(i=>ExpressionSigned(i.GetProperty("match"))); code.AppendLine($"{{auto {label}={Expression(e.GetProperty("value"), caseWidth,caseSigned)};"); bool first = true;
                 foreach (var item in items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null)) { code.AppendLine($"{(first ? "if" : "else if")}(exact({label},{Expression(item.GetProperty("match"),caseWidth,caseSigned)})){{"); Statement(code, item.GetProperty("body"), ref unique, trackBudget, useMemLog); code.AppendLine("}"); first = false; }

@@ -1,6 +1,7 @@
 #pragma once
 #include "runtime.h"
 #include "vpi_user.h"
+#include <functional>
 #include <memory>
 #include <thread>
 #include <utility>
@@ -34,6 +35,9 @@ protected:
  std::vector<W> s;
  std::vector<std::vector<W>> mem;
  virtual void evaluate() = 0;
+ virtual void saveExtraState(std::vector<uint8_t>&) const {}
+ virtual void restoreExtraState(const uint8_t*, size_t) {}
+ virtual bool loadDerivedMemory(size_t, const std::string&, bool, size_t, size_t, size_t&) { return false; }
 public:
  // clock is a scalar input index, or -1 for a clockless model. Initial evaluation is explicit.
  Model(std::string name, std::vector<Signal> signals, int clock,int word_abi=2);
@@ -63,6 +67,15 @@ public:
  uint64_t time() const; bool gotFinish() const; bool evalNeeded() const; bool started() const;
  void requestEval();
  void finish(); void useVpi(); void loadVpi(const std::string& path);
+ void openVcd(const std::string& path, const std::string& timescale = "1ns");
+ void dumpVcd();
+ void closeVcd();
+ void saveCheckpoint(const std::string& path) const;
+ void restoreCheckpoint(const std::string& path);
+ size_t loadMemoryHex(size_t mem_id, const std::string& path, size_t start_addr = 0, size_t end_addr = SIZE_MAX);
+ size_t loadMemoryBin(size_t mem_id, const std::string& path, size_t start_addr = 0, size_t end_addr = SIZE_MAX);
+ void setDisplaySink(std::function<void(const std::string&)> sink);
+ void emitDisplay(const std::string& text);
  const std::string& name() const; const std::vector<Signal>& signals() const;
  W get(size_t id) const; void put(size_t id, W value);
  std::weak_ptr<int> lifetime() const;

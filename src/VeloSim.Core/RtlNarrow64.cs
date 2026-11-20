@@ -39,6 +39,11 @@ public sealed partial class RtlDesign
                 if (match.ValueKind != JsonValueKind.Null && !ExpressionFits64(match)) return false;
             }
         }
+        if (Kind(e) == "display" && e.TryGetProperty("args", out var dArgs))
+        {
+            foreach (var da in dArgs.EnumerateArray())
+                if (!ExpressionFits64(da)) return false;
+        }
         return true;
     }
 
@@ -199,6 +204,22 @@ public sealed partial class RtlDesign
                 Statement64(code, e.GetProperty("else"), ref unique, trackBudget);
                 code.AppendLine("}");
                 break;
+            case "assert":
+                code.AppendLine($"vsrtl::w64::check_assert({Expression64(e.GetProperty("condition"))},{CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "")});");
+                break;
+            case "finish":
+                code.AppendLine("finish();");
+                break;
+            case "display":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                bool nl = !e.TryGetProperty("newline", out var nlProp) || nlProp.GetBoolean();
+                string argList = e.TryGetProperty("args", out var dArgs)
+                    ? string.Join(",", dArgs.EnumerateArray().Select(a => $"vsrtl::w64::from({Expression64(a)})"))
+                    : "";
+                code.AppendLine($"emitDisplay(vsrtl::format_display({fmt},{{{argList}}},{(nl ? "true" : "false")}));");
+                break;
+            }
             case "case":
                 var label = "case" + unique++;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
@@ -286,6 +307,10 @@ public sealed partial class RtlDesign
         {
             code.AppendLine($"\n}}catch(...){{s=std::move(saved_s);mem=std::move(saved_mem);for(int i=0;i<{Signals.Count};++i)_vs_prev[i]=saved_prev[i];{(hasFixedMemWrites ? "_vs_mlog.count=0;_vs_mlog.overflow.clear();" : "")}throw;}}");
         }
+        code.AppendLine("}\nvoid saveExtraState(std::vector<uint8_t>& out) const override {");
+        code.AppendLine($"const size_t n=sizeof(_vs_prev);out.resize(n);std::memcpy(out.data(),_vs_prev,n);");
+        code.AppendLine("}\nvoid restoreExtraState(const uint8_t* data,size_t len) override {");
+        code.AppendLine($"if(len!=sizeof(_vs_prev))throw std::runtime_error(\"checkpoint W64 state size mismatch\");std::memcpy(_vs_prev,data,len);");
         code.AppendLine("}\npublic:");
         // Non-virtual inline fast-path lets the C++ compiler inline evaluate() directly into host loops.
         code.AppendLine("inline void eval(){");

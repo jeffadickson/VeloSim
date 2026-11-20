@@ -302,6 +302,26 @@ public sealed partial class RtlDesign
                 CsStmt(code, e.GetProperty("else"), ref unique, twoState, trackBudget);
                 code.AppendLine("}");
                 break;
+            case "assert":
+            {
+                string condExpr = twoState ? $"W2Ops.Yes({CsExpr2(e.GetProperty("condition"))})" : $"W64Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
+                string msg = CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "");
+                code.AppendLine($"if (!{condExpr}) throw new InvalidOperationException(\"RTL assertion failed: \" + {msg});");
+                break;
+            }
+            case "finish":
+                code.AppendLine("_finished = true;");
+                break;
+            case "display":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                bool nl = !e.TryGetProperty("newline", out var nlProp) || nlProp.GetBoolean();
+                string argList = e.TryGetProperty("args", out var dArgs)
+                    ? string.Join(", ", dArgs.EnumerateArray().Select(a => twoState ? $"new W64({CsExpr2(a)},0UL,0UL,{ExpressionWidth(a)})" : CsExpr64(a)))
+                    : "";
+                code.AppendLine($"EmitDisplay(W64Ops.FormatDisplay({fmt}, [{argList}], {(nl ? "true" : "false")}));");
+                break;
+            }
             case "case":
                 string lbl = "cs" + unique++;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
@@ -362,6 +382,10 @@ public sealed partial class RtlDesign
         code.AppendLine("{");
         if (hasRuntimeLoops) code.AppendLine("    private int _budget = 20000;");
         code.AppendLine("    private ulong _time;");
+        code.AppendLine("    private bool _finished;");
+        code.AppendLine("    public bool GotFinish => _finished;");
+        code.AppendLine("    public Action<string>? DisplaySink { get; set; }");
+        code.AppendLine("    private void EmitDisplay(string text) { if (DisplaySink is not null) DisplaySink(text); else Console.Write(text); }");
         for (int i = 0; i < Signals.Count; ++i)
             code.AppendLine($"    private {wordType} _s{i};");
         foreach (int id in eventIds)
@@ -588,6 +612,39 @@ public static class W64Ops
             else buf[i] = (((a.V >> bit) & 1UL) != 0) ? '1' : '0';
         }
         return new string(buf);
+    }
+
+    public static string FormatDisplay(string fmt, W64[] args, bool newline)
+    {
+        var sb = new System.Text.StringBuilder(fmt.Length + 32);
+        int argIdx = 0;
+        for (int i = 0; i < fmt.Length; ++i)
+        {
+            if (fmt[i] != '%' || i + 1 >= fmt.Length) { sb.Append(fmt[i]); continue; }
+            if (fmt[i + 1] == '%') { sb.Append('%'); ++i; continue; }
+            bool trim = false;
+            if (fmt[i + 1] == '0' && i + 2 < fmt.Length) { trim = true; ++i; }
+            char spec = fmt[++i];
+            if (argIdx >= args.Length) { sb.Append('%').Append(spec); continue; }
+            W64 a = args[argIdx++];
+            if (spec is 'h' or 'H' or 'x' or 'X')
+            {
+                string s = ((a.X | a.Z) != 0) ? "x" : a.V.ToString("x");
+                if (!trim) { int digits = (a.W + 3) / 4; if (s.Length < digits) s = s.PadLeft(digits, '0'); }
+                sb.Append(s);
+            }
+            else if (spec is 'b' or 'B')
+            {
+                string s = Text(a);
+                if (trim) s = s.TrimStart('0') is { Length: > 0 } t ? t : "0";
+                sb.Append(s);
+            }
+            else if (spec is 'd' or 'D' or 'u' or 'U')
+                sb.Append((a.X | a.Z) != 0 ? "x" : a.V.ToString());
+            else sb.Append('%').Append(spec);
+        }
+        if (newline) sb.Append('\n');
+        return sb.ToString();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

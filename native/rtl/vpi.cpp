@@ -1,8 +1,11 @@
 #include "external_model.h"
+#include "vcd_trace.h"
+#include "checkpoint.h"
 #include <algorithm>
 #include <charconv>
 #include <cstdarg>
 #include <cstdio>
+#include <iostream>
 #include <limits>
 #include <unordered_map>
 #if defined(_WIN32)
@@ -94,6 +97,8 @@ struct Model::State {
  uint64_t now=0; bool finished=false,finishRequested=false,started=false,evaluating=false,dispatching=false,readOnly=false,requested=false;
  bool hasCallbacks=false;
  std::unordered_map<size_t,W> pending; std::vector<void*> plugins;
+ VcdWriter vcd;
+ std::function<void(const std::string&)> displaySink;
 };
 void Model::refreshFastFlags() noexcept {
  fast_port_ok = !state->finished && !state->finishRequested && !state->readOnly && !state->dispatching;
@@ -105,13 +110,14 @@ void Model::notifyCallbackStateChanged(bool active) noexcept {
  refreshFastFlags();
 }
 Model::Model(std::string name,std::vector<Signal> signals,int clock,int abi):state(std::make_unique<State>()),owner_thread(state->owner){
- if(abi!=2||name.empty()||signals.empty()||signals.size()>256||clock < -1||(clock >= 0 && (size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)))throw std::invalid_argument("invalid external model interface");
+ if(abi!=2||name.empty()||signals.empty()||signals.size()>65536||clock < -1||(clock >= 0 && (size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)))throw std::invalid_argument("invalid external model interface");
  state->name=std::move(name);state->names.reserve(signals.size());s.reserve(signals.size());
  for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>256||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(sig.two_state?word(0,0,0,sig.width):unknown(sig.width));}
  for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction,signals[i].is_signed,signals[i].two_state});if(clock>=0)s[clock]=word(0,0,0,1);
  refreshFastFlags();
 }
 Model::~Model(){
+ state->vcd.close();
  // Derived state is already gone; destruction invalidates callbacks, never calls HDL or plugins.
  for(auto& [key,h]:handles)if(h->model==this&&h->life.lock()==state->life)h->active=false;
  state->life.reset();for(auto module:state->plugins){
@@ -166,7 +172,16 @@ void Model::evalSlow(){
  refreshFastFlags();
  }catch(...){state->readOnly=false;state->dispatching=false;state->evaluating=false;fast_dirty=true;refreshFastFlags();throw;}
 }
-void Model::final(){checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("reentrant final()");if(state->finished)return;Activation active(*this);state->finished=true;state->evaluating=true;state->readOnly=true;refreshFastFlags();try{if(state->hasCallbacks)for(auto h:callbacks(*this))if(h->cb.reason==cbEndOfSimulation){invoke(*h);h->active=false;}state->evaluating=false;state->readOnly=false;refreshFastFlags();}catch(...){state->evaluating=false;state->readOnly=false;refreshFastFlags();throw;}}
+void Model::final(){checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("reentrant final()");if(state->finished)return;Activation active(*this);state->finished=true;state->evaluating=true;state->readOnly=true;refreshFastFlags();try{if(state->hasCallbacks)for(auto h:callbacks(*this))if(h->cb.reason==cbEndOfSimulation){invoke(*h);h->active=false;}state->vcd.close();state->evaluating=false;state->readOnly=false;refreshFastFlags();}catch(...){state->vcd.close();state->evaluating=false;state->readOnly=false;refreshFastFlags();throw;}}
+void Model::openVcd(const std::string& path,const std::string& timescale){checkThread();state->vcd.open(path,state->name,state->signals,timescale);}
+void Model::dumpVcd(){checkThread();state->vcd.dump(state->now,s);}
+void Model::closeVcd(){checkThread();state->vcd.close();}
+void Model::saveCheckpoint(const std::string& path) const{checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot save checkpoint during evaluation");std::vector<uint8_t> extra;saveExtraState(extra);checkpoint::save(path,state->name,state->signals,state->now,s,mem,extra);}
+void Model::restoreCheckpoint(const std::string& path){checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot restore checkpoint during evaluation");uint64_t nextNow=state->now;auto nextS=s;auto nextMem=mem;std::vector<uint8_t> extra;checkpoint::load(path,state->name,state->signals,nextNow,nextS,nextMem,extra);restoreExtraState(extra.data(),extra.size());state->now=nextNow;s=std::move(nextS);mem=std::move(nextMem);state->pending.clear();fast_dirty=true;refreshFastFlags();}
+size_t Model::loadMemoryHex(size_t mem_id,const std::string& path,size_t start_addr,size_t end_addr){checkThread();size_t loaded=0;if(loadDerivedMemory(mem_id,path,true,start_addr,end_addr,loaded))return loaded;if(mem_id>=mem.size()||mem[mem_id].empty())throw std::out_of_range("invalid memory id for loadMemoryHex");return load_mem_file(mem[mem_id],mem[mem_id][0].w,path,true,start_addr,end_addr);}
+size_t Model::loadMemoryBin(size_t mem_id,const std::string& path,size_t start_addr,size_t end_addr){checkThread();size_t loaded=0;if(loadDerivedMemory(mem_id,path,false,start_addr,end_addr,loaded))return loaded;if(mem_id>=mem.size()||mem[mem_id].empty())throw std::out_of_range("invalid memory id for loadMemoryBin");return load_mem_file(mem[mem_id],mem[mem_id][0].w,path,false,start_addr,end_addr);}
+void Model::setDisplaySink(std::function<void(const std::string&)> sink){checkThread();state->displaySink=std::move(sink);}
+void Model::emitDisplay(const std::string& text){checkThread();if(state->displaySink)state->displaySink(text);else std::cout<<text;}
 void Model::loadVpi(const std::string& path){
  checkThread();if(fast_evaluating||state->evaluating||state->started||gotFinish()||state->plugins.size()>=64)throw std::runtime_error("load VPI plugins before first eval; maximum64");Activation active(*this);
 #if defined(_WIN32)
