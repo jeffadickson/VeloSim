@@ -3,20 +3,26 @@ namespace VeloSim;
 
 public static class RtlExternalSdk
 {
-    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState)
+    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp)
     {
         if (new FileInfo(ir).Length > 4 * 1024 * 1024) throw new ArgumentException("RTL IR exceeds 4 MiB.");
         string json = await File.ReadAllTextAsync(ir, token).ConfigureAwait(false);
         var design = RtlDesign.Parse(json);
+        directory = Path.GetFullPath(directory);
+        for (DirectoryInfo? parent = new(directory); parent is not null; parent = parent.Parent)
+            if (parent.Exists && (parent.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("External SDK output cannot traverse a symbolic link or reparse point.");
+        if (Directory.Exists(directory) && Directory.EnumerateFileSystemEntries(directory).Any()) throw new ArgumentException("External SDK output directory must be empty.");
+
+        if (target == RtlTargetLanguage.CSharp)
+            return await ExportCSharpAsync(design, json, top, directory, stateMode, token).ConfigureAwait(false);
+        if (target == RtlTargetLanguage.Rust)
+            return await ExportRustAsync(design, json, top, directory, stateMode, token).ConfigureAwait(false);
+
         string header = design.EmitModelHeader(top, stateMode);
         string? runtime = null;
         for (var parent = new DirectoryInfo(Environment.CurrentDirectory); parent is not null; parent = parent.Parent)
             if (File.Exists(Path.Combine(parent.FullName, "native/rtl/external_model.h"))) { runtime = Path.Combine(parent.FullName, "native/rtl"); break; }
         if (runtime is null) throw new IOException("Run rtl-export from a VeloSim checkout containing native/rtl/external_model.h.");
-        directory = Path.GetFullPath(directory);
-        for (DirectoryInfo? parent = new(directory); parent is not null; parent = parent.Parent)
-            if (parent.Exists && (parent.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("External SDK output cannot traverse a symbolic link or reparse point.");
-        if (Directory.Exists(directory) && Directory.EnumerateFileSystemEntries(directory).Any()) throw new ArgumentException("External SDK output directory must be empty.");
         Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(Path.Combine(directory, "V" + top + ".h"), header, token).ConfigureAwait(false);
         foreach (string file in new[] { "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
@@ -101,6 +107,86 @@ public static class RtlExternalSdk
             semantics,
             design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
             inputs.Select(input => new ExternalInputContract(Path.GetFileName(input.Path), input.Sha256)).ToArray());
+        await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
+        return manifest;
+    }
+
+    private static async Task<string> ExportCSharpAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, CancellationToken token)
+    {
+        string modelCs = design.EmitCSharpModel(top, stateMode);
+        string runtimeCs = RtlDesign.EmitCSharpRuntime();
+        Directory.CreateDirectory(directory);
+        string modelFile = "V" + top + ".cs";
+        string csprojFile = "V" + top + ".csproj";
+        await File.WriteAllTextAsync(Path.Combine(directory, modelFile), modelCs, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "VeloSimRuntime.cs"), runtimeCs, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, csprojFile), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net11.0</TargetFramework>
+                <ImplicitUsings>disable</ImplicitUsings>
+                <Nullable>enable</Nullable>
+                <LangVersion>latest</LangVersion>
+                <OptimizationPreference>Speed</OptimizationPreference>
+              </PropertyGroup>
+            </Project>
+            """, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "README.md"), $"""
+            # VeloSim C# model SDK (V{top})
+
+            Zero-dependency .NET 11 library targeting VeloSim's register-resident {(stateMode == RtlStateMode.TwoState ? "2-state (W2)" : "4-state (W64)")} engine.
+            Reference `{csprojFile}` from your C# testbench or build with:
+            dotnet build {csprojFile} -c Release
+            """, token).ConfigureAwait(false);
+        var inputPaths = new[] { modelFile, "VeloSimRuntime.cs", csprojFile, "design.rtl.json", "README.md" };
+        var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
+        string manifest = Path.Combine(directory, "external-model.json");
+        var names = design.CSharpPortNames();
+        bool twoState = stateMode == RtlStateMode.TwoState;
+        string semantics = $"csharp; {(twoState ? "two-state" : "four-state")}; {(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
+        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
+            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
+            inputs.Select(input => new ExternalInputContract(Path.GetFileName(input.Path), input.Sha256)).ToArray());
+        await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
+        return manifest;
+    }
+
+    private static async Task<string> ExportRustAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, CancellationToken token)
+    {
+        string libRs = design.EmitRustModel(top, stateMode);
+        string runtimeRs = RtlDesign.EmitRustRuntime();
+        Directory.CreateDirectory(Path.Combine(directory, "src"));
+        await File.WriteAllTextAsync(Path.Combine(directory, "src", "lib.rs"), libRs, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "src", "runtime.rs"), runtimeRs, token).ConfigureAwait(false);
+        string crateName = "velosim_" + top.ToLowerInvariant();
+        await File.WriteAllTextAsync(Path.Combine(directory, "Cargo.toml"), $"""
+            [package]
+            name = "{crateName}"
+            version = "0.1.0"
+            edition = "2021"
+
+            [profile.release]
+            opt-level = 3
+            codegen-units = 1
+            """, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "README.md"), $"""
+            # VeloSim Rust model SDK (V{top})
+
+            Zero-dependency, `#![forbid(unsafe_code)]` Rust 2021 crate targeting VeloSim's register-resident {(stateMode == RtlStateMode.TwoState ? "2-state (W2)" : "4-state (W64)")} engine.
+            Build with:
+            cargo build --release
+            """, token).ConfigureAwait(false);
+        var inputPaths = new[] { "Cargo.toml", "src/lib.rs", "src/runtime.rs", "design.rtl.json", "README.md" };
+        var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
+        string manifest = Path.Combine(directory, "external-model.json");
+        var names = design.RustPortNames();
+        bool twoState = stateMode == RtlStateMode.TwoState;
+        string semantics = $"rust; {(twoState ? "two-state" : "four-state")}; {(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
+        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
+            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
+            inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
         await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
         return manifest;
     }

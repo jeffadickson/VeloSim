@@ -11,7 +11,7 @@ internal sealed class CliOptions
     private sealed record Spec(string Values, string Flags = "", bool Sources = false, bool Unique = false);
     private static readonly IReadOnlyDictionary<string, Spec> Specs = new Dictionary<string, Spec>(StringComparer.Ordinal)
     {
-        ["rtl-export"] = new("top output-dir", "two-state", Unique: true),
+        ["rtl-export"] = new("top output-dir target", "two-state", Unique: true),
         ["fifo-differential"] = new("top output-dir exporter surelog build-jobs cycles seed workers", Unique: true),
         ["word-seeded-conformance"] = new("output-dir iverilog vvp seed steps repetitions workers", Unique: true),
         ["word-inspect"] = new(""), ["word-replay"] = new("output-dir"), ["word-reduce"] = new("output-dir"),
