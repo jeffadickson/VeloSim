@@ -208,7 +208,7 @@ STATEMENT: >>>
 Self-checking HDL programs execute and fail with exact status/source diagnostics; file malformed/missing/error cases and time-format rounding are tested independently.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-10, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-03, WP-07. Existing product IDs: VS-RTL-PROC-001, VS-RTL-TYPE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/11. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-02, LIB-10. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+Inferred planning acceptance for WP-10, P1, relative scope L. Vertical slice implemented and verified under VS-RTL-SYSTASK-001: IEEE 1364 $readmemh/$readmemb loader (loadMemoryHex/loadMemoryBin), formatted display IR/runtime and finish task across C++/C#/Rust backends. General file I/O ($fopen/$fscanf), strings, real values, plusargs and direct UHDM system-task lowering remain open. Dependencies: WP-03, WP-07. Product IDs: VS-RTL-PROC-001, VS-RTL-TYPE-001, VS-RTL-SYSTASK-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/11. Library evaluation: LIB-02, LIB-10.
 <<<
 RELATIONS:
 - TYPE: File
@@ -221,6 +221,10 @@ RELATIONS:
   VALUE: docs/library-opportunities.md
 - TYPE: File
   VALUE: docs/library-opportunities.json
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-11
@@ -296,7 +300,7 @@ STATEMENT: >>>
 Intentionally failing properties demonstrably fail at the expected cycle; no successful build may silently erase verification statements. SVA support remains a declared subset.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-14, P1, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02, WP-03, WP-20. Existing product IDs: new feature requirements to be drafted before implementation. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/15. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-01, LIB-19. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+Inferred planning acceptance for WP-14, P1, relative scope XL. Immediate runtime assertion slice implemented and verified under VS-RTL-ASSERT-001 with transactional state rollback across C++/C#/Rust; concurrent SVA properties continue to fail closed via native/uhdm/rtl_audit.h (WP-20). Concurrent SVA sequences/properties and sampled-value functions remain open. Dependencies: WP-02, WP-03, WP-20. Product IDs: VS-RTL-ASSERT-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/15. Library evaluation: LIB-01, LIB-19.
 <<<
 RELATIONS:
 - TYPE: File
@@ -309,6 +313,10 @@ RELATIONS:
   VALUE: docs/library-opportunities.md
 - TYPE: File
   VALUE: docs/library-opportunities.json
+- TYPE: File
+  VALUE: native/uhdm/rtl_audit.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-15
@@ -362,7 +370,7 @@ STATEMENT: >>>
 Losslessly compressed waveforms satisfying VS-TRACE-COMPRESSED-001 and parsed by an independent reader match known traces; checkpoint restart reproduces future outputs/events exactly and rejects mismatched source/runtime versions.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-17, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02, WP-06. Existing product IDs: VS-TRACE-COMPRESSED-001 (Draft). GitHub issue: https://github.com/jeffadickson/VeloSim/issues/18. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-06, LIB-10, LIB-11, LIB-12. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+Inferred planning acceptance for WP-17, P1, relative scope L. Vertical slices implemented and verified under VS-RTL-VCD-001 (IEEE 1364 hierarchical four-state delta-compressed VCD writer) and VS-RTL-CHECKPOINT-001 (versioned binary save/restore checkpoints with schema fingerprint and FNV-1a checksum across W, W64 and W2 models). Compressed FST streaming (VS-TRACE-COMPRESSED-001), timed-frame checkpoint persistence and interactive source debugging remain open. Dependencies: WP-02, WP-06. Product IDs: VS-RTL-VCD-001, VS-RTL-CHECKPOINT-001, VS-TRACE-COMPRESSED-001 (Draft). GitHub issue: https://github.com/jeffadickson/VeloSim/issues/18. Library evaluation: LIB-06, LIB-10, LIB-11, LIB-12.
 <<<
 RELATIONS:
 - TYPE: File
@@ -377,6 +385,12 @@ RELATIONS:
   VALUE: docs/library-opportunities.json
 - TYPE: File
   VALUE: docs/compressed-waveforms.md
+- TYPE: File
+  VALUE: native/rtl/vcd_trace.h
+- TYPE: File
+  VALUE: native/rtl/checkpoint.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-18
@@ -386,7 +400,7 @@ STATEMENT: >>>
 Published benchmarks include source/tool/configuration hashes, baseline timings, repeat distributions and correctness checks; demonstrate actual worker scaling or explicitly report no gain.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-18, P2, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01, WP-04, WP-07. Existing product IDs: VS-QUAL-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/19. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-03, LIB-08, LIB-14, LIB-15, LIB-18. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+Inferred planning acceptance for WP-18, P2, relative scope XL. Major throughput and scale slices implemented and verified under VS-RTL-NARROW64-001 (PR #41), VS-RTL-TWOSTATE-001 (PR #42), VS-RTL-TARGETS-001 (PR #43: C# and safe Rust codegen) and VS-RTL-SCALE-001 (opt-in RtlDesignLimits.Large / --large-design with 65,536 signals and 1M-word memories). Head-to-head benchmarks against Verilator 5.055 (-O3 and -O3 -flto) on DspFir and surelog_fifo verified bit-for-bit identical checksums. Hierarchical compilation and multi-threaded structural DAG partitioning remain open. Dependencies: WP-01, WP-04, WP-07. Product IDs: VS-QUAL-001, VS-RTL-NARROW64-001, VS-RTL-TWOSTATE-001, VS-RTL-TARGETS-001, VS-RTL-SCALE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/19. Library evaluation: LIB-03, LIB-08, LIB-14, LIB-15, LIB-18.
 <<<
 RELATIONS:
 - TYPE: File
@@ -399,6 +413,16 @@ RELATIONS:
   VALUE: docs/library-opportunities.md
 - TYPE: File
   VALUE: docs/library-opportunities.json
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-19
@@ -408,7 +432,7 @@ STATEMENT: >>>
 A disconnected Windows machine can follow the documented flow and reproduce a short verified run before long campaigns; native-vs-WSL coverage and unsupported toolchains are explicit.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-19, P2, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01, WP-12, WP-13, WP-17. Existing product IDs: VS-VERIFY-REMOTE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/20. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-03, LIB-06, LIB-08, LIB-09, LIB-17. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+Inferred planning acceptance for WP-19, P2, relative scope L. Native C# (.NET 11) and safe Rust 2021 host SDK targets added under VS-RTL-TARGETS-001 (PR #43) alongside C++20 SDK export. Clean-machine Windows/Linux distribution parity and SystemC adapters remain open. Dependencies: WP-01, WP-12, WP-13, WP-17. Product IDs: VS-VERIFY-REMOTE-001, VS-RTL-TARGETS-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/20. Library evaluation: LIB-03, LIB-06, LIB-08, LIB-09, LIB-17.
 <<<
 RELATIONS:
 - TYPE: File
@@ -421,6 +445,10 @@ RELATIONS:
   VALUE: docs/library-opportunities.md
 - TYPE: File
   VALUE: docs/library-opportunities.json
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlMultiTargetTests.cs
 
 [REQUIREMENT]
 UID: VS-PLAN-WP-20
@@ -430,7 +458,7 @@ STATEMENT: >>>
 Unsupported executable constructs fail explicitly; supported assertions and final blocks have demonstrable effects. A positive parser/exporter exit alone never satisfies acceptance.
 <<<
 COMMENT: >>>
-Inferred planning acceptance for WP-20, P0, relative scope M. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01. Existing product IDs: VS-QUAL-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/21. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-01, LIB-06. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+Inferred planning acceptance for WP-20, P0, relative scope M. UHDM executable construct auditing is active in native/uhdm/rtl_audit.h (RtlExecutableAudit called from native/uhdm/rtl.cpp before flattening), rejecting concurrent/immediate assertions, assume/cover, final blocks, clocking blocks, programs, interfaces and primitive instances/arrays with source coordinates; immediate runtime assert IR is implemented under VS-RTL-ASSERT-001. Full coverage across additional UHDM constructs (covergroups, classes, force/release, specify blocks, UDPs) and final-block execution remain tracked. Dependencies: WP-01. Product IDs: VS-QUAL-001, VS-RTL-ASSERT-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/21. Library evaluation: LIB-01, LIB-06.
 <<<
 RELATIONS:
 - TYPE: File
@@ -443,3 +471,7 @@ RELATIONS:
   VALUE: docs/library-opportunities.md
 - TYPE: File
   VALUE: docs/library-opportunities.json
+- TYPE: File
+  VALUE: native/uhdm/rtl_audit.h
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp

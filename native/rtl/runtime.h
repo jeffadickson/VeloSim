@@ -1,8 +1,10 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <iterator>
 #include <map>
 #include <stdexcept>
@@ -1091,4 +1093,153 @@ struct MemLog2 {
   if (!overflow.empty()) overflow.clear();
  }
 };
+inline void check_assert(uint64_t cond, const char* msg) {
+ if (!cond) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
+}
 } // namespace vsrtl::w2
+
+namespace vsrtl {
+
+inline void check_assert(const W& cond, const char* msg) {
+ if (!yes(cond)) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
+}
+
+namespace w64 {
+inline void check_assert(W64 cond, const char* msg) {
+ if (!yes(cond)) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
+}
+} // namespace w64
+
+// IEEE 1364 $readmemh / $readmemb parser supporting @hex_addr, // and /* */ comments, '_' separators, and 4-state x/z.
+inline W parse_mem_token(const std::string& token, int width, bool hex) {
+ Bits v = 0, x = 0, z = 0;
+ const int shift = hex ? 4 : 1;
+ const uint64_t nib = hex ? 0xFULL : 1ULL;
+ bool any = false;
+ for (char raw : token) {
+  if (raw == '_') continue;
+  unsigned char c = static_cast<unsigned char>(raw);
+  if (c >= 'A' && c <= 'Z') c = static_cast<unsigned char>(c + 32);
+  v <<= shift; x <<= shift; z <<= shift;
+  if (c == 'x') x |= nib;
+  else if (c == 'z') z |= nib;
+  else if (hex) {
+   int d = (c >= '0' && c <= '9') ? (c - '0') : (c >= 'a' && c <= 'f') ? (c - 'a' + 10) : -1;
+   if (d < 0) throw std::runtime_error("invalid hex digit in $readmemh token: " + token);
+   v |= uint64_t(d);
+  } else {
+   if (c != '0' && c != '1') throw std::runtime_error("invalid binary digit in $readmemb token: " + token);
+   if (c == '1') v |= 1ULL;
+  }
+  any = true;
+ }
+ if (!any) throw std::runtime_error("empty token in memory file");
+ return word(v, x, z, width);
+}
+
+inline size_t load_mem_file(std::vector<W>& mem, int width, const std::string& path, bool hex,
+                            size_t start_addr = 0, size_t end_addr = SIZE_MAX, bool two_state_mem = false) {
+ std::ifstream in(path);
+ if (!in) throw std::runtime_error("failed to open memory file: " + path);
+ std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+ const size_t limit = end_addr < mem.size() ? end_addr : (mem.empty() ? 0 : mem.size() - 1);
+ size_t addr = start_addr, loaded = 0, i = 0, n = content.size();
+ auto skip_ws_comments = [&]() {
+  while (i < n) {
+   unsigned char c = static_cast<unsigned char>(content[i]);
+   if (c <= ' ') { ++i; continue; }
+   if (c == '/' && i + 1 < n && content[i + 1] == '/') {
+    i += 2; while (i < n && content[i] != '\n') ++i; continue;
+   }
+   if (c == '/' && i + 1 < n && content[i + 1] == '*') {
+    i += 2; while (i + 1 < n && !(content[i] == '*' && content[i + 1] == '/')) ++i;
+    if (i + 1 >= n) throw std::runtime_error("unterminated block comment in memory file");
+    i += 2; continue;
+   }
+   break;
+  }
+ };
+ while (true) {
+  skip_ws_comments();
+  if (i >= n) break;
+  size_t tok_start = i;
+  while (i < n && static_cast<unsigned char>(content[i]) > ' ' &&
+         !(content[i] == '/' && i + 1 < n && (content[i + 1] == '/' || content[i + 1] == '*'))) ++i;
+  std::string tok = content.substr(tok_start, i - tok_start);
+  if (tok.empty()) continue;
+  if (tok[0] == '@') {
+   if (tok.size() == 1) throw std::runtime_error("empty @address directive in memory file");
+   size_t parsed = 0;
+   for (size_t k = 1; k < tok.size(); ++k) {
+    char c = tok[k];
+    if (c == '_') continue;
+    if (c >= 'A' && c <= 'Z') c = char(c + 32);
+    int d = (c >= '0' && c <= '9') ? (c - '0') : (c >= 'a' && c <= 'f') ? (c - 'a' + 10) : -1;
+    if (d < 0) throw std::runtime_error("invalid @address in memory file: " + tok);
+    parsed = (parsed << 4) | size_t(d);
+   }
+   addr = parsed;
+   continue;
+  }
+  if (mem.empty() || addr > limit || addr >= mem.size()) break;
+  W val = parse_mem_token(tok, width, hex);
+  mem[addr++] = two_state_mem ? two_state(val) : val;
+  ++loaded;
+ }
+ return loaded;
+}
+
+inline size_t load_mem_file_flat(uint64_t* mem, size_t depth, int width, const std::string& path, bool hex,
+                                 size_t start_addr = 0, size_t end_addr = SIZE_MAX) {
+ std::vector<W> tmp(depth, word(0, 0, 0, width));
+ for (size_t i = 0; i < depth; ++i) tmp[i].v.limb[0] = mem[i];
+ size_t loaded = load_mem_file(tmp, width, path, hex, start_addr, end_addr, true);
+ for (size_t i = 0; i < depth; ++i) mem[i] = tmp[i].v.limb[0];
+ return loaded;
+}
+
+// IEEE 1364 $display / $write formatter supporting %d, %u, %x/%h, %b, %0d/%0x/%0b, and %%.
+inline std::string format_display(const std::string& fmt, const std::vector<W>& args, bool newline) {
+ std::string out;
+ out.reserve(fmt.size() + 32);
+ size_t arg_idx = 0;
+ auto fmt_hex = [](const W& w, bool trim) {
+  std::string s;
+  for (int low = ((w.w - 1) / 4) * 4; low >= 0; low -= 4) {
+   auto m = mask(std::min(4, w.w - low));
+   auto xv = (w.x >> low) & m, zv = (w.z >> low) & m, vv = (w.v >> low) & m;
+   s += xv ? (xv == m ? 'x' : 'X') : zv ? (zv == m ? 'z' : 'Z') : "0123456789abcdef"[unsigned(vv)];
+  }
+  if (trim) { size_t p = 0; while (p + 1 < s.size() && s[p] == '0') ++p; s.erase(0, p); }
+  return s;
+ };
+ auto fmt_dec = [](const W& w) {
+  if (w.x) return std::string(w.x == mask(w.w) ? "x" : "X");
+  if (w.z) return std::string(w.z == mask(w.w) ? "z" : "Z");
+  Bits v = w.v & mask(w.w);
+  std::string s;
+  do { s += char('0' + (v % 10)); v /= 10; } while (v);
+  std::reverse(s.begin(), s.end());
+  return s;
+ };
+ for (size_t i = 0; i < fmt.size(); ++i) {
+  if (fmt[i] != '%' || i + 1 >= fmt.size()) { out += fmt[i]; continue; }
+  if (fmt[i + 1] == '%') { out += '%'; ++i; continue; }
+  bool zero_trim = false;
+  if (fmt[i + 1] == '0' && i + 2 < fmt.size()) { zero_trim = true; ++i; }
+  char spec = fmt[++i];
+  if (arg_idx >= args.size()) { out += '%'; out += spec; continue; }
+  const W& a = args[arg_idx++];
+  if (spec == 'h' || spec == 'H' || spec == 'x' || spec == 'X') out += fmt_hex(a, zero_trim);
+  else if (spec == 'b' || spec == 'B') {
+   std::string s = text(a);
+   if (zero_trim) { size_t p = 0; while (p + 1 < s.size() && s[p] == '0') ++p; s.erase(0, p); }
+   out += s;
+  } else if (spec == 'd' || spec == 'D' || spec == 'u' || spec == 'U') out += fmt_dec(a);
+  else { out += '%'; out += spec; }
+ }
+ if (newline) out += '\n';
+ return out;
+}
+
+} // namespace vsrtl

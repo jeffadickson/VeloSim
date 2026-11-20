@@ -1,4 +1,7 @@
 #include "../../native/rtl/runtime.h"
+#include "../../native/rtl/vcd_trace.h"
+#include "../../native/rtl/checkpoint.h"
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 using namespace vsrtl;
@@ -270,6 +273,82 @@ int main(){
   log2.push(0,4,99,0xff,8);
   log2.commit(ptrs);
   check(w2::read_flat(m0,4,0)==0xab&&w2::read_flat(m0,4,1)==0x42&&w2::read_flat(m0,4,2)==0xef&&w2::read_flat(m0,4,3)==0&&w2::read_flat(m0,4,99)==0);
+ }
+ // Verify VCD tracing, persistent checkpoints, $readmemh/$readmemb, $display, and check_assert.
+ {
+  struct SigDesc { const char* name; int width, direction; bool is_signed, two_state; };
+  std::vector<SigDesc> sigs{
+   {"clk",1,1,false,false},
+   {"sub.data",8,2,false,false}
+  };
+  std::string vcd_path="/tmp/velosim_native_test.vcd";
+  {
+   VcdWriter vcd;
+   vcd.open(vcd_path,"top",sigs,"1ns");
+   std::vector<W> st{word(0,0,0,1),parse("00010101")};
+   vcd.dump(0,st);
+   vcd.dump(5,st); // unchanged -> should not emit #5
+   st[0]=word(1,0,0,1); st[1]=parse("11xz0010");
+   vcd.dump(10,st);
+   vcd.close();
+  }
+  std::ifstream vin(vcd_path);
+  std::string vcd_text((std::istreambuf_iterator<char>(vin)),std::istreambuf_iterator<char>());
+  check(vcd_text.find("$scope module top $end")!=std::string::npos);
+  check(vcd_text.find("$scope module sub $end")!=std::string::npos);
+  check(vcd_text.find("$var wire 8 \" data [7:0] $end")!=std::string::npos);
+  check(vcd_text.find("$dumpvars")!=std::string::npos);
+  check(vcd_text.find("#5\n")==std::string::npos);
+  check(vcd_text.find("#10\n1!\nb11xz0010 \"\n")!=std::string::npos);
+  std::remove(vcd_path.c_str());
+
+  // Persistent binary checkpoint save/restore + corruption & schema-mismatch rejection.
+  std::string ckpt_path="/tmp/velosim_native_test.vscp";
+  std::vector<W> s_orig{word(1,0,0,1),parse("10xz0101")};
+  std::vector<std::vector<W>> m_orig{std::vector<W>{word(0xaa,0,0,8),word(0x55,0,0,8)}};
+  std::vector<uint8_t> extra_orig{1,2,3,4,5};
+  checkpoint::save(ckpt_path,"top",sigs,1234ULL,s_orig,m_orig,extra_orig);
+
+  uint64_t r_now=0;
+  std::vector<W> r_s{word(0,0,0,1),word(0,0,0,8)};
+  std::vector<std::vector<W>> r_m{std::vector<W>(2,unknown(8))};
+  std::vector<uint8_t> r_extra;
+  checkpoint::load(ckpt_path,"top",sigs,r_now,r_s,r_m,r_extra);
+  check(r_now==1234ULL&&exact(r_s[0],s_orig[0])&&exact(r_s[1],s_orig[1])&&exact(r_m[0][0],m_orig[0][0])&&exact(r_m[0][1],m_orig[0][1])&&r_extra==extra_orig);
+  bool schema_rejected=false;
+  try{checkpoint::load(ckpt_path,"wrong_top",sigs,r_now,r_s,r_m,r_extra);}catch(const std::runtime_error&){schema_rejected=true;}
+  check(schema_rejected);
+  // Flip one payload byte -> FNV-1a mismatch must fail closed.
+  {
+   std::fstream f(ckpt_path,std::ios::binary|std::ios::in|std::ios::out);
+   f.seekp(-1,std::ios::end); char b=0; f.read(&b,1); f.seekp(-1,std::ios::end); b^=0x55; f.write(&b,1);
+  }
+  bool cs_rejected=false;
+  try{checkpoint::load(ckpt_path,"top",sigs,r_now,r_s,r_m,r_extra);}catch(const std::runtime_error&){cs_rejected=true;}
+  check(cs_rejected);
+  std::remove(ckpt_path.c_str());
+
+  // $readmemh & $readmemb parser with @addr, comments, '_' separators, and 4-state x/z.
+  std::string hex_path="/tmp/velosim_native_test.hex";
+  {
+   std::ofstream out(hex_path);
+   out<<"// header comment\n12_34 /* inline */ ab_cd\n@4\n00_ff xz_10\n";
+  }
+  std::vector<W> mem16(8,unknown(16));
+  size_t loaded=load_mem_file(mem16,16,hex_path,true);
+  check(loaded==4&&mem16[0].v==0x1234&&mem16[1].v==0xabcd&&mem16[4].v==0x00ff&&mem16[5].x==0xf000&&mem16[5].z==0x0f00&&mem16[5].v==0x0010);
+  uint64_t flat16[8]{};
+  check(load_mem_file_flat(flat16,8,16,hex_path,true)==4&&flat16[0]==0x1234&&flat16[1]==0xabcd&&flat16[4]==0x00ff&&flat16[5]==0x0010);
+  std::remove(hex_path.c_str());
+
+  // $display formatting and immediate assertions.
+  check(format_display("v=%0x d=%d b=%0b %%",std::vector<W>{word(0x2a,0,0,16),word(42,0,0,8),word(5,0,0,8)},true)=="v=2a d=42 b=101 %\n");
+  check_assert(word(1,0,0,1),"ok");
+  w64::check_assert(w64::lit(1,1),"ok");
+  w2::check_assert(1ULL,"ok");
+  bool asserted=false;
+  try{w64::check_assert(w64::lit(0,1,0,1),"boom");}catch(const std::runtime_error& e){asserted=std::string(e.what()).find("boom")!=std::string::npos;}
+  check(asserted);
  }
 }
 

@@ -11,6 +11,9 @@ public sealed partial class RtlDesign
             if(e.TryGetProperty(field,out var expression)&&expression.ValueKind==JsonValueKind.Object)
                 foreach(var name in References(expression))yield return name;
         if(Kind(e)=="assoc_traverse")yield return Name(e);
+        if(Kind(e)=="display"&&e.TryGetProperty("args",out var dispArgs))
+            foreach(var arg in dispArgs.EnumerateArray())
+                foreach(var name in References(arg))yield return name;
     }
     private static void ValidateAssociativeMetadata(RtlMemory memory)
     {

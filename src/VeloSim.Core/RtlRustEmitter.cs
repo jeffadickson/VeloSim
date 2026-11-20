@@ -290,6 +290,26 @@ public sealed partial class RtlDesign
                 RsStmt(code, e.GetProperty("else"), ref unique, twoState, trackBudget);
                 code.AppendLine("}");
                 break;
+            case "assert":
+            {
+                string condExpr = twoState ? $"w2::yes({RsExpr2(e.GetProperty("condition"))})" : $"w64::yes({RsExpr64(e.GetProperty("condition"))})";
+                string msg = CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "RTL assertion failed");
+                code.AppendLine($"if !({condExpr}) {{ return Err({msg}); }}");
+                break;
+            }
+            case "finish":
+                code.AppendLine("self.finished = true;");
+                break;
+            case "display":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                bool nl = !e.TryGetProperty("newline", out var nlProp) || nlProp.GetBoolean();
+                string argList = e.TryGetProperty("args", out var dArgs)
+                    ? string.Join(", ", dArgs.EnumerateArray().Select(a => twoState ? $"W64::lit({RsExpr2(a)},{ExpressionWidth(a)})" : RsExpr64(a)))
+                    : "";
+                code.AppendLine($"print!(\"{{}}\", w64::format_display({fmt}, &[{argList}], {(nl ? "true" : "false")}));");
+                break;
+            }
             case "case":
                 string lbl = "cs" + unique++;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
@@ -349,6 +369,7 @@ public sealed partial class RtlDesign
         code.AppendLine("#[derive(Clone)]");
         code.AppendLine($"pub struct {structName} {{");
         code.AppendLine("    time: u64,");
+        code.AppendLine("    finished: bool,");
         for (int i = 0; i < Signals.Count; ++i)
             code.AppendLine($"    s{i}: {wordType},");
         foreach (int id in eventIds)
@@ -367,6 +388,7 @@ public sealed partial class RtlDesign
         code.AppendLine("    pub fn new() -> Self {");
         code.AppendLine("        Self {");
         code.AppendLine("            time: 0,");
+        code.AppendLine("            finished: false,");
         for (int i = 0; i < Signals.Count; ++i)
         {
             var sig = Signals[i];
@@ -395,6 +417,7 @@ public sealed partial class RtlDesign
         code.AppendLine("    #[inline(always)] pub fn time(&self) -> u64 { self.time }");
         code.AppendLine("    #[inline(always)] pub fn time_inc(&mut self, delta: u64) { self.time = self.time.wrapping_add(delta); }");
         code.AppendLine("    #[inline(always)] pub fn final_model(&mut self) {}");
+        code.AppendLine("    #[inline(always)] pub fn got_finish(&self) -> bool { self.finished }");
         code.AppendLine();
         foreach (var sig in Signals.Where(s => s.Direction != "internal"))
         {
@@ -640,6 +663,67 @@ pub mod w64 {
             }
         }
         s
+    }
+
+    pub fn format_display(fmt: &str, args: &[W64], newline: bool) -> String {
+        let mut out = String::with_capacity(fmt.len() + 32);
+        let bytes = fmt.as_bytes();
+        let mut i = 0usize;
+        let mut arg_idx = 0usize;
+        while i < bytes.len() {
+            if bytes[i] != b'%' || i + 1 >= bytes.len() {
+                out.push(bytes[i] as char);
+                i += 1;
+                continue;
+            }
+            if bytes[i + 1] == b'%' {
+                out.push('%');
+                i += 2;
+                continue;
+            }
+            let mut trim = false;
+            if bytes[i + 1] == b'0' && i + 2 < bytes.len() {
+                trim = true;
+                i += 1;
+            }
+            i += 1;
+            let spec = bytes[i] as char;
+            i += 1;
+            if arg_idx >= args.len() {
+                out.push('%');
+                out.push(spec);
+                continue;
+            }
+            let a = args[arg_idx];
+            arg_idx += 1;
+            match spec {
+                'h' | 'H' | 'x' | 'X' => {
+                    if (a.x | a.z) != 0 {
+                        out.push('x');
+                    } else if trim {
+                        out.push_str(&format!("{:x}", a.v));
+                    } else {
+                        let digits = ((a.w + 3) / 4) as usize;
+                        out.push_str(&format!("{:0width$x}", a.v, width = digits));
+                    }
+                }
+                'b' | 'B' => {
+                    let s = text(a);
+                    if trim {
+                        let t = s.trim_start_matches('0');
+                        out.push_str(if t.is_empty() { "0" } else { t });
+                    } else {
+                        out.push_str(&s);
+                    }
+                }
+                'd' | 'D' | 'u' | 'U' => {
+                    if (a.x | a.z) != 0 { out.push('x'); } else { out.push_str(&format!("{}", a.v)); }
+                }
+                _ => { out.push('%'); out.push(spec); }
+            }
+        }
+        if newline { out.push('\n'); }
+        out
     }
 
     #[inline(always)]

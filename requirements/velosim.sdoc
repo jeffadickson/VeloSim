@@ -894,3 +894,206 @@ RELATIONS:
   VALUE: tools/surelog-tagfix/constant_arguments.inc
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlTaskValueResultTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-NARROW64-001
+STATUS: Active
+TITLE: Narrow 64-bit four-state codegen fast-path and inline evaluation
+STATEMENT: >>>
+Non-timed event-driven designs whose signals and fixed one-dimensional memories fit within 64 bits shall emit register-resident 32-byte four-state operations (vsrtl::w64) and a non-virtual inline eval() fast-path while preserving full IEEE 1800 four-state semantics and ABI v2 Model/VPI compatibility. Wider designs and container/timed designs shall remain on the 256-bit vsrtl::W path.
+<<<
+COMMENT: >>>
+Implementation: native/rtl/runtime.h (namespace vsrtl::w64, MemLog64), native/rtl/external_model.h, src/VeloSim.Core/RtlNarrow64.cs, src/VeloSim.Core/RtlDesign.cs. Merged in PR #41. Verification: native rtl_runtime exhaustive 4-state parity tests and full VeloSim.Tests + head-to-head DspFir and surelog_fifo checksum parity against Verilator 5.055.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
+
+[REQUIREMENT]
+UID: VS-RTL-TWOSTATE-001
+STATUS: Active
+TITLE: Opt-in two-state compilation mode
+STATEMENT: >>>
+Four-state simulation shall remain the default. When explicitly requested via RtlStateMode.TwoState or rtl-export --two-state, eligible non-timed <=64-bit event-driven and combinational designs shall emit native 64-bit two-state operations (vsrtl::w2) with flat fixed-memory storage, zero-initialized two-state Model metadata and two-state manifest attribution. Ineligible designs (wider than 64 bits, timed, or dynamic/queue/associative/multidimensional arrays) shall fail closed with IrValidationException.
+<<<
+COMMENT: >>>
+Implementation: native/rtl/runtime.h (namespace vsrtl::w2, MemLog2), src/VeloSim.Core/RtlTwoState64.cs, src/VeloSim.Core/RtlExternalSdk.cs, src/VeloSim.Core/CliOptions.cs, src/VeloSim.Core/ToolCli.cs. Merged in PR #42. Verification: native rtl_runtime w2 parity tests, RtlTwoStateTests, and bit-for-bit DspFir/surelog_fifo parity against Verilator 5.055.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/ToolCli.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTwoStateTests.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
+
+[REQUIREMENT]
+UID: VS-RTL-TARGETS-001
+STATUS: Active
+TITLE: Native C# and safe Rust codegen targets
+STATEMENT: >>>
+rtl-export shall support --target cpp|csharp|rust (default cpp). C# and Rust targets shall emit zero-dependency .NET 11 and #![forbid(unsafe_code)] Rust 2021 SDKs implementing both 4-state (W64) and opt-in 2-state (W2) register-resident engines, complete with project manifests and SHA-256 input fingerprints, and shall fail closed on unsupported >64-bit, timed, initialization or container designs.
+<<<
+COMMENT: >>>
+Implementation: src/VeloSim.Core/RtlCSharpEmitter.cs, src/VeloSim.Core/RtlRustEmitter.cs, src/VeloSim.Core/RtlExternalSdk.cs, src/VeloSim.Core/CliOptions.cs, src/VeloSim.Core/ToolCli.cs. Merged in PR #43. Verification: RtlMultiTargetTests (live dotnet run and cargo test --release for both 4-state and 2-state modes) and DspFir cross-target checksum parity.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlMultiTargetTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-VCD-001
+STATUS: Active
+TITLE: IEEE 1364 hierarchical four-state VCD waveform tracing
+STATEMENT: >>>
+External C++ models shall support hierarchical four-state IEEE 1364 VCD waveform tracing via Model::openVcd, dumpVcd and closeVcd (automatically closed on final() and destruction). Traces shall build nested $scope trees from dotted signal paths, support 1..256-bit 0/1/x/z values with IEEE compact vector trimming, and suppress redundant unchanged timestamps via delta compression with zero overhead when tracing is disabled.
+<<<
+COMMENT: >>>
+WP-17 (G52) vertical slice. Standard VCD is implemented and verified; compressed FST binary streaming (VS-TRACE-COMPRESSED-001) remains a separate follow-up slice.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/vcd_trace.h
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-CHECKPOINT-001
+STATUS: Active
+TITLE: Versioned persistent binary model checkpoints
+STATEMENT: >>>
+External C++ models shall support persistent saveCheckpoint and restoreCheckpoint across 256-bit W, narrow W64 and two-state W2 models (including flat memory arrays and edge history). Checkpoints shall record a format magic, version, model/signal/memory schema hash and FNV-1a payload checksum, and restore into temporary buffers before committing so corrupted, truncated or mismatched files fail closed without mutating live state.
+<<<
+COMMENT: >>>
+WP-17 (G53) vertical slice. Timed-scheduler suspended frame persistence remains a separate follow-up slice.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/checkpoint.h
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-SYSTASK-001
+STATUS: Active
+TITLE: Memory-file loading, formatted display and simulation finish tasks
+STATEMENT: >>>
+The runtime and IR emitters shall support IEEE 1364 $readmemh/$readmemb memory initialization (loadMemoryHex/loadMemoryBin with @hex_addr directives, // and /* */ comments, '_' separators and four-state x/z values), formatted display statements (%d, %u, %x/%h, %b, %0-trimmed forms and %% routed through an overridable sink), and finish statements setting gotFinish().
+<<<
+COMMENT: >>>
+WP-10 (G35/G36) vertical slice across C++ (W, W64, W2), C# and Rust emitters. General file I/O ($fopen/$fscanf), strings, real values and UHDM system-task lowering remain open under WP-10.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-ASSERT-001
+STATUS: Active
+TITLE: Immediate runtime assertions with transactional rollback
+STATEMENT: >>>
+The IR and emitters shall support immediate runtime assert statements with optional diagnostic messages across C++, C# and Rust backends. A failing condition (0, X or Z) shall raise an explicit error and roll back uncommitted sequential state transactionally. Unsupported concurrent SVA properties shall continue to fail closed during UHDM auditing via RtlExecutableAudit.
+<<<
+COMMENT: >>>
+WP-14 / WP-20 (G47/G59) vertical slice. Concurrent SVA sequences/properties and sampled-value functions remain open under WP-14.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_audit.h
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-SCALE-001
+STATUS: Active
+TITLE: Opt-in large-design resource profile
+STATEMENT: >>>
+RtlDesign.Parse shall retain strict Bounded defaults (4 MiB IR, 256 signals, 16 memories, 256 depth, 20,000 AST nodes) while supporting an opt-in Large profile (RtlDesignLimits.Large / rtl-export --large-design: 64 MiB IR, 65,536 signals, 1,024 memories, 1,048,576-word memory depth, 1,000,000 AST nodes) paired with a 65,536-signal native Model ceiling.
+<<<
+COMMENT: >>>
+WP-18 (G55) vertical slice enabling CPU/SoC-scale memories and signal counts without relaxing default bounded regression gates. Hierarchical compilation and multi-threaded model partitioning remain open under WP-18.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/CliOptions.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/ToolCli.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
+
