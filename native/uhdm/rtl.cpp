@@ -30,6 +30,30 @@ std::string name(H h){const char* p=h?vpi_get_str(vpiName,h):nullptr;return p?p:
 std::vector<H> many(H h,int r){std::vector<H> v;H it=h?vpi_iterate(r,h):nullptr;if(it){for(H x=vpi_scan(it);x;x=vpi_scan(it))v.push_back(x);vpi_release_handle(it);}return v;}
 std::string q(const std::string& s){return velosim::json_escape(s);}
 H mod; UHDM::Serializer* store; size_t nodes=0;
+struct LowerLimits {
+ int max_word_bits=256;
+ size_t max_signals=256;
+ size_t max_memories=16;
+ uint64_t max_mem_depth=256;
+ size_t max_scopes=256;
+ size_t max_processes=256;
+ size_t max_nodes=20000;
+ size_t max_json_bytes=4*1024*1024;
+ int max_depth=64;
+ size_t max_audit_nodes=100000;
+};
+LowerLimits limits{};
+std::string const_u32_json(uint64_t v){
+ std::string b(32,'0');
+ for(int i=0;i<32;++i)if((v>>(31-i))&1ULL)b[i]='1';
+ return "{\"kind\":\"const\",\"bits\":"+q(b)+"}";
+}
+uint64_t eval_clog2(uint64_t v){
+ if(v<=1)return 0;
+ uint64_t r=0,x=v-1;
+ while(x>0){x>>=1;++r;}
+ return r;
+}
 std::map<const void*,std::string> flat_symbols;
 std::map<std::string,H> flat_declarations;
 size_t declaration_alias_checks=0;
@@ -85,21 +109,34 @@ bool parameter_reference_signed(H);
 bool is_parameter_reference(H);
 bool signed_expression(H h,int depth);
 uint64_t selected_constant(H h){if(auto original=original_expression(h))h=original;need(type(h)==vpiConstant,"select bounds and replication counts require literal constants");return integer(h);}
-int width(H h,int depth=0){need(h&&depth<64,"word width depth exceeded");if(auto original=original_expression(h))return width(original,depth+1);if(auto declaration=bound_variable_reference(h))return width(declaration,depth+1);if(unsized_decimal(h))return int(bits(h).size());if(type(h)==vpiHierPath)return dynamic_size(h)?32:packed_field(h).width;if(type(h)==vpiVarSelect){auto actual=one(h,vpiActual);need(type(actual)==vpiArrayVar,"variable selection requires a fixed array");auto elements=many(actual,vpiReg);if(elements.empty())elements=many(actual,vpiVariables);need(elements.size()==1,"one array element declaration required");return width(elements[0],depth+1);}if(type(h)==vpiBitSelect){auto actual=one(h,vpiActual);if(type(actual)!=vpiArrayVar)return 1;auto elements=many(actual,vpiReg);need(elements.size()==1,"one memory element declaration required");return width(elements[0],depth+1);}if(type(h)==vpiIndexedPartSelect){auto n=selected_constant(one(h,vpiWidthExpr));need(n>=1&&n<=256,"indexed select width must be1..256");return int(n);}if(type(h)==vpiPartSelect){auto l=selected_constant(one(h,vpiLeftRange)),r=selected_constant(one(h,vpiRightRange));need(l>=r&&l-r<256,"unsupported constant part-select width");return int(l-r+1);}if(type(h)==vpiOperation){int op=vpi_get(vpiOpType,h);auto args=many(h,vpiOperand);if(op==vpiConcatOp){need(!args.empty()&&args.size()<=256,"concat operand limit exceeded");int n=0;for(auto a:args){n+=width(a,depth+1);need(n<=256,"concat exceeds256bits");}return n;}if(op==vpiMultiConcatOp){need(args.size()==2,"replication requires count and expression");auto count=selected_constant(args[0]);int n=width(args[1],depth+1);need(count>=1&&count<=256&&count*uint64_t(n)<=256,"replication must produce1..256bits");return int(count*n);}if(op==vpiNotOp||op==vpiLogAndOp||op==vpiLogOrOp||(op>=vpiUnaryAndOp&&op<=vpiUnaryXNorOp)||(op>=vpiEqOp&&op<=vpiLeOp))return 1;need(!args.empty(),"expression width requires operands");if(op==vpiLShiftOp||op==vpiRShiftOp||op==vpiArithRShiftOp)return width(args[0],depth+1);size_t start=op==vpiConditionOp?1:0;need(start<args.size(),"conditional width requires branches");int n=0;for(size_t i=start;i<args.size();i++)n=std::max(n,width(args[i],depth+1));return n;}if(type(h)==vpiFuncCall)return width(one(one(h,vpiFunction),vpiReturn),depth+1);if(type(h)==vpiConstant)return int(bits(h).size());if(type(h)==vpiSysFuncCall){auto args=many(h,vpiArgument);need((name(h)=="$signed"||name(h)=="$unsigned")&&args.size()==1,"unsupported system function width");return width(args[0],depth+1);}auto actual=one(h,vpiActual);if(is_parameter_reference(h))return parameter_reference_width(h);if(actual&&identity(actual)!=identity(h))return width(actual,depth+1);auto spec=word_spec(h);if(aggregate_spec(spec))return aggregate_width(spec,depth+1);if(auto w=atom_width(spec))return w;need((type(spec)==vpiLogicTypespec||type(spec)==vpiBitTypespec),"only logic word widths supported: "+name(h));auto ranges=many(spec,vpiRange);need(ranges.size()<=1,"multidimensional packed words unsupported");if(ranges.empty())return 1;auto l=integer(one(ranges[0],vpiLeftRange)),r=integer(one(ranges[0],vpiRightRange));need(l>=r&&l-r<256,"word width must be1..256");return int(l-r+1);}
+int width(H h,int depth=0){need(h&&depth<limits.max_depth,"word width depth exceeded");if(auto original=original_expression(h))return width(original,depth+1);if(auto declaration=bound_variable_reference(h))return width(declaration,depth+1);if(unsized_decimal(h))return int(bits(h).size());if(type(h)==vpiHierPath)return dynamic_size(h)?32:packed_field(h).width;if(type(h)==vpiVarSelect){auto actual=one(h,vpiActual);need(type(actual)==vpiArrayVar,"variable selection requires a fixed array");auto elements=many(actual,vpiReg);if(elements.empty())elements=many(actual,vpiVariables);need(elements.size()==1,"one array element declaration required");return width(elements[0],depth+1);}if(type(h)==vpiBitSelect){auto actual=one(h,vpiActual);if(type(actual)!=vpiArrayVar)return 1;auto elements=many(actual,vpiReg);need(elements.size()==1,"one memory element declaration required");return width(elements[0],depth+1);}if(type(h)==vpiIndexedPartSelect){auto n=selected_constant(one(h,vpiWidthExpr));need(n>=1&&n<=uint64_t(limits.max_word_bits),"indexed select width exceeds limit");return int(n);}if(type(h)==vpiPartSelect){auto l=selected_constant(one(h,vpiLeftRange)),r=selected_constant(one(h,vpiRightRange));need(l>=r&&l-r<uint64_t(limits.max_word_bits),"unsupported constant part-select width");return int(l-r+1);}if(type(h)==vpiOperation){int op=vpi_get(vpiOpType,h);auto args=many(h,vpiOperand);if(op==vpiConcatOp){need(!args.empty()&&args.size()<=size_t(limits.max_word_bits),"concat operand limit exceeded");int n=0;for(auto a:args){n+=width(a,depth+1);need(n<=limits.max_word_bits,"concat exceeds word width limit");}return n;}if(op==vpiMultiConcatOp){need(args.size()==2,"replication requires count and expression");auto count=selected_constant(args[0]);int n=width(args[1],depth+1);need(count>=1&&count<=uint64_t(limits.max_word_bits)&&count*uint64_t(n)<=uint64_t(limits.max_word_bits),"replication exceeds word width limit");return int(count*n);}if(op==vpiNotOp||op==vpiLogAndOp||op==vpiLogOrOp||(op>=vpiUnaryAndOp&&op<=vpiUnaryXNorOp)||(op>=vpiEqOp&&op<=vpiLeOp))return 1;
+#ifdef vpiWildEqOp
+if(op==vpiWildEqOp)return 1;
+#endif
+#ifdef vpiWildNeqOp
+if(op==vpiWildNeqOp)return 1;
+#endif
+need(!args.empty(),"expression width requires operands");if(op==vpiLShiftOp||op==vpiRShiftOp||op==vpiArithRShiftOp)return width(args[0],depth+1);size_t start=op==vpiConditionOp?1:0;need(start<args.size(),"conditional width requires branches");int n=0;for(size_t i=start;i<args.size();i++)n=std::max(n,width(args[i],depth+1));return n;}if(type(h)==vpiFuncCall)return width(one(one(h,vpiFunction),vpiReturn),depth+1);if(type(h)==vpiConstant)return int(bits(h).size());if(type(h)==vpiSysFuncCall){auto args=many(h,vpiArgument);auto fn=name(h);if((fn=="$bits"||fn=="$clog2")&&args.size()==1)return 32;need((fn=="$signed"||fn=="$unsigned")&&args.size()==1,"unsupported system function width");return width(args[0],depth+1);}auto actual=one(h,vpiActual);if(is_parameter_reference(h))return parameter_reference_width(h);if(actual&&identity(actual)!=identity(h))return width(actual,depth+1);auto spec=word_spec(h);if(aggregate_spec(spec))return aggregate_width(spec,depth+1);if(auto w=atom_width(spec))return w;need((type(spec)==vpiLogicTypespec||type(spec)==vpiBitTypespec),"only logic word widths supported: "+name(h));auto ranges=many(spec,vpiRange);need(ranges.size()<=1,"multidimensional packed words unsupported");if(ranges.empty())return 1;auto l=integer(one(ranges[0],vpiLeftRange)),r=integer(one(ranges[0],vpiRightRange));need(l>=r&&l-r<uint64_t(limits.max_word_bits),"word width exceeds limit");return int(l-r+1);}
 bool declared_signed(H h){auto spec=word_spec(h);return vpi_get(vpiSigned,h)||(spec&&vpi_get(vpiSigned,spec));}
 void logic_word(H h){auto spec=word_spec(h);if(atom_width(spec))return;if(aggregate_spec(spec)){aggregate_width(spec,0);aggregate_state(spec,0);return;}need((type(spec)==vpiLogicTypespec||type(spec)==vpiBitTypespec),"only packed logic/bit words supported");auto ranges=many(spec,vpiRange);need(ranges.size()<=1,"multidimensional packed words unsupported");if(!ranges.empty())need(integer(one(ranges[0],vpiRightRange))==0&&integer(one(ranges[0],vpiLeftRange))==uint64_t(width(h)-1),"packed words require descending zero-based bounds [width-1:0]");}
 
 uint64_t integer(H h,int depth){need(h&&depth<64,"constant integer depth exceeded");if(type(h)==vpiOperation){auto a=many(h,vpiOperand);need(a.size()==2,"range expression unsupported");auto l=integer(a[0],depth+1),r=integer(a[1],depth+1);int op=vpi_get(vpiOpType,h);need(op==vpiAddOp||op==vpiSubOp,"range operation unsupported");return op==vpiAddOp?l+r:l-r;}need(type(h)==vpiConstant,"constant range required");auto s=bits(h);need(s.find_first_not_of("01")==std::string::npos,"unknown array bound");need(!(signed_expression(h,0)&&s.front()=='1'),"negative signed bounds and replication counts unsupported");return std::stoull(s,nullptr,2);}
 std::string concat_tree(const std::vector<std::string>& values,size_t begin,size_t end){if(end-begin==1)return values[begin];auto mid=begin+(end-begin)/2;return "{\"kind\":\"concat\",\"args\":["+concat_tree(values,begin,mid)+","+concat_tree(values,mid,end)+"]}";}
-void output_budget(const std::string& value){need(value.size()<=4*1024*1024,"normalized RTL exceeds4MiB");int nesting=0;size_t objects=0;bool quoted=false,escaped=false;for(char c:value){if(quoted){if(escaped)escaped=false;else if(c=='\\')escaped=true;else if(c=='\"')quoted=false;continue;}if(c=='\"')quoted=true;else if(c=='{'||c=='['){need(++nesting<=64,"normalized RTL JSON depth exceeds64");if(c=='{')need(++objects<=20000,"normalized RTL node budget exceeded");}else if(c=='}'||c==']')--nesting;}}
+void output_budget(const std::string& value){need(value.size()<=limits.max_json_bytes,"normalized RTL exceeds byte limit");int nesting=0;size_t objects=0;bool quoted=false,escaped=false;for(char c:value){if(quoted){if(escaped)escaped=false;else if(c=='\\')escaped=true;else if(c=='\"')quoted=false;continue;}if(c=='\"')quoted=true;else if(c=='{'||c=='['){need(++nesting<=limits.max_depth,"normalized RTL JSON depth exceeded");if(c=='{')need(++objects<=limits.max_nodes,"normalized RTL node budget exceeded");}else if(c=='}'||c==']')--nesting;}}
 bool signed_expression(H h,int depth=0){
- need(h&&depth<64,"signedness depth exceeded");
+ need(h&&depth<limits.max_depth,"signedness depth exceeded");
  if(type(h)==vpiConstant){auto spec=word_spec(h);const char* p=vpi_get_str(vpiDecompile,h);std::string literal=p?p:"";return (!literal.empty()&&literal.find_first_not_of("0123456789_")==std::string::npos)||vpi_get(vpiSigned,h)||(spec&&vpi_get(vpiSigned,spec))||vpi_get(vpiConstType,h)==vpiIntConst||literal.find("'s")!=std::string::npos||literal.find("'S")!=std::string::npos;}
  if(is_parameter_reference(h))return parameter_reference_signed(h);
  if(auto declaration=bound_variable_reference(h))return declared_signed(declaration);
  if(type(h)!=vpiOperation)return false; // Structural expression signedness is inferred from normalized declarations.
  int op=vpi_get(vpiOpType,h);auto a=many(h,vpiOperand);
  if(op==vpiConcatOp||op==vpiNotOp||op==vpiLogAndOp||op==vpiLogOrOp||(op>=vpiUnaryAndOp&&op<=vpiUnaryXNorOp)||(op>=vpiEqOp&&op<=vpiLeOp))return false;
+#ifdef vpiWildEqOp
+ if(op==vpiWildEqOp)return false;
+#endif
+#ifdef vpiWildNeqOp
+ if(op==vpiWildNeqOp)return false;
+#endif
  if(op==vpiConditionOp)return a.size()==3&&signed_expression(a[1],depth+1)&&signed_expression(a[2],depth+1);
  if(op==vpiLShiftOp||op==vpiRShiftOp||op==vpiArithLShiftOp||op==vpiArithRShiftOp)return !a.empty()&&signed_expression(a[0],depth+1);
  for(auto operand:a)if(!signed_expression(operand,depth+1))return false;
@@ -131,28 +168,35 @@ bool dynamic_size(H h){
 }
 std::string dynamic_size_expression(H h){LoopHandles owned;auto path=static_cast<const UHDM::hier_path*>(identity(h));auto method=owned.add(path->Path_elems()->back());bool exists=name(method)=="exists";return "{\"kind\":"+q(exists?"exists":"size")+",\"name\":"+q(signal_name(owned.add(path->Path_elems()->front())))+(exists?",\"index\":"+expr(many(method,vpiArgument)[0]):"")+"}";}
 std::string expr_core(H h,int depth){
- need(h&&depth<64&&++nodes<=20000,"expression missing or resource limit exceeded");
+ need(h&&depth<limits.max_depth&&++nodes<=limits.max_nodes,"expression missing or resource limit exceeded");
  // Selection indices belong to the source declaration range. Whole-parameter
  // captures are supported, but selections must not silently become zero-based.
  need(!syntax_parameter_selections.count(lexical_key(h)),"parameter selections unsupported; pass the whole parameter");if(auto original=original_expression(h))return expr(original,depth+1);
  // Enumerators are immutable values of their declared base type, not storage.
  auto enumerator=type(h)==vpiEnumConst?h:one(h,vpiActual);
- if(type(enumerator)==vpiEnumConst){auto object=static_cast<const UHDM::enum_const*>(identity(enumerator));need(object->VpiSize()>=1&&object->VpiSize()<=256,"enumerator width unsupported");auto constant=store->MakeConstant();constant->VpiSize(object->VpiSize());constant->VpiValue(object->VpiValue());auto spec=base_spec(one(enumerator,vpiParent));return "{\"kind\":\"const\",\"bits\":"+q(constant_bits(constant))+(vpi_get(vpiSigned,spec)?",\"signed\":true":"")+"}";}
+ if(type(enumerator)==vpiEnumConst){auto object=static_cast<const UHDM::enum_const*>(identity(enumerator));need(object->VpiSize()>=1&&object->VpiSize()<=limits.max_word_bits,"enumerator width unsupported");auto constant=store->MakeConstant();constant->VpiSize(object->VpiSize());constant->VpiValue(object->VpiValue());auto spec=base_spec(one(enumerator,vpiParent));return "{\"kind\":\"const\",\"bits\":"+q(constant_bits(constant))+(vpi_get(vpiSigned,spec)?",\"signed\":true":"")+"}";}
  if(is_parameter_reference(h))return parameter_expr(h);
  if(auto declaration=bound_variable_reference(h))return "{\"kind\":\"ref\",\"name\":"+q(signal_name(declaration))+"}";
  if(type(h)==vpiConstant){auto b=bits(h);const char* d=vpi_get_str(vpiDecompile,h);std::string literal=d?d:"";need(literal!="'1"&&literal!="'x"&&literal!="'z"&&literal!="'X"&&literal!="'Z","unbased fill literal unsupported except zero");return "{\"kind\":\"const\",\"bits\":"+q(b)+(signed_expression(h)?",\"signed\":true":"")+"}";}
  if(type(h)==vpiVarSelect){need(!inside_call,"captured global memory reads unsupported");auto actual=one(h,vpiActual);need(type(actual)==vpiArrayVar,"variable selection requires a fixed array");auto indices=many(h,vpiIndex),ranges=many(actual,vpiRange);need(indices.size()==ranges.size()&&indices.size()>=2&&indices.size()<=4,"array index rank mismatch");std::string value="{\"kind\":\"index\",\"name\":"+q(signal_name(h))+",\"indices\":[";bool first=true;for(auto index:indices){if(!first)value+=",";first=false;value+=expr(index,depth+1);}return value+"]}";}
  if(type(h)==vpiBitSelect){auto index=one(h,vpiIndex);auto actual=one(h,vpiActual);if(type(index)==vpiConstant&&!associative_array(actual))need(!(signed_expression(index)&&bits(index).front()=='1'),"negative constant packed indices unsupported");need(type(actual)!=vpiParameter&&!is_parameter_reference(actual),"parameter selections unsupported; pass the whole parameter");if(type(actual)==vpiArrayVar){need(!inside_call,"captured global memory reads unsupported");return "{\"kind\":\"index\",\"name\":"+q(signal_name(h))+",\"index\":"+expr(one(h,vpiIndex),depth+1)+"}";}need(actual&&type(actual)!=vpiBitSelect&&type(actual)!=vpiPartSelect,"packed select requires a declared word");return "{\"kind\":\"bitselect\",\"value\":"+expr(actual,depth+1)+",\"index\":"+expr(one(h,vpiIndex),depth+1)+"}";}
- if(type(h)==vpiIndexedPartSelect){auto index=one(h,vpiBaseExpr);if(type(index)==vpiConstant)need(!(signed_expression(index)&&bits(index).front()=='1'),"negative constant indexed bases unsupported");auto actual=one(h,vpiActual);need(type(actual)!=vpiParameter&&!is_parameter_reference(actual),"parameter selections unsupported; pass the whole parameter");need(actual&&type(actual)!=vpiArrayVar&&type(actual)!=vpiBitSelect&&type(actual)!=vpiPartSelect&&type(actual)!=vpiIndexedPartSelect,"indexed select requires a declared packed word");auto n=selected_constant(one(h,vpiWidthExpr));need(n>=1&&n<=256,"indexed select width must be1..256");auto direction=vpi_get(vpiIndexedPartSelectType,h);need(direction==vpiPosIndexed||direction==vpiNegIndexed,"unsupported indexed select direction");return "{\"kind\":\"indexedselect\",\"value\":"+expr(actual,depth+1)+",\"base\":"+expr(one(h,vpiBaseExpr),depth+1)+",\"width\":"+std::to_string(n)+",\"descending\":"+(direction==vpiNegIndexed?"true":"false")+"}";}
- if(type(h)==vpiPartSelect){auto actual=one(h,vpiActual);need(type(actual)!=vpiParameter&&!is_parameter_reference(actual),"parameter selections unsupported; pass the whole parameter");need(actual&&type(actual)!=vpiArrayVar,"part select requires a packed word");auto left=selected_constant(one(h,vpiLeftRange)),right=selected_constant(one(h,vpiRightRange));need(left<=INT32_MAX&&right<=left&&left-right<256,"part select requires nonnegative descending constant bounds of 1..256 bits");return "{\"kind\":\"partselect\",\"value\":"+expr(actual,depth+1)+",\"left\":"+std::to_string(left)+",\"right\":"+std::to_string(right)+"}";}
+ if(type(h)==vpiIndexedPartSelect){auto index=one(h,vpiBaseExpr);if(type(index)==vpiConstant)need(!(signed_expression(index)&&bits(index).front()=='1'),"negative constant indexed bases unsupported");auto actual=one(h,vpiActual);need(type(actual)!=vpiParameter&&!is_parameter_reference(actual),"parameter selections unsupported; pass the whole parameter");need(actual&&type(actual)!=vpiArrayVar&&type(actual)!=vpiBitSelect&&type(actual)!=vpiPartSelect&&type(actual)!=vpiIndexedPartSelect,"indexed select requires a declared packed word");auto n=selected_constant(one(h,vpiWidthExpr));need(n>=1&&n<=uint64_t(limits.max_word_bits),"indexed select width exceeds limit");auto direction=vpi_get(vpiIndexedPartSelectType,h);need(direction==vpiPosIndexed||direction==vpiNegIndexed,"unsupported indexed select direction");return "{\"kind\":\"indexedselect\",\"value\":"+expr(actual,depth+1)+",\"base\":"+expr(one(h,vpiBaseExpr),depth+1)+",\"width\":"+std::to_string(n)+",\"descending\":"+(direction==vpiNegIndexed?"true":"false")+"}";}
+ if(type(h)==vpiPartSelect){auto actual=one(h,vpiActual);need(type(actual)!=vpiParameter&&!is_parameter_reference(actual),"parameter selections unsupported; pass the whole parameter");need(actual&&type(actual)!=vpiArrayVar,"part select requires a packed word");auto left=selected_constant(one(h,vpiLeftRange)),right=selected_constant(one(h,vpiRightRange));need(left<=INT32_MAX&&right<=left&&left-right<uint64_t(limits.max_word_bits),"part select requires nonnegative descending constant bounds");return "{\"kind\":\"partselect\",\"value\":"+expr(actual,depth+1)+",\"left\":"+std::to_string(left)+",\"right\":"+std::to_string(right)+"}";}
  if(type(h)==vpiHierPath)return dynamic_size(h)?dynamic_size_expression(h):packed_field_expression(h,false);
  if(type(h)==vpiFuncCall)return lower_function(h,depth+1);
- if(type(h)==vpiSysFuncCall){auto args=many(h,vpiArgument);need((name(h)=="$signed"||name(h)=="$unsigned")&&args.size()==1,"unsupported system function");return "{\"kind\":"+q(name(h)=="$signed"?"castsigned":"castunsigned")+",\"args\":["+expr(args[0],depth+1)+"]}";}
+ if(type(h)==vpiSysFuncCall){auto args=many(h,vpiArgument);auto fn=name(h);if(fn=="$bits"&&args.size()==1)return const_u32_json(uint64_t(width(args[0],depth+1)));if(fn=="$clog2"&&args.size()==1)return const_u32_json(eval_clog2(selected_constant(args[0])));need((fn=="$signed"||fn=="$unsigned")&&args.size()==1,"unsupported system function");return "{\"kind\":"+q(fn=="$signed"?"castsigned":"castunsigned")+",\"args\":["+expr(args[0],depth+1)+"]}";}
  if(type(h)==vpiOperation){
   auto operation=vpi_get(vpiOpType,h);auto concatOperands=many(h,vpiOperand);
-  if(operation==vpiConcatOp||operation==vpiMultiConcatOp){std::vector<std::string> values;if(operation==vpiMultiConcatOp){need(concatOperands.size()==2,"replication requires count and expression");auto count=selected_constant(concatOperands[0]);need(count>=1&&count<=256&&count*uint64_t(width(concatOperands[1]))<=256,"replication must produce 1..256 bits");auto value=expr(concatOperands[1],depth+1);need(value.size()*count+count*32<=4*1024*1024,"replication exceeds normalized output budget");for(uint64_t i=0;i<count;i++)values.push_back(value);}else{need(!concatOperands.empty()&&concatOperands.size()<=256,"concat operand limit exceeded");int total=0;size_t expanded=0;for(auto operand:concatOperands){total+=width(operand);need(total<=256,"concat exceeds256bits");auto value=expr(operand,depth+1);expanded+=value.size();need(expanded<=4*1024*1024,"concat expanded byte budget exceeded");values.push_back(std::move(value));}}auto value=concat_tree(values,0,values.size());output_budget(value);return value;}
+  if(operation==vpiConcatOp||operation==vpiMultiConcatOp){std::vector<std::string> values;if(operation==vpiMultiConcatOp){need(concatOperands.size()==2,"replication requires count and expression");auto count=selected_constant(concatOperands[0]);need(count>=1&&count<=uint64_t(limits.max_word_bits)&&count*uint64_t(width(concatOperands[1]))<=uint64_t(limits.max_word_bits),"replication exceeds word width limit");auto value=expr(concatOperands[1],depth+1);need(value.size()*count+count*32<=limits.max_json_bytes,"replication exceeds normalized output budget");for(uint64_t i=0;i<count;i++)values.push_back(value);}else{need(!concatOperands.empty()&&concatOperands.size()<=size_t(limits.max_word_bits),"concat operand limit exceeded");int total=0;size_t expanded=0;for(auto operand:concatOperands){total+=width(operand);need(total<=limits.max_word_bits,"concat exceeds word width limit");auto value=expr(operand,depth+1);expanded+=value.size();need(expanded<=limits.max_json_bytes,"concat expanded byte budget exceeded");values.push_back(std::move(value));}}auto value=concat_tree(values,0,values.size());output_budget(value);return value;}
   static const std::map<int,std::string> ops={{vpiAddOp,"add"},{vpiSubOp,"sub"},{vpiLogAndOp,"and"},{vpiNotOp,"not"},{vpiEqOp,"eq"},{vpiConcatOp,"concat"},{vpiBitAndOp,"bitand"},{vpiBitOrOp,"bitor"},{vpiBitXorOp,"bitxor"},{vpiBitNegOp,"bitnot"},
-   {vpiLogOrOp,"or"},{vpiNeqOp,"neq"},{vpiCaseEqOp,"caseeq"},{vpiCaseNeqOp,"caseneq"},{vpiLtOp,"lt"},{vpiLeOp,"le"},{vpiGtOp,"gt"},{vpiGeOp,"ge"},{vpiBitXNorOp,"bitxnor"},{vpiMinusOp,"neg"},
+   {vpiLogOrOp,"or"},{vpiNeqOp,"neq"},{vpiCaseEqOp,"caseeq"},{vpiCaseNeqOp,"caseneq"},
+#ifdef vpiWildEqOp
+   {vpiWildEqOp,"wildeq"},
+#endif
+#ifdef vpiWildNeqOp
+   {vpiWildNeqOp,"wildneq"},
+#endif
+   {vpiLtOp,"lt"},{vpiLeOp,"le"},{vpiGtOp,"gt"},{vpiGeOp,"ge"},{vpiBitXNorOp,"bitxnor"},{vpiMinusOp,"neg"},
    {vpiLShiftOp,"shl"},{vpiRShiftOp,"shr"},{vpiArithRShiftOp,"ashr"},{vpiUnaryAndOp,"redand"},{vpiUnaryNandOp,"rednand"},{vpiUnaryOrOp,"redor"},{vpiUnaryNorOp,"rednor"},{vpiUnaryXorOp,"redxor"},{vpiUnaryXNorOp,"redxnor"},{vpiPlusOp,"pos"},
    {vpiMultOp,"mul"},{vpiDivOp,"div"},{vpiModOp,"mod"},{vpiConditionOp,"cond"}};
   auto it=ops.find(vpi_get(vpiOpType,h));need(it!=ops.end(),"unsupported expression operation "+std::to_string(vpi_get(vpiOpType,h)));auto operands=many(h,vpiOperand);
@@ -220,7 +264,7 @@ std::string delay_fields(H h){
 }
 std::string stmt(H h,int depth=0,bool control=false);
 std::string stmt_impl(H h,int depth,bool control){
- need(h&&depth<64&&++nodes<=20000,"statement missing or resource limit exceeded");
+ need(h&&depth<limits.max_depth&&++nodes<=limits.max_nodes,"statement missing or resource limit exceeded");
  if(timed_lowering&&type(h)==vpiEventStmt){
   bool qualified=false;for(auto attribute:many(mod,vpiAttribute))qualified|=name(attribute)=="velosim frontend named triggers v1";
   need(qualified,"named trigger lowering requires preserved blocking metadata; use the named-trigger frontend overlay");
@@ -238,10 +282,24 @@ std::string stmt_impl(H h,int depth,bool control){
  if(timed_lowering&&(type(h)==vpiWaitFork||type(h)==vpiDisableFork))return "{\"kind\":"+q(type(h)==vpiWaitFork?"wait_fork":"disable_fork")+"}";
  if(timed_lowering&&(type(h)==vpiBreak||type(h)==vpiContinue))return "{\"kind\":"+q(type(h)==vpiBreak?"break":"continue")+"}";
  if(timed_lowering&&type(h)==vpiDelayControl){
-  need(depth<64,"timed statement depth exceeded");auto body=one(h,vpiStmt);return "{\"kind\":\"delay\","+delay_fields(h)+",\"body\":"+(body?stmt(body,depth+1):"{\"kind\":\"block\",\"items\":[]}")+"}";
+  need(depth<limits.max_depth,"timed statement depth exceeded");auto body=one(h,vpiStmt);return "{\"kind\":\"delay\","+delay_fields(h)+",\"body\":"+(body?stmt(body,depth+1):"{\"kind\":\"block\",\"items\":[]}")+"}";
  }
  if(timed_lowering&&type(h)==vpiEventControl){auto body=one(h,vpiStmt);return "{\"kind\":\"event\",\"events\":["+timed_events(one(h,vpiCondition))+"],\"body\":"+(body?stmt(body,depth+1):"{\"kind\":\"block\",\"items\":[]}")+"}";}
  if(timed_lowering&&type(h)==vpiWait)return "{\"kind\":\"wait\",\"condition\":"+expr(one(h,vpiCondition))+",\"body\":"+stmt(one(h,vpiStmt),depth+1)+"}";
+#ifdef vpiSysTaskCall
+ if(type(h)==vpiSysTaskCall){
+  auto fn=name(h);auto args=many(h,vpiArgument);
+  if(fn=="$finish")return "{\"kind\":\"finish\"}";
+  if((fn=="$display"||fn=="$write")&&!args.empty()&&type(args[0])==vpiConstant){
+   auto c=static_cast<const UHDM::constant*>(identity(args[0]));
+   std::string raw(c->VpiValue());auto colon=raw.find(':');
+   need(colon!=std::string::npos&&raw.substr(0,colon)=="STRING","display format must be a string literal");
+   std::string s="{\"kind\":\"display\",\"format\":"+q(raw.substr(colon+1))+",\"newline\":"+(fn=="$display"?"true":"false")+",\"args\":[";
+   for(size_t i=1;i<args.size();++i){if(i>1)s+=",";s+=expr(args[i],depth+1);}
+   return s+"]}";
+  }
+ }
+#endif
  if(type(h)==vpiMethodFuncCall||type(h)==vpiMethodTaskCall){
   auto receiver=one(h,vpiPrefix),actual=one(receiver,vpiActual);auto args=many(h,vpiArgument);auto method=name(h);
   need(!inside_call&&lifetime_array(actual)&&flat_symbols.count(identity(actual)),"container methods require a collected module-scope receiver");
@@ -301,7 +359,27 @@ std::string stmt_impl(H h,int depth,bool control){
    return "{\"kind\":\"allocate\",\"name\":"+q(signal_name(lhs))+",\"count\":"+expr(args[0])+",\"preserve\":"+(args.size()==2?"true":"false")+"}";
   }target_shape(one(h,vpiLhs));return "{\"kind\":"+q(control||vpi_get(vpiBlocking,h)?"blocking":"nba")+",\"target\":"+(type(one(h,vpiLhs))==vpiHierPath?packed_field_expression(one(h,vpiLhs),true):expr(one(h,vpiLhs)))+",\"value\":"+expr(one(h,vpiRhs))+"}";}
  if(type(h)==vpiIf||type(h)==vpiIfElse){auto e=one(h,vpiElseStmt);return "{\"kind\":\"if\",\"condition\":"+expr(one(h,vpiCondition))+",\"then\":"+stmt(one(h,vpiStmt),depth+1)+",\"else\":"+(e?stmt(e,depth+1):"{\"kind\":\"block\",\"items\":[]}")+"}";}
- if(type(h)==vpiCase){need(vpi_get(vpiCaseType,h)==vpiCaseExact,"only exact case supported");std::string s="{\"kind\":\"case\",\"value\":"+expr(one(h,vpiCondition))+",\"items\":[";bool first=true;for(auto item:many(h,vpiCaseItem)){if(!first)s+=",";first=false;auto conditions=many(item,vpiExpr);need(conditions.size()<=1,"multiple case labels unsupported");s+="{\"match\":"+(conditions.empty()?"null":expr(conditions[0]))+",\"body\":"+stmt(one(item,vpiStmt),depth+1)+"}";}return s+"]}";}
+ if(type(h)==vpiCase){
+  int ct=vpi_get(vpiCaseType,h);
+  need(ct==vpiCaseExact||ct==vpiCaseZ||ct==vpiCaseX,"unsupported case type");
+  std::string ck=ct==vpiCaseZ?"casez":ct==vpiCaseX?"casex":"";
+  std::string s="{\"kind\":\"case\""+(ck.empty()?"":",\"case_kind\":"+q(ck))+",\"value\":"+expr(one(h,vpiCondition))+",\"items\":[";
+  bool first=true;
+  for(auto item:many(h,vpiCaseItem)){
+   if(!first)s+=",";first=false;
+   auto conditions=many(item,vpiExpr);
+   if(conditions.empty())s+="{\"match\":null";
+   else if(conditions.size()==1)s+="{\"match\":"+expr(conditions[0]);
+   else{
+    need(conditions.size()<=256,"too many case labels in one item");
+    s+="{\"matches\":[";
+    for(size_t ci=0;ci<conditions.size();++ci){if(ci)s+=",";s+=expr(conditions[ci]);}
+    s+="]";
+   }
+   s+=",\"body\":"+stmt(one(item,vpiStmt),depth+1)+"}";
+  }
+  return s+"]}";
+ }
  throw std::runtime_error("unsupported statement type "+std::to_string(type(h)));
 }
 std::string stmt(H h,int depth,bool control){
@@ -321,12 +399,17 @@ int main(int argc,char** argv){
  // Keep exporter measurements separate from instrumented simulator libraries in the same test run.
  if(const char* destination=std::getenv("VELOSIM_UHDM_PROFILE_FILE");destination&&*destination)__llvm_profile_set_filename(destination);
 #endif
+ if(const char* large=std::getenv("VELOSIM_LARGE_DESIGN");large&&std::string(large)=="1"){
+  limits.max_word_bits=512;limits.max_signals=65536;limits.max_memories=1024;limits.max_mem_depth=1048576;
+  limits.max_scopes=4096;limits.max_processes=65536;limits.max_nodes=1000000;limits.max_json_bytes=64*1024*1024;
+  limits.max_depth=128;limits.max_audit_nodes=2000000;
+ }
  if(argc!=4){std::cerr<<"usage: velosim-uhdm-rtl <design.uhdm> <rtl.json> <top>\n";return 2;}
  try{
   UHDM::Serializer serializer;store=&serializer;auto designs=serializer.Restore(std::string(argv[1]));need(designs.size()==1,"one design required");auto modules=many(designs[0],UHDM::uhdmtopModules);need(modules.size()==1,"one top required");mod=modules[0];need(name(mod)==argv[3]||name(mod)==std::string("work@")+argv[3],"top mismatch");
   for(auto spec:many(designs[0],vpiTypedef))if(type(spec)==vpiVoidTypespec&&name(spec)=="velosim frontend capability: union tags v1")union_tag_provenance=true;
   for(auto original:many(designs[0],UHDM::uhdmallModules)){collect_original_expressions(original);collect_parameter_syntax(original);collect_port_initializers(original);}
-  velosim::RtlExecutableAudit audit;
+  velosim::RtlExecutableAudit audit(limits.max_audit_nodes,size_t(limits.max_depth));
   audit.listenAny(static_cast<const UHDM::any*>(identity(mod)));
   timed_lowering=audit.counts().count(vpiDelayControl)||audit.counts().count(vpiWait)||audit.counts().count(vpiFork)||audit.counts().count(vpiWaitFork)||audit.counts().count(vpiDisableFork)||audit.counts().count(vpiNamedEvent);
   auto out=flatten_design(mod);

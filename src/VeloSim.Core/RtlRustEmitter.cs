@@ -7,7 +7,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> RustPortNames()
     {
         var reserved = (
-            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model time time_inc default"
+            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model time time_inc default open_vcd dump_vcd close_vcd"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -94,6 +94,7 @@ public sealed partial class RtlDesign
             "and" => $"w64::land({RsExpr64(args[0])},{RsExpr64(args[1])})",
             "or" => $"w64::lor({RsExpr64(args[0])},{RsExpr64(args[1])})",
             "eq" or "neq" => (kind == "neq" ? "w64::lnot(" : "") + $"w64::eq({RsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{RsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})" + (kind == "neq" ? ")" : ""),
+            "wildeq" or "wildneq" => $"w64::{(kind == "wildneq" ? "wildneq" : "wildeq")}({RsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{RsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})",
             "caseeq" or "caseneq" => $"W64::lit(if {(kind == "caseneq" ? "!" : "")}w64::exact({RsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{RsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))}) {{ 1 }} else {{ 0 }},1)",
             "lt" or "le" or "gt" or "ge" => $"w64::{(args.All(ExpressionSigned) ? "scmp" : "cmp")}({RsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{RsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
             "concat" => $"w64::concat({RsExpr64(args[0])},{RsExpr64(args[1])})",
@@ -148,10 +149,10 @@ public sealed partial class RtlDesign
             "not" => $"w2::lnot({RsExpr2(args[0])})",
             "and" => $"w2::land({RsExpr2(args[0])},{RsExpr2(args[1])})",
             "or" => $"w2::lor({RsExpr2(args[0])},{RsExpr2(args[1])})",
-            "eq" or "neq" or "caseeq" or "caseneq" =>
-                (kind is "neq" or "caseneq" ? "w2::lnot(" : "")
+            "eq" or "neq" or "caseeq" or "caseneq" or "wildeq" or "wildneq" =>
+                (kind is "neq" or "caseneq" or "wildneq" ? "w2::lnot(" : "")
                 + $"w2::eq({RsExpr2(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{RsExpr2(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})"
-                + (kind is "neq" or "caseneq" ? ")" : ""),
+                + (kind is "neq" or "caseneq" or "wildneq" ? ")" : ""),
             "lt" or "le" or "gt" or "ge" =>
                 args.All(ExpressionSigned)
                     ? $"w2::scmp({RsExpr2(args[0], args.Max(ExpressionWidth), true)},{RsExpr2(args[1], args.Max(ExpressionWidth), true)},{args.Max(ExpressionWidth)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})"
@@ -311,25 +312,29 @@ public sealed partial class RtlDesign
                 break;
             }
             case "case":
+            {
                 string lbl = "cs" + unique++;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
-                int cw = Math.Max(ExpressionWidth(e.GetProperty("value")), items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).Select(i => ExpressionWidth(i.GetProperty("match"))).DefaultIfEmpty(1).Max());
-                bool csSigned = ExpressionSigned(e.GetProperty("value")) && items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).All(i => ExpressionSigned(i.GetProperty("match")));
+                string matcher = CaseKind(e) switch { "casez" => "w64::casez_match", "casex" => "w64::casex_match", _ => "w64::exact" };
+                var allMatches = items.SelectMany(CaseItemMatches).ToArray();
+                int cw = Math.Max(ExpressionWidth(e.GetProperty("value")), allMatches.Select(ExpressionWidth).DefaultIfEmpty(1).Max());
+                bool csSigned = ExpressionSigned(e.GetProperty("value")) && allMatches.All(ExpressionSigned);
                 code.AppendLine(twoState
                     ? $"{{ let {lbl}: u64 = {RsExpr2(e.GetProperty("value"), cw, csSigned)};"
                     : $"{{ let {lbl}: W64 = {RsExpr64(e.GetProperty("value"), cw, csSigned)};");
                 bool first = true;
-                foreach (var item in items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null))
+                foreach (var item in items.Where(i => !IsCaseDefault(i)))
                 {
+                    var ms = CaseItemMatches(item);
                     string cmp = twoState
-                        ? $"{lbl} == {RsExpr2(item.GetProperty("match"), cw, csSigned)}"
-                        : $"w64::exact({lbl},{RsExpr64(item.GetProperty("match"), cw, csSigned)})";
+                        ? string.Join(" || ", ms.Select(m => $"{lbl} == {RsExpr2(m, cw, csSigned)}"))
+                        : string.Join(" || ", ms.Select(m => $"{matcher}({lbl},{RsExpr64(m, cw, csSigned)})"));
                     code.AppendLine($"{(first ? "if" : "else if")} {cmp} {{");
                     RsStmt(code, item.GetProperty("body"), ref unique, twoState, trackBudget);
                     code.AppendLine("}");
                     first = false;
                 }
-                var defItem = items.FirstOrDefault(i => i.GetProperty("match").ValueKind == JsonValueKind.Null);
+                var defItem = items.FirstOrDefault(IsCaseDefault);
                 if (defItem.ValueKind != JsonValueKind.Undefined)
                 {
                     code.AppendLine(first ? "{" : "else {");
@@ -338,6 +343,7 @@ public sealed partial class RtlDesign
                 }
                 code.AppendLine("}");
                 break;
+            }
         }
     }
 
@@ -364,12 +370,13 @@ public sealed partial class RtlDesign
         code.AppendLine("#![forbid(unsafe_code)]");
         code.AppendLine("#![allow(non_camel_case_types, non_snake_case, unused_variables, unused_mut, unused_parens, unused_imports, dead_code, clippy::all)]");
         code.AppendLine("pub mod runtime;");
-        code.AppendLine("use runtime::{w2, w64, MemLog2, MemLog64, W64};");
+        code.AppendLine("use runtime::{w2, w64, MemLog2, MemLog64, VcdSlot, W64};");
         code.AppendLine();
         code.AppendLine("#[derive(Clone)]");
         code.AppendLine($"pub struct {structName} {{");
         code.AppendLine("    time: u64,");
         code.AppendLine("    finished: bool,");
+        code.AppendLine("    vcd: VcdSlot,");
         for (int i = 0; i < Signals.Count; ++i)
             code.AppendLine($"    s{i}: {wordType},");
         foreach (int id in eventIds)
@@ -389,6 +396,7 @@ public sealed partial class RtlDesign
         code.AppendLine("        Self {");
         code.AppendLine("            time: 0,");
         code.AppendLine("            finished: false,");
+        code.AppendLine("            vcd: VcdSlot::new(),");
         for (int i = 0; i < Signals.Count; ++i)
         {
             var sig = Signals[i];
@@ -416,8 +424,19 @@ public sealed partial class RtlDesign
         code.AppendLine();
         code.AppendLine("    #[inline(always)] pub fn time(&self) -> u64 { self.time }");
         code.AppendLine("    #[inline(always)] pub fn time_inc(&mut self, delta: u64) { self.time = self.time.wrapping_add(delta); }");
-        code.AppendLine("    #[inline(always)] pub fn final_model(&mut self) {}");
+        code.AppendLine("    #[inline(always)] pub fn final_model(&mut self) { self.close_vcd(); }");
         code.AppendLine("    #[inline(always)] pub fn got_finish(&self) -> bool { self.finished }");
+        code.AppendLine("    pub fn open_vcd(&mut self, path: &str, timescale: &str) -> std::io::Result<()> {");
+        code.Append($"        self.vcd.open(path, \"{top}\", &[");
+        code.AppendJoin(", ", Signals.Select(s => $"({CppStringLiteral(s.SourcePath ?? s.Name)}, {s.Width})"));
+        code.AppendLine("], timescale)");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn dump_vcd(&mut self) -> std::io::Result<()> {");
+        code.Append("        self.vcd.dump(self.time, &[");
+        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"W64::lit(self.s{idx}, {s.Width})" : $"self.s{idx}"));
+        code.AppendLine("])");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn close_vcd(&mut self) { self.vcd.close(); }");
         code.AppendLine();
         foreach (var sig in Signals.Where(s => s.Direction != "internal"))
         {
@@ -550,11 +569,14 @@ public sealed partial class RtlDesign
             code.AppendLine("    }");
             code.AppendLine();
             code.AppendLine("    pub fn try_eval(&mut self) -> Result<(), &'static str> {");
+            code.AppendLine("        let vcd = self.vcd.take();");
             code.AppendLine("        let saved = self.clone();");
             code.AppendLine("        if let Err(err) = self.eval_inner() {");
             code.AppendLine("            *self = saved;");
+            code.AppendLine("            self.vcd = vcd;");
             code.AppendLine("            return Err(err);");
             code.AppendLine("        }");
+            code.AppendLine("        self.vcd = vcd;");
             code.AppendLine("        Ok(())");
             code.AppendLine("    }");
             code.AppendLine();
@@ -861,6 +883,40 @@ pub mod w64 {
     #[inline(always)]
     pub const fn exact(a: W64, b: W64) -> bool {
         a.v == b.v && a.x == b.x && a.z == b.z
+    }
+
+    #[inline(always)]
+    pub const fn casez_match(a: W64, b: W64) -> bool {
+        let w = if a.w > b.w { a.w } else { b.w };
+        let care = !(a.z | b.z) & W64::mask(w);
+        (((a.v ^ b.v) | (a.x ^ b.x)) & care) == 0
+    }
+
+    #[inline(always)]
+    pub const fn casex_match(a: W64, b: W64) -> bool {
+        let w = if a.w > b.w { a.w } else { b.w };
+        let care = !(a.x | a.z | b.x | b.z) & W64::mask(w);
+        ((a.v ^ b.v) & care) == 0
+    }
+
+    #[inline(always)]
+    pub const fn wildeq(a: W64, b: W64) -> W64 {
+        let w = if a.w > b.w { a.w } else { b.w };
+        let care = !(b.x | b.z) & W64::mask(w);
+        let au = (a.x | a.z) & care;
+        let known = care & !au;
+        if ((a.v ^ b.v) & known) != 0 {
+            W64 { v: 0, x: 0, z: 0, w: 1 }
+        } else if au != 0 {
+            W64 { v: 0, x: 1, z: 0, w: 1 }
+        } else {
+            W64 { v: 1, x: 0, z: 0, w: 1 }
+        }
+    }
+
+    #[inline(always)]
+    pub const fn wildneq(a: W64, b: W64) -> W64 {
+        lnot(wildeq(a, b))
     }
 
     #[inline(always)]
@@ -1368,6 +1424,113 @@ impl MemLog2 {
         } else {
             self.overflow.push(e);
         }
+    }
+}
+
+pub struct VcdWriter {
+    out: std::io::BufWriter<std::fs::File>,
+    codes: Vec<String>,
+    last: Vec<W64>,
+    initial: bool,
+}
+
+impl VcdWriter {
+    fn make_code(mut index: usize) -> String {
+        let mut s = String::new();
+        loop {
+            s.push((33u8 + (index % 94) as u8) as char);
+            index /= 94;
+            if index == 0 { break; }
+        }
+        s
+    }
+
+    fn write_val(out: &mut std::io::BufWriter<std::fs::File>, val: W64, code: &str) -> std::io::Result<()> {
+        use std::io::Write;
+        if val.w == 1 {
+            let ch = if (val.z & 1) != 0 { 'z' } else if (val.x & 1) != 0 { 'x' } else if (val.v & 1) != 0 { '1' } else { '0' };
+            writeln!(out, "{}{}", ch, code)
+        } else {
+            writeln!(out, "b{} {}", w64::text(val), code)
+        }
+    }
+
+    pub fn open(path: &str, top_name: &str, signals: &[(&str, i32)], timescale: &str) -> std::io::Result<Self> {
+        use std::io::Write;
+        let file = std::fs::File::create(path)?;
+        let mut out = std::io::BufWriter::new(file);
+        writeln!(out, "$version VeloSim $end")?;
+        writeln!(out, "$timescale {} $end", timescale)?;
+        writeln!(out, "$scope module {} $end", if top_name.is_empty() { "top" } else { top_name })?;
+        let mut codes = Vec::with_capacity(signals.len());
+        let mut last = Vec::with_capacity(signals.len());
+        for (i, (name, width)) in signals.iter().enumerate() {
+            let code = Self::make_code(i);
+            let leaf = name.replace('.', "_");
+            if *width > 1 {
+                writeln!(out, "$var wire {} {} {} [{}:0] $end", width, code, leaf, width - 1)?;
+            } else {
+                writeln!(out, "$var wire 1 {} {} $end", code, leaf)?;
+            }
+            codes.push(code);
+            last.push(W64::unknown(*width));
+        }
+        writeln!(out, "$upscope $end")?;
+        writeln!(out, "$enddefinitions $end")?;
+        Ok(Self { out, codes, last, initial: false })
+    }
+
+    pub fn dump(&mut self, time: u64, values: &[W64]) -> std::io::Result<()> {
+        use std::io::Write;
+        if !self.initial {
+            writeln!(self.out, "#{}\n$dumpvars", time)?;
+            for i in 0..self.codes.len().min(values.len()) {
+                self.last[i] = values[i];
+                Self::write_val(&mut self.out, values[i], &self.codes[i])?;
+            }
+            writeln!(self.out, "$end")?;
+            self.initial = true;
+            return Ok(());
+        }
+        let mut wrote_time = false;
+        for i in 0..self.codes.len().min(values.len()) {
+            if w64::exact(values[i], self.last[i]) { continue; }
+            if !wrote_time {
+                writeln!(self.out, "#{}", time)?;
+                wrote_time = true;
+            }
+            self.last[i] = values[i];
+            Self::write_val(&mut self.out, values[i], &self.codes[i])?;
+        }
+        Ok(())
+    }
+
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        use std::io::Write;
+        self.out.flush()
+    }
+}
+
+pub struct VcdSlot(Option<VcdWriter>);
+
+impl Clone for VcdSlot {
+    fn clone(&self) -> Self { Self(None) }
+}
+
+impl VcdSlot {
+    pub const fn new() -> Self { Self(None) }
+    pub fn take(&mut self) -> Self { Self(self.0.take()) }
+    pub fn open(&mut self, path: &str, top_name: &str, signals: &[(&str, i32)], timescale: &str) -> std::io::Result<()> {
+        self.close();
+        self.0 = Some(VcdWriter::open(path, top_name, signals, timescale)?);
+        Ok(())
+    }
+    pub fn dump(&mut self, time: u64, values: &[W64]) -> std::io::Result<()> {
+        if let Some(w) = self.0.as_mut() { w.dump(time, values)?; }
+        Ok(())
+    }
+    pub fn close(&mut self) {
+        if let Some(mut w) = self.0.take() { let _ = w.flush(); }
     }
 }
 """;

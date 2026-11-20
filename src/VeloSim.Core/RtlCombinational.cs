@@ -15,7 +15,7 @@ public sealed partial class RtlDesign
             steps.Add(Element("{\"kind\":\"blocking\",\"target\":"+assignment.GetProperty("target").GetRawText()+",\"value\":"+assignment.GetProperty("value").GetRawText()+"}"));
         if (root.TryGetProperty("combinational", out var blocks))
         {
-            if(blocks.ValueKind!=JsonValueKind.Array || blocks.GetArrayLength()>256) throw new IrValidationException("Combinational block count must be 0..256.");
+            if(blocks.ValueKind!=JsonValueKind.Array || blocks.GetArrayLength()>Limits.MaxContinuous) throw new IrValidationException($"Combinational block count must be 0..{Limits.MaxContinuous}.");
             foreach(var block in blocks.EnumerateArray())
             {
                 var owned=new HashSet<string>(StringComparer.Ordinal);
@@ -27,7 +27,7 @@ public sealed partial class RtlDesign
             }
         }
         foreach(var step in steps.Where(e=>Kind(e)=="blocking")){var owned=TargetLeaves(step.GetProperty("target")).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);ValidateCombFlow(step,owned,new(StringComparer.Ordinal));}
-        if(steps.Sum(StatementCost)>20000)throw new IrValidationException("Expanded combinational statement budget exceeded.");
+        if(steps.Sum(StatementCost)>Limits.MaxNodes)throw new IrValidationException("Expanded combinational statement budget exceeded.");
         var owners=new Dictionary<string,int>(StringComparer.Ordinal);
         var writes=steps.Select(step=>Statements(step).Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal)).ToArray();
         for(int i=0;i<steps.Count;i++) foreach(var word in writes[i])
@@ -69,7 +69,7 @@ public sealed partial class RtlDesign
             case "case":
                 Read(statement.GetProperty("value"));var paths=new List<HashSet<string>>();bool hasDefault=false;
                 foreach(var item in statement.GetProperty("items").EnumerateArray()){
-                    hasDefault|=item.GetProperty("match").ValueKind==JsonValueKind.Null;
+                    hasDefault|=IsCaseDefault(item);
                     var path=new HashSet<string>(assigned,StringComparer.Ordinal);ValidateCombFlow(item.GetProperty("body"),owned,path);paths.Add(path);
                 }
                 if(!hasDefault)paths.Add(new(assigned,StringComparer.Ordinal));
@@ -92,7 +92,7 @@ public sealed partial class RtlDesign
 
     private static JsonElement Element(string json) { using var document=JsonDocument.Parse(json);return document.RootElement.Clone(); }
 
-    private void EmitSettle(StringBuilder code)
+    private void EmitSettle(StringBuilder code, List<(string Id, string Kind)>? coverage = null)
     {
         foreach(var step in SettledSteps)
         {
@@ -104,7 +104,7 @@ public sealed partial class RtlDesign
             }
             else
             {
-                code.AppendLine("{auto next=s;");int unique=0;Statement(code,step,ref unique);code.AppendLine("}");
+                code.AppendLine("{auto next=s;");int unique=0;Statement(code,step,ref unique,coverage:coverage);code.AppendLine("}");
             }
         }
     }

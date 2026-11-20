@@ -17,7 +17,7 @@ int aggregate_width(H spec,int depth){
  if(type(spec)==vpiUnionTypespec){need(union_tag_provenance,"union tag provenance requires patched frontend");need(!static_cast<const UHDM::union_typespec*>(identity(spec))->VpiTagged(),"tagged unions require tag-aware storage");}
  auto members=many(spec,vpiTypespecMember);need(!members.empty()&&members.size()<=256,"packed aggregate member budget exceeded");
  int total=0;std::set<std::string> names;
- for(auto member:members){PackedTypeQuery::step();need(names.insert(name(member)).second,"duplicate packed member");int w=width(member,depth+1);if(type(spec)==vpiUnionTypespec){need(total==0||total==w,"packed union members require equal widths");total=w;}else total+=w;need(total<=256,"packed aggregate exceeds256bits");}
+ for(auto member:members){PackedTypeQuery::step();need(names.insert(name(member)).second,"duplicate packed member");int w=width(member,depth+1);if(type(spec)==vpiUnionTypespec){need(total==0||total==w,"packed union members require equal widths");total=w;}else total+=w;need(total<=limits.max_word_bits,"packed aggregate exceeds word width limit");}
  return total;
 }
 bool aggregate_state(H spec,int depth){

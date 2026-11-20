@@ -35,8 +35,8 @@ public sealed partial class RtlDesign
         {
             foreach (var item in e.GetProperty("items").EnumerateArray())
             {
-                var match = item.GetProperty("match");
-                if (match.ValueKind != JsonValueKind.Null && !ExpressionFits64(match)) return false;
+                foreach (var match in CaseItemMatches(item))
+                    if (!ExpressionFits64(match)) return false;
             }
         }
         if (Kind(e) == "display" && e.TryGetProperty("args", out var dArgs))
@@ -92,6 +92,11 @@ public sealed partial class RtlDesign
         if (kind == "bitselect") return $"vsrtl::w64::selbit({Expression64(e.GetProperty("value"))},{Expression64(e.GetProperty("index"))})";
         if (kind == "partselect") return $"vsrtl::w64::selpart({Expression64(e.GetProperty("value"))},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
         if (kind == "indexedselect") return $"vsrtl::w64::selidx({Expression64(e.GetProperty("value"))},{Expression64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
+        if (kind == "dpi_call")
+        {
+            string callArgs = string.Join(",", e.GetProperty("args").EnumerateArray().Select(a => $"({Expression64(a)}).v"));
+            return Extend($"vsrtl::w64::word(::{Name(e)}({callArgs}),0ULL,0ULL,{e.GetProperty("width").GetInt32()})");
+        }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ExpressionWidth(e));
         return kind switch
@@ -112,6 +117,7 @@ public sealed partial class RtlDesign
             "and" => $"vsrtl::w64::land({Expression64(args[0])},{Expression64(args[1])})",
             "or" => $"vsrtl::w64::lor({Expression64(args[0])},{Expression64(args[1])})",
             "eq" or "neq" => (kind == "neq" ? "vsrtl::w64::lnot(" : "") + $"vsrtl::w64::eq({Expression64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{Expression64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})" + (kind == "neq" ? ")" : ""),
+            "wildeq" or "wildneq" => $"vsrtl::w64::{(kind == "wildneq" ? "wildneq" : "wildeq")}({Expression64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{Expression64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})",
             "caseeq" or "caseneq" => $"vsrtl::w64::W64{{uint64_t({(kind == "caseneq" ? "!" : "")}vsrtl::w64::exact({Expression64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{Expression64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})),0,0,1}}",
             "lt" or "le" or "gt" or "ge" => $"vsrtl::w64::{(args.All(ExpressionSigned) ? "scmp" : "cmp")}({Expression64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{Expression64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
             "concat" => $"vsrtl::w64::concat({Expression64(args[0])},{Expression64(args[1])})",
@@ -137,7 +143,7 @@ public sealed partial class RtlDesign
         code.AppendLine($"_vs_next[{selectedId}]={(Signals[selectedId].TwoState ? $"vsrtl::w64::two_state({deposited})" : deposited)};");
     }
 
-    private void Statement64(StringBuilder code, JsonElement e, ref int unique, bool trackBudget)
+    private void Statement64(StringBuilder code, JsonElement e, ref int unique, bool trackBudget, List<(string Id, string Kind)>? coverage = null)
     {
         if (trackBudget) code.AppendLine("execution_step(execution_budget);");
         switch (Kind(e))
@@ -147,24 +153,24 @@ public sealed partial class RtlDesign
                 if (Kind(e) == "do") code.AppendLine("do{");
                 else code.AppendLine($"while(vsrtl::w64::yes({Expression64(e.GetProperty("condition"))})){{");
                 code.AppendLine("execution_step(execution_budget);");
-                Statement64(code, e.GetProperty("body"), ref unique, trackBudget);
+                Statement64(code, e.GetProperty("body"), ref unique, trackBudget, coverage);
                 code.AppendLine(Kind(e) == "do" ? $"}}while(vsrtl::w64::yes({Expression64(e.GetProperty("condition"))}));" : "}");
                 break;
             case "runtime_repeat":
                 string runtimeLoop = "runtime_repeat" + unique++;
                 code.AppendLine($"for(unsigned {runtimeLoop}=repeat_count(vsrtl::w64::from({Expression64(e.GetProperty("count"))}),{(ExpressionSigned(e.GetProperty("count")) ? "true" : "false")});{runtimeLoop}>0;--{runtimeLoop}){{");
                 code.AppendLine("execution_step(execution_budget);");
-                Statement64(code, e.GetProperty("body"), ref unique, trackBudget);
+                Statement64(code, e.GetProperty("body"), ref unique, trackBudget, coverage);
                 code.AppendLine("}");
                 break;
             case "repeat":
                 string loop = "repeat" + unique++;
                 code.AppendLine($"for(int {loop}=0;{loop}<{e.GetProperty("count").GetInt32()};++{loop}){{");
-                Statement64(code, e.GetProperty("body"), ref unique, trackBudget);
+                Statement64(code, e.GetProperty("body"), ref unique, trackBudget, coverage);
                 code.AppendLine("}");
                 break;
             case "block":
-                foreach (var item in e.GetProperty("items").EnumerateArray()) Statement64(code, item, ref unique, trackBudget);
+                foreach (var item in e.GetProperty("items").EnumerateArray()) Statement64(code, item, ref unique, trackBudget, coverage);
                 break;
             case "nba":
                 var target = e.GetProperty("target");
@@ -198,12 +204,19 @@ public sealed partial class RtlDesign
                 }
                 break;
             case "if":
+            {
+                int ifId = unique++;
+                int thenCov = RegisterCoveragePoint(coverage, $"if.{ifId}.then", "branch");
+                int elseCov = RegisterCoveragePoint(coverage, $"if.{ifId}.else", "branch");
                 code.AppendLine($"if(vsrtl::w64::yes({Expression64(e.GetProperty("condition"))})){{");
-                Statement64(code, e.GetProperty("then"), ref unique, trackBudget);
+                if (thenCov >= 0) code.AppendLine($"++_vs_cov[{thenCov}];");
+                Statement64(code, e.GetProperty("then"), ref unique, trackBudget, coverage);
                 code.AppendLine("}else{");
-                Statement64(code, e.GetProperty("else"), ref unique, trackBudget);
+                if (elseCov >= 0) code.AppendLine($"++_vs_cov[{elseCov}];");
+                Statement64(code, e.GetProperty("else"), ref unique, trackBudget, coverage);
                 code.AppendLine("}");
                 break;
+            }
             case "assert":
                 code.AppendLine($"vsrtl::w64::check_assert({Expression64(e.GetProperty("condition"))},{CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "")});");
                 break;
@@ -221,61 +234,69 @@ public sealed partial class RtlDesign
                 break;
             }
             case "case":
-                var label = "case" + unique++;
+            {
+                int caseId = unique++;
+                var label = "case" + caseId;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
-                int caseWidth = Math.Max(ExpressionWidth(e.GetProperty("value")), items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).Select(i => ExpressionWidth(i.GetProperty("match"))).DefaultIfEmpty(1).Max());
-                bool caseSigned = ExpressionSigned(e.GetProperty("value")) && items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).All(i => ExpressionSigned(i.GetProperty("match")));
+                string matcher = CaseKind(e) switch { "casez" => "vsrtl::w64::casez_match", "casex" => "vsrtl::w64::casex_match", _ => "vsrtl::w64::exact" };
+                var allMatches = items.SelectMany(CaseItemMatches).ToArray();
+                int caseWidth = Math.Max(ExpressionWidth(e.GetProperty("value")), allMatches.Select(ExpressionWidth).DefaultIfEmpty(1).Max());
+                bool caseSigned = ExpressionSigned(e.GetProperty("value")) && allMatches.All(ExpressionSigned);
                 code.AppendLine($"{{auto {label}={Expression64(e.GetProperty("value"), caseWidth, caseSigned)};");
                 bool first = true;
-                foreach (var item in items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null))
+                int armIdx = 0;
+                foreach (var item in items.Where(i => !IsCaseDefault(i)))
                 {
-                    code.AppendLine($"{(first ? "if" : "else if")}(vsrtl::w64::exact({label},{Expression64(item.GetProperty("match"), caseWidth, caseSigned)})){{");
-                    Statement64(code, item.GetProperty("body"), ref unique, trackBudget);
+                    var ms = CaseItemMatches(item);
+                    string cond = string.Join("||", ms.Select(m => $"{matcher}({label},{Expression64(m, caseWidth, caseSigned)})"));
+                    int armCov = RegisterCoveragePoint(coverage, $"case.{caseId}.arm.{armIdx++}", "case_arm");
+                    code.AppendLine($"{(first ? "if" : "else if")}({cond}){{");
+                    if (armCov >= 0) code.AppendLine($"++_vs_cov[{armCov}];");
+                    Statement64(code, item.GetProperty("body"), ref unique, trackBudget, coverage);
                     code.AppendLine("}");
                     first = false;
                 }
-                var defaultItem = items.FirstOrDefault(i => i.GetProperty("match").ValueKind == JsonValueKind.Null);
+                var defaultItem = items.FirstOrDefault(IsCaseDefault);
                 if (defaultItem.ValueKind != JsonValueKind.Undefined)
                 {
+                    int defCov = RegisterCoveragePoint(coverage, $"case.{caseId}.default", "case_default");
                     code.AppendLine(first ? "{" : "else{");
-                    Statement64(code, defaultItem.GetProperty("body"), ref unique, trackBudget);
+                    if (defCov >= 0) code.AppendLine($"++_vs_cov[{defCov}];");
+                    Statement64(code, defaultItem.GetProperty("body"), ref unique, trackBudget, coverage);
                     code.AppendLine("}");
                 }
                 code.AppendLine("}");
                 break;
+            }
         }
     }
 
-    private string EmitNarrow64ModelHeader(string top, IReadOnlyDictionary<string, string> names, int[] seqIds, bool hasFixedMemWrites, bool hasRuntimeLoops, bool canThrow)
+    private string EmitNarrow64ModelHeader(string top, IReadOnlyDictionary<string, string> names, int[] seqIds, bool hasFixedMemWrites, bool hasRuntimeLoops, bool canThrow, IReadOnlyList<(string Name, int ArgCount)> dpiCalls, bool enableCoverage)
     {
         string className = "V" + top;
         bool hasInit = Statements(Initialization).Any(st => Kind(st) is not "block");
         var procs = Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body];
         var eventIds = EventSignals.Select(SignalId).ToArray();
+        var coverage = enableCoverage ? new List<(string Id, string Kind)>() : null;
 
-        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
-        code.AppendLine($"class {className} final : public vsrtl::Model {{");
-        if (hasRuntimeLoops || hasInit) code.AppendLine("size_t execution_budget=20000;");
-        code.AppendLine($"vsrtl::w64::W64 _vs_prev[{Signals.Count}];");
-        code.AppendLine($"vsrtl::w64::W64 _vs_next[{Signals.Count}];");
-        if (hasFixedMemWrites) code.AppendLine("vsrtl::w64::MemLog64<16> _vs_mlog;");
-        if (hasInit) code.AppendLine("std::vector<AssociativeStorage>assoc;");
-        code.AppendLine("inline void settle(){");
+        var bodyCode = new StringBuilder();
+        bodyCode.AppendLine("inline void settle(){");
         foreach (var step in SettledSteps)
         {
             int id = SignalId(Name(step.GetProperty("target")));
             var rhs = step.GetProperty("value");
             int vw = ExpressionWidth(rhs);
             bool exactWidth = vw == Signals[id].Width && !(ExpressionSigned(rhs) && Signals[id].Width > vw);
-            code.AppendLine($"vsrtl::w64::store(s[{id}],{StoreWord64(Expression64(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
+            bodyCode.AppendLine($"vsrtl::w64::store(s[{id}],{StoreWord64(Expression64(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
         }
-        code.AppendLine("}\nvoid evaluate() override {");
-        if (hasRuntimeLoops) code.AppendLine("execution_budget=20000;");
+        bodyCode.AppendLine("}\nvoid evaluate() override {");
+        if (dpiCalls.Count > 0) bodyCode.AppendLine("struct _VsDpiScope{svScope prev;explicit _VsDpiScope(svScope s):prev(svSetScope(s)){}~_VsDpiScope(){svSetScope(prev);}} _vs_dpi_scope(static_cast<svScope>(this));");
+        if (hasRuntimeLoops) bodyCode.AppendLine("execution_budget=20000;");
         if (canThrow)
         {
-            code.AppendLine($"auto saved_s=s;auto saved_mem=mem;vsrtl::w64::W64 saved_prev[{Signals.Count}];for(int i=0;i<{Signals.Count};++i)saved_prev[i]=_vs_prev[i];try{{");
+            bodyCode.AppendLine($"auto saved_s=s;auto saved_mem=mem;vsrtl::w64::W64 saved_prev[{Signals.Count}];for(int i=0;i<{Signals.Count};++i)saved_prev[i]=_vs_prev[i];try{{");
         }
-        code.AppendLine("settle();");
+        bodyCode.AppendLine("settle();");
         for (int p = 0; p < procs.Length; ++p)
         {
             string cond = string.Join("||", procs[p].GetProperty("events").EnumerateArray().Select(trigger =>
@@ -283,58 +304,71 @@ public sealed partial class RtlDesign
                 int id = SignalId(trigger.GetProperty("signal").GetString()!);
                 return $"vsrtl::w64::edge(_vs_prev[{id}],vsrtl::w64::to(s[{id}]),{(trigger.GetProperty("edge").GetString() == "posedge" ? "true" : "false")})";
             }));
-            code.AppendLine($"const bool _vs_ev{p}={cond};");
+            bodyCode.AppendLine($"const bool _vs_ev{p}={cond};");
         }
         string anyEv = string.Join("||", Enumerable.Range(0, procs.Length).Select(p => $"_vs_ev{p}"));
-        code.AppendLine($"if({anyEv}){{");
+        bodyCode.AppendLine($"if({anyEv}){{");
         if (seqIds.Length > 0)
-            code.AppendLine(string.Concat(seqIds.Select(id => $"_vs_next[{id}]=vsrtl::w64::to(s[{id}]);")));
+            bodyCode.AppendLine(string.Concat(seqIds.Select(id => $"_vs_next[{id}]=vsrtl::w64::to(s[{id}]);")));
         int unique = 0;
         for (int p = 0; p < procs.Length; ++p)
         {
-            if (procs.Length > 1) code.AppendLine($"if(_vs_ev{p}){{");
-            Statement64(code, procs[p].GetProperty("body"), ref unique, hasRuntimeLoops);
-            if (procs.Length > 1) code.AppendLine("}");
+            if (procs.Length > 1) bodyCode.AppendLine($"if(_vs_ev{p}){{");
+            Statement64(bodyCode, procs[p].GetProperty("body"), ref unique, hasRuntimeLoops, coverage);
+            if (procs.Length > 1) bodyCode.AppendLine("}");
         }
         if (seqIds.Length > 0)
-            code.AppendLine(string.Concat(seqIds.Select(id => $"vsrtl::w64::store(s[{id}],_vs_next[{id}]);")));
+            bodyCode.AppendLine(string.Concat(seqIds.Select(id => $"vsrtl::w64::store(s[{id}],_vs_next[{id}]);")));
         if (hasFixedMemWrites)
-            code.AppendLine("_vs_mlog.commit(mem);");
-        code.AppendLine("settle();\n}");
+            bodyCode.AppendLine("_vs_mlog.commit(mem);");
+        bodyCode.AppendLine("settle();\n}");
         foreach (int id in eventIds)
-            code.AppendLine($"_vs_prev[{id}]=vsrtl::w64::to(s[{id}]);");
+            bodyCode.AppendLine($"_vs_prev[{id}]=vsrtl::w64::to(s[{id}]);");
         if (canThrow)
         {
-            code.AppendLine($"\n}}catch(...){{s=std::move(saved_s);mem=std::move(saved_mem);for(int i=0;i<{Signals.Count};++i)_vs_prev[i]=saved_prev[i];{(hasFixedMemWrites ? "_vs_mlog.count=0;_vs_mlog.overflow.clear();" : "")}throw;}}");
+            bodyCode.AppendLine($"\n}}catch(...){{s=std::move(saved_s);mem=std::move(saved_mem);for(int i=0;i<{Signals.Count};++i)_vs_prev[i]=saved_prev[i];{(hasFixedMemWrites ? "_vs_mlog.count=0;_vs_mlog.overflow.clear();" : "")}throw;}}");
         }
-        code.AppendLine("}\nvoid saveExtraState(std::vector<uint8_t>& out) const override {");
-        code.AppendLine($"const size_t n=sizeof(_vs_prev);out.resize(n);std::memcpy(out.data(),_vs_prev,n);");
-        code.AppendLine("}\nvoid restoreExtraState(const uint8_t* data,size_t len) override {");
-        code.AppendLine($"if(len!=sizeof(_vs_prev))throw std::runtime_error(\"checkpoint W64 state size mismatch\");std::memcpy(_vs_prev,data,len);");
-        code.AppendLine("}\npublic:");
+        bodyCode.AppendLine("}\nvoid saveExtraState(std::vector<uint8_t>& out) const override {");
+        bodyCode.AppendLine($"const size_t n=sizeof(_vs_prev);out.resize(n);std::memcpy(out.data(),_vs_prev,n);");
+        bodyCode.AppendLine("}\nvoid restoreExtraState(const uint8_t* data,size_t len) override {");
+        bodyCode.AppendLine($"if(len!=sizeof(_vs_prev))throw std::runtime_error(\"checkpoint W64 state size mismatch\");std::memcpy(_vs_prev,data,len);");
+        bodyCode.AppendLine("}\npublic:");
+        EmitCoveragePointsOverride(bodyCode, coverage);
         // Non-virtual inline fast-path lets the C++ compiler inline evaluate() directly into host loops.
-        code.AppendLine("inline void eval(){");
-        code.AppendLine("if(fast_eval_ok&&owner_thread==std::this_thread::get_id())[[likely]]{");
-        code.AppendLine("fast_eval_ok=false;fast_evaluating=true;fast_dirty=false;");
+        bodyCode.AppendLine("inline void eval(){");
+        bodyCode.AppendLine("if(fast_eval_ok&&owner_thread==std::this_thread::get_id())[[likely]]{");
+        bodyCode.AppendLine("fast_eval_ok=false;fast_evaluating=true;fast_dirty=false;");
         if (canThrow)
-            code.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_evaluating=false;fast_dirty=true;fast_eval_ok=fast_eligible;throw;}}");
+            bodyCode.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_evaluating=false;fast_dirty=true;fast_eval_ok=fast_eligible;throw;}}");
         else
-            code.AppendLine($"this->{className}::evaluate();");
-        code.AppendLine("fast_evaluating=false;fast_eval_ok=fast_eligible;return;}");
-        code.AppendLine("evalSlow();}");
-        foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.AppendLine($"vsrtl::Port {names[signal.Name]};");
-        code.Append($"{className}():vsrtl::Model(\"{top}\",{{");
-        code.AppendJoin(',', Signals.Select(s => $"{{\"{s.SourcePath ?? s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")},{(s.Signed ? "true" : "false")},{(s.TwoState ? "true" : "false")}}}"));
-        code.Append($"}},{SignalId(Clock!)})");
-        foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)})");
-        code.AppendLine($"{{{(hasInit ? $"assoc.resize({Memories.Count});" : "")}mem={{");
-        code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},{(m.TwoState ? $"word(0,0,0,{m.Width})" : $"unknown({m.Width})")})"));
-        code.AppendLine("};");
-        if (hasInit) EmitInitialization(code);
-        code.AppendLine($"for(int i=0;i<{Signals.Count};++i)_vs_prev[i]=vsrtl::w64::unknown(1);");
-        code.AppendLine($"_vs_prev[{SignalId(Clock!)}]=vsrtl::w64::lit(0ULL,1);");
+            bodyCode.AppendLine($"this->{className}::evaluate();");
+        bodyCode.AppendLine("fast_evaluating=false;fast_eval_ok=fast_eligible;return;}");
+        bodyCode.AppendLine("evalSlow();}");
+        foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.AppendLine($"vsrtl::Port {names[signal.Name]};");
+        bodyCode.Append($"{className}():vsrtl::Model(\"{top}\",{{");
+        bodyCode.AppendJoin(',', Signals.Select(s => $"{{\"{s.SourcePath ?? s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")},{(s.Signed ? "true" : "false")},{(s.TwoState ? "true" : "false")}}}"));
+        bodyCode.Append($"}},{SignalId(Clock!)})");
+        foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)})");
+        bodyCode.AppendLine($"{{{(hasInit ? $"assoc.resize({Memories.Count});" : "")}mem={{");
+        bodyCode.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},{(m.TwoState ? $"word(0,0,0,{m.Width})" : $"unknown({m.Width})")})"));
+        bodyCode.AppendLine("};");
+        if (hasInit) EmitInitialization(bodyCode);
+        bodyCode.AppendLine($"for(int i=0;i<{Signals.Count};++i)_vs_prev[i]=vsrtl::w64::unknown(1);");
+        bodyCode.AppendLine($"_vs_prev[{SignalId(Clock!)}]=vsrtl::w64::lit(0ULL,1);");
         foreach (var signal in Signals.Where(s => s.TwoState && s.Width == 1))
-            code.AppendLine($"_vs_prev[{SignalId(signal.Name)}]=vsrtl::w64::lit(0ULL,1);");
-        return code.AppendLine("}\n};").ToString();
+            bodyCode.AppendLine($"_vs_prev[{SignalId(signal.Name)}]=vsrtl::w64::lit(0ULL,1);");
+        bodyCode.AppendLine("}\n};");
+
+        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
+        EmitDpiPrototypes(code, dpiCalls);
+        code.AppendLine($"class {className} final : public vsrtl::Model {{");
+        if (hasRuntimeLoops || hasInit) code.AppendLine("size_t execution_budget=20000;");
+        code.AppendLine($"vsrtl::w64::W64 _vs_prev[{Signals.Count}];");
+        code.AppendLine($"vsrtl::w64::W64 _vs_next[{Signals.Count}];");
+        if (hasFixedMemWrites) code.AppendLine("vsrtl::w64::MemLog64<16> _vs_mlog;");
+        if (hasInit) code.AppendLine("std::vector<AssociativeStorage>assoc;");
+        if (coverage is { Count: > 0 }) code.AppendLine($"uint64_t _vs_cov[{coverage.Count}]{{}};");
+        code.Append(bodyCode);
+        return code.ToString();
     }
 }

@@ -26,7 +26,7 @@ class RtlExecutableAudit final : public UHDM::UhdmListener {
 public:
  explicit RtlExecutableAudit(size_t node_budget=100000,size_t depth_budget=128)
   :node_budget_(node_budget),depth_budget_(depth_budget) {
-  if(!node_budget||node_budget>100000||!depth_budget||depth_budget>128)
+  if(!node_budget||node_budget>2000000||!depth_budget||depth_budget>256)
    throw std::invalid_argument("invalid UHDM executable audit budget");
  }
  // Keep the audit bounded even on cyclic/shared or adversarial restored graphs.

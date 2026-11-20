@@ -23,39 +23,56 @@
 #else
 #define VSRTL_HAS_AVX2_DISPATCH 0
 #endif
+#ifndef VSRTL_MAX_WORD_BITS
+#define VSRTL_MAX_WORD_BITS 256
+#endif
+static_assert(VSRTL_MAX_WORD_BITS == 256 || VSRTL_MAX_WORD_BITS == 512, "VSRTL_MAX_WORD_BITS must be 256 or 512");
+
 namespace vsrtl {
-// Fixed-capacity, little-endian limbs. All operators are unsigned modulo 2^256;
+// Fixed-capacity, little-endian limbs. All operators are unsigned modulo 2^capacity;
 // HDL width/sign conversion remains explicit in the word operations below.
 // Keeping storage bounded avoids heap allocation and ABI-dependent host integers.
 struct Bits {
- static constexpr unsigned capacity=256;
- std::array<uint64_t,4> limb{};
- constexpr Bits(uint64_t value=0) noexcept : limb{value,0,0,0}{}
- constexpr Bits(uint64_t l0,uint64_t l1,uint64_t l2,uint64_t l3) noexcept : limb{l0,l1,l2,l3}{}
+ static constexpr unsigned capacity = VSRTL_MAX_WORD_BITS;
+ static constexpr int kLimbs = VSRTL_MAX_WORD_BITS / 64;
+ std::array<uint64_t, kLimbs> limb{};
+ constexpr Bits(uint64_t value=0) noexcept : limb{} { limb[0]=value; }
+ constexpr Bits(uint64_t l0,uint64_t l1,uint64_t l2,uint64_t l3) noexcept : limb{} { limb[0]=l0;limb[1]=l1;limb[2]=l2;limb[3]=l3; }
+ constexpr Bits(uint64_t l0,uint64_t l1,uint64_t l2,uint64_t l3,uint64_t l4,uint64_t l5,uint64_t l6,uint64_t l7) noexcept : limb{} {
+  limb[0]=l0;limb[1]=l1;limb[2]=l2;limb[3]=l3;
+  if constexpr (kLimbs >= 8) { limb[4]=l4;limb[5]=l5;limb[6]=l6;limb[7]=l7; }
+ }
  template<class T> requires(std::is_integral_v<T>&&std::is_signed_v<T>)
- constexpr Bits(T value) noexcept : limb{uint64_t(value),value<0?UINT64_MAX:0,value<0?UINT64_MAX:0,value<0?UINT64_MAX:0}{}
- constexpr explicit operator bool()const noexcept{return (limb[0]|limb[1]|limb[2]|limb[3])!=0;}
+ constexpr Bits(T value) noexcept : limb{} {
+  limb[0]=uint64_t(value);
+  const uint64_t fill = value<0 ? UINT64_MAX : 0;
+  for(int i=1;i<kLimbs;++i) limb[i]=fill;
+ }
+ constexpr explicit operator bool()const noexcept{
+  uint64_t any=0; for(int i=0;i<kLimbs;++i) any|=limb[i]; return any!=0;
+ }
  template<class T> requires(std::is_integral_v<T>&&!std::is_same_v<T,bool>) constexpr explicit operator T()const noexcept{return T(limb[0]);}
  friend constexpr bool operator==(const Bits&,const Bits&)=default;
- friend constexpr bool operator<(Bits a,Bits b) noexcept{for(int i=3;i>=0;--i)if(a.limb[i]!=b.limb[i])return a.limb[i]<b.limb[i];return false;}
+ friend constexpr bool operator<(Bits a,Bits b) noexcept{for(int i=kLimbs-1;i>=0;--i)if(a.limb[i]!=b.limb[i])return a.limb[i]<b.limb[i];return false;}
  friend constexpr bool operator>(Bits a,Bits b) noexcept{return b<a;}
  friend constexpr bool operator<=(Bits a,Bits b) noexcept{return !(b<a);}
  friend constexpr bool operator>=(Bits a,Bits b) noexcept{return !(a<b);}
- friend constexpr Bits operator~(Bits a) noexcept{return Bits(~a.limb[0],~a.limb[1],~a.limb[2],~a.limb[3]);}
- friend constexpr Bits operator&(Bits a,Bits b) noexcept{return Bits(a.limb[0]&b.limb[0],a.limb[1]&b.limb[1],a.limb[2]&b.limb[2],a.limb[3]&b.limb[3]);}
- friend constexpr Bits operator|(Bits a,Bits b) noexcept{return Bits(a.limb[0]|b.limb[0],a.limb[1]|b.limb[1],a.limb[2]|b.limb[2],a.limb[3]|b.limb[3]);}
- friend constexpr Bits operator^(Bits a,Bits b) noexcept{return Bits(a.limb[0]^b.limb[0],a.limb[1]^b.limb[1],a.limb[2]^b.limb[2],a.limb[3]^b.limb[3]);}
- friend constexpr Bits operator+(Bits a,Bits b) noexcept{unsigned __int128 carry=0;for(int i=0;i<4;++i){carry+=static_cast<unsigned __int128>(a.limb[i])+b.limb[i];a.limb[i]=uint64_t(carry);carry>>=64;}return a;}
+ friend constexpr Bits operator~(Bits a) noexcept{for(int i=0;i<kLimbs;++i)a.limb[i]=~a.limb[i];return a;}
+ friend constexpr Bits operator&(Bits a,Bits b) noexcept{for(int i=0;i<kLimbs;++i)a.limb[i]&=b.limb[i];return a;}
+ friend constexpr Bits operator|(Bits a,Bits b) noexcept{for(int i=0;i<kLimbs;++i)a.limb[i]|=b.limb[i];return a;}
+ friend constexpr Bits operator^(Bits a,Bits b) noexcept{for(int i=0;i<kLimbs;++i)a.limb[i]^=b.limb[i];return a;}
+ friend constexpr Bits operator+(Bits a,Bits b) noexcept{unsigned __int128 carry=0;for(int i=0;i<kLimbs;++i){carry+=static_cast<unsigned __int128>(a.limb[i])+b.limb[i];a.limb[i]=uint64_t(carry);carry>>=64;}return a;}
  friend constexpr Bits operator-(Bits a,Bits b) noexcept{return a+(~b)+Bits(1);}
- friend constexpr Bits operator<<(Bits a,uint64_t n) noexcept{Bits out;if(n>=capacity)return out;unsigned words=unsigned(n/64),shift=unsigned(n%64);for(unsigned i=words;i<4;++i){out.limb[i]=a.limb[i-words]<<shift;if(shift&&i>words)out.limb[i]|=a.limb[i-words-1]>>(64-shift);}return out;}
- friend constexpr Bits operator>>(Bits a,uint64_t n) noexcept{Bits out;if(n>=capacity)return out;unsigned words=unsigned(n/64),shift=unsigned(n%64);for(unsigned i=0;i+words<4;++i){out.limb[i]=a.limb[i+words]>>shift;if(shift&&i+words+1<4)out.limb[i]|=a.limb[i+words+1]<<(64-shift);}return out;}
- friend constexpr Bits operator*(Bits a,Bits b) noexcept{Bits out;for(int i=0;i<4;++i){unsigned __int128 carry=0;for(int j=0;i+j<4;++j){carry+=static_cast<unsigned __int128>(a.limb[i])*b.limb[j]+out.limb[i+j];out.limb[i+j]=uint64_t(carry);carry>>=64;}}return out;}
+ friend constexpr Bits operator<<(Bits a,uint64_t n) noexcept{Bits out;if(n>=capacity)return out;unsigned words=unsigned(n/64),shift=unsigned(n%64);for(unsigned i=words;i<unsigned(kLimbs);++i){out.limb[i]=a.limb[i-words]<<shift;if(shift&&i>words)out.limb[i]|=a.limb[i-words-1]>>(64-shift);}return out;}
+ friend constexpr Bits operator>>(Bits a,uint64_t n) noexcept{Bits out;if(n>=capacity)return out;unsigned words=unsigned(n/64),shift=unsigned(n%64);for(unsigned i=0;i+words<unsigned(kLimbs);++i){out.limb[i]=a.limb[i+words]>>shift;if(shift&&i+words+1<unsigned(kLimbs))out.limb[i]|=a.limb[i+words+1]<<(64-shift);}return out;}
+ friend constexpr Bits operator*(Bits a,Bits b) noexcept{Bits out;for(int i=0;i<kLimbs;++i){unsigned __int128 carry=0;for(int j=0;i+j<kLimbs;++j){carry+=static_cast<unsigned __int128>(a.limb[i])*b.limb[j]+out.limb[i+j];out.limb[i+j]=uint64_t(carry);carry>>=64;}}return out;}
  // Each remainder is bounded by the scanned numerator prefix, so shifting it
  // before the next bit cannot overflow capacity. Small words use native limbs.
  static std::pair<Bits,Bits> divide(Bits numerator,Bits denominator){
   if(!denominator)throw std::domain_error("zero limb divisor");
-  if(!(numerator.limb[2]|numerator.limb[3]|denominator.limb[2]|denominator.limb[3])){unsigned __int128 a=(static_cast<unsigned __int128>(numerator.limb[1])<<64)|numerator.limb[0],b=(static_cast<unsigned __int128>(denominator.limb[1])<<64)|denominator.limb[0];auto q=a/b,r=a%b;Bits quotient{uint64_t(q),uint64_t(q>>64),0,0},remainder{uint64_t(r),uint64_t(r>>64),0,0};return {quotient,remainder};}
-  Bits quotient,remainder;for(int bit=255;bit>=0;--bit){remainder=remainder<<1;remainder.limb[0]|=(numerator.limb[bit/64]>>(bit%64))&1;if(remainder>=denominator){remainder=remainder-denominator;quotient.limb[bit/64]|=uint64_t(1)<<(bit%64);}}return {quotient,remainder};
+  uint64_t hi=0; for(int i=2;i<kLimbs;++i) hi|=numerator.limb[i]|denominator.limb[i];
+  if(!hi){unsigned __int128 a=(static_cast<unsigned __int128>(numerator.limb[1])<<64)|numerator.limb[0],b=(static_cast<unsigned __int128>(denominator.limb[1])<<64)|denominator.limb[0];auto q=a/b,r=a%b;Bits quotient{uint64_t(q),uint64_t(q>>64),0,0},remainder{uint64_t(r),uint64_t(r>>64),0,0};return {quotient,remainder};}
+  Bits quotient,remainder;for(int bit=int(capacity)-1;bit>=0;--bit){remainder=remainder<<1;remainder.limb[0]|=(numerator.limb[bit/64]>>(bit%64))&1;if(remainder>=denominator){remainder=remainder-denominator;quotient.limb[bit/64]|=uint64_t(1)<<(bit%64);}}return {quotient,remainder};
  }
  friend Bits operator/(Bits a,Bits b){return divide(a,b).first;}friend Bits operator%(Bits a,Bits b){return divide(a,b).second;}
  constexpr Bits& operator|=(Bits b) noexcept{return *this=*this|b;}
@@ -70,17 +87,19 @@ inline constexpr uint64_t mask64_unchecked(int w) noexcept {
  return w == 64 ? ~uint64_t(0) : (w == 0 ? uint64_t(0) : (uint64_t(1) << w) - 1);
 }
 inline constexpr Bits mask_unchecked(int w) noexcept {
- if (w <= 64) return Bits(mask64_unchecked(w), 0, 0, 0);
- if (w <= 128) return Bits(~uint64_t(0), mask64_unchecked(w - 64), 0, 0);
- if (w <= 192) return Bits(~uint64_t(0), ~uint64_t(0), mask64_unchecked(w - 128), 0);
- return Bits(~uint64_t(0), ~uint64_t(0), ~uint64_t(0), mask64_unchecked(w - 192));
+ if (w <= 64) return Bits(mask64_unchecked(w));
+ Bits out;
+ const int full = w / 64, rem = w % 64;
+ for (int i = 0; i < full && i < Bits::kLimbs; ++i) out.limb[i] = ~uint64_t(0);
+ if (rem > 0 && full < Bits::kLimbs) out.limb[full] = mask64_unchecked(rem);
+ return out;
 }
 inline constexpr Bits mask(int w) {
- if (w < 0 || w > 256) throw std::invalid_argument("word width");
+ if (w < 0 || w > VSRTL_MAX_WORD_BITS) throw std::invalid_argument("word width");
  return mask_unchecked(w);
 }
 inline constexpr W lit(uint64_t v, int w) noexcept {
- return W{Bits(v, 0, 0, 0), Bits(), Bits(), w};
+ return W{Bits(v), Bits(), Bits(), w};
 }
 inline constexpr W lit(uint64_t vlo, uint64_t vhi, uint64_t xlo, uint64_t xhi, uint64_t zlo, uint64_t zhi, int w) noexcept {
  return W{Bits(vlo, vhi, 0, 0), Bits(xlo, xhi, 0, 0), Bits(zlo, zhi, 0, 0), w};
@@ -88,21 +107,27 @@ inline constexpr W lit(uint64_t vlo, uint64_t vhi, uint64_t xlo, uint64_t xhi, u
 inline constexpr W lit256(uint64_t l0, uint64_t l1, uint64_t l2, uint64_t l3, int w) noexcept {
  return W{Bits(l0, l1, l2, l3), Bits(), Bits(), w};
 }
+inline constexpr W lit512(uint64_t l0, uint64_t l1, uint64_t l2, uint64_t l3, uint64_t l4, uint64_t l5, uint64_t l6, uint64_t l7, int w) noexcept {
+ return W{Bits(l0, l1, l2, l3, l4, l5, l6, l7), Bits(), Bits(), w};
+}
 inline bool has_xz(const W& a) noexcept {
  if (a.w <= 64) [[likely]] return (a.x.limb[0] | a.z.limb[0]) != 0;
- return ((a.x.limb[0] | a.x.limb[1] | a.x.limb[2] | a.x.limb[3] |
-          a.z.limb[0] | a.z.limb[1] | a.z.limb[2] | a.z.limb[3]) != 0);
+ uint64_t any = 0;
+ for (int i = 0; i < Bits::kLimbs; ++i) any |= a.x.limb[i] | a.z.limb[i];
+ return any != 0;
 }
 inline bool has_v(const W& a) noexcept {
  if (a.w <= 64) [[likely]] return a.v.limb[0] != 0;
- return (a.v.limb[0] | a.v.limb[1] | a.v.limb[2] | a.v.limb[3]) != 0;
+ uint64_t any = 0;
+ for (int i = 0; i < Bits::kLimbs; ++i) any |= a.v.limb[i];
+ return any != 0;
 }
 
 // One shared budget covers startup or an entire evaluation, including nested loops.
 inline void execution_step(size_t& remaining){if(!remaining)throw std::runtime_error("RTL execution budget exceeded");--remaining;}
 inline unsigned repeat_count(W count,bool is_signed){if(has_xz(count)||(is_signed&&bool(count.v&(Bits(1)<<(count.w-1)))))return 0;if(count.v>20000)throw std::runtime_error("runtime repeat count exceeds execution budget");return unsigned(count.v);}
 inline W word(const Bits& v,const Bits& x,const Bits& z,int w){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  if(w<=64)[[likely]]{
   const uint64_t m=mask64_unchecked(w);
   const uint64_t zv=z.limb[0]&m;
@@ -114,7 +139,7 @@ inline W word(const Bits& v,const Bits& x,const Bits& z,int w){
  return {v&~(x|z)&m,x&~z&m,z&m,w};
 }
 inline W resize(const W& a,int w){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  if(w<=64)[[likely]]{
   const uint64_t m=mask64_unchecked(w);
   const uint64_t zv=a.z.limb[0]&m;
@@ -126,11 +151,11 @@ inline W resize(const W& a,int w){
  return {a.v&~(a.x|a.z)&m,a.x&~a.z&m,a.z&m,w};
 }
 inline W unknown(int w){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  return {Bits(),mask_unchecked(w),Bits(),w};
 }
 inline W two_state(const W& value){
- if(value.w<0||value.w>256)throw std::invalid_argument("word width");
+ if(value.w<0||value.w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  if(value.w<=64)[[likely]] return W{Bits(value.v.limb[0]&mask64_unchecked(value.w)),Bits(),Bits(),value.w};
  return {value.v&mask_unchecked(value.w),Bits(),Bits(),value.w};
 }
@@ -258,7 +283,7 @@ class ElementType {
  int width_;bool two_state_;
 public:
  ElementType(int width,bool two_state):width_(width),two_state_(two_state){
-  if(width<1||width>256)throw std::invalid_argument("container element width");
+  if(width<1||width>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("container element width");
  }
  int width()const{return width_;}
  bool is_two_state()const{return two_state_;}
@@ -294,7 +319,7 @@ inline W select_bit(const W& a,const W& index) noexcept{
 }
 inline W select_part(const W& a,int left,int right){
  const int w=left-right+1;
- if(right<0||left<right||w<1||w>256)throw std::invalid_argument("part select range");
+ if(right<0||left<right||w<1||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("part select range");
  if(right>=a.w)return W{Bits(),mask_unchecked(w),Bits(),w};
  const int avail=a.w-right;
  const int valid=avail<w?avail:w;
@@ -308,7 +333,7 @@ inline W select_part(const W& a,int left,int right){
  return W{(a.v>>right)&vm,((a.x>>right)&vm)|oob,(a.z>>right)&vm,w};
 }
 inline W select_indexed(const W& a,const W& base,int width,bool descending){
- if(width<1||width>256)throw std::invalid_argument("indexed select width must be1..256");
+ if(width<1||width>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("indexed select width must be1..256");
  if(has_xz(base))return W{Bits(),mask_unchecked(width),Bits(),width};
  if(base.v>2147483647ULL)throw std::out_of_range("known indexed base exceeds qualified range0..INT32_MAX");
  const int64_t lo=descending?int64_t(base.v.limb[0])-(width-1):int64_t(base.v.limb[0]);
@@ -335,7 +360,7 @@ inline W select_indexed(const W& a,const W& base,int width,bool descending){
 }
 
 inline W parse_span(const char* data,size_t size){
- if(size==0||size>256)throw std::runtime_error("invalid word");
+ if(size==0||size>size_t(VSRTL_MAX_WORD_BITS))throw std::runtime_error("invalid word");
  if(size<=64)[[likely]]{
   uint64_t v=0,x=0,z=0;
   for(size_t i=0;i<size;++i){
@@ -373,7 +398,7 @@ inline W logical_not(const W& a) noexcept{int t=truth(a);return t==2?W{Bits(),Bi
 inline W logical_and(const W& a,const W& b) noexcept{int l=truth(a),r=truth(b);return l==0||r==0?W{Bits(),Bits(),Bits(),1}:l==1&&r==1?W{Bits(1),Bits(),Bits(),1}:W{Bits(),Bits(1),Bits(),1};}
 inline W logical_or(const W& a,const W& b) noexcept{int l=truth(a),r=truth(b);return l==1||r==1?W{Bits(1),Bits(),Bits(),1}:l==0&&r==0?W{Bits(),Bits(),Bits(),1}:W{Bits(),Bits(1),Bits(),1};}
 inline W bit_not(const W& a,int w){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  if(w<=64)[[likely]]{
   const uint64_t m=mask64_unchecked(w);
   const uint64_t u=(a.x.limb[0]|a.z.limb[0])&m;
@@ -383,7 +408,7 @@ inline W bit_not(const W& a,int w){
  W ar=resize(a,w);auto u=ar.x|ar.z;return word(~(ar.v|u),u,0,w);
 }
 inline W bit_binary(const W& a,const W& b,int w,int op){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  if(w<=64)[[likely]]{
   const uint64_t m=mask64_unchecked(w);
   const uint64_t au=(a.x.limb[0]|a.z.limb[0])&m;
@@ -406,6 +431,46 @@ inline bool exact(const W& a,const W& b){
  if(a.w<=64&&b.w<=64)[[likely]] return a.v.limb[0]==b.v.limb[0]&&a.x.limb[0]==b.x.limb[0]&&a.z.limb[0]==b.z.limb[0];
  int w=a.w>b.w?a.w:b.w;W ar=resize(a,w),br=resize(b,w);return ar.v==br.v&&ar.x==br.x&&ar.z==br.z;
 }
+inline bool casez_match(const W& a,const W& b){
+ if(a.w<=64&&b.w<=64)[[likely]]{
+  const int w=a.w>b.w?a.w:b.w;
+  const uint64_t care=~(a.z.limb[0]|b.z.limb[0])&mask64_unchecked(w);
+  return (((a.v.limb[0]^b.v.limb[0])|(a.x.limb[0]^b.x.limb[0]))&care)==0;
+ }
+ const int w=a.w>b.w?a.w:b.w;
+ W ar=resize(a,w),br=resize(b,w);
+ const Bits care=~(ar.z|br.z)&mask_unchecked(w);
+ return !(((ar.v^br.v)|(ar.x^br.x))&care);
+}
+inline bool casex_match(const W& a,const W& b){
+ if(a.w<=64&&b.w<=64)[[likely]]{
+  const int w=a.w>b.w?a.w:b.w;
+  const uint64_t care=~(a.x.limb[0]|a.z.limb[0]|b.x.limb[0]|b.z.limb[0])&mask64_unchecked(w);
+  return ((a.v.limb[0]^b.v.limb[0])&care)==0;
+ }
+ const int w=a.w>b.w?a.w:b.w;
+ W ar=resize(a,w),br=resize(b,w);
+ const Bits care=~(ar.x|ar.z|br.x|br.z)&mask_unchecked(w);
+ return !((ar.v^br.v)&care);
+}
+inline W wildeq(const W& a,const W& b){
+ if(a.w<=64&&b.w<=64)[[likely]]{
+  const int w=a.w>b.w?a.w:b.w;
+  const uint64_t care=~(b.x.limb[0]|b.z.limb[0])&mask64_unchecked(w);
+  const uint64_t au=(a.x.limb[0]|a.z.limb[0])&care;
+  const uint64_t known=care&~au;
+  if((a.v.limb[0]^b.v.limb[0])&known)return W{Bits(),Bits(),Bits(),1};
+  return au?W{Bits(),Bits(1),Bits(),1}:W{Bits(1),Bits(),Bits(),1};
+ }
+ const int w=a.w>b.w?a.w:b.w;
+ W ar=resize(a,w),br=resize(b,w);
+ const Bits care=~(br.x|br.z)&mask_unchecked(w);
+ const Bits au=(ar.x|ar.z)&care;
+ const Bits known=care&~au;
+ if((ar.v^br.v)&known)return W{Bits(),Bits(),Bits(),1};
+ return au?unknown(1):W{Bits(1),Bits(),Bits(),1};
+}
+inline W wildneq(const W& a,const W& b){return logical_not(wildeq(a,b));}
 inline W equal(const W& a,const W& b){
  if(a.w<=64&&b.w<=64)[[likely]]{
   const uint64_t u=a.x.limb[0]|a.z.limb[0]|b.x.limb[0]|b.z.limb[0];
@@ -424,7 +489,7 @@ inline W compare(const W& a,const W& b,int op) noexcept{
  bool v=op==0?a.v<b.v:op==1?a.v<=b.v:op==2?a.v>b.v:a.v>=b.v;return W{uint64_t(v),0,0,1};
 }
 inline W shift(const W& a,const W& amount,int w,bool right){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  if(has_xz(amount))return W{Bits(),mask_unchecked(w),Bits(),w};
  if(amount.v>=uint64_t(w))return W{Bits(),Bits(),Bits(),w};
  const unsigned n=unsigned(amount.v.limb[0]);
@@ -450,11 +515,14 @@ inline W reduce(const W& a,int op){
  auto u=a.x|a.z;
  if(op<2)r=(~(a.v|u)&mask_unchecked(a.w))?W{0,0,0,1}:u?unknown(1):W{1,0,0,1};
  else if(op<4)r=a.v?W{1,0,0,1}:u?unknown(1):W{0,0,0,1};
- else r=u?unknown(1):W{uint64_t((std::popcount(a.v.limb[0])+std::popcount(a.v.limb[1])+std::popcount(a.v.limb[2])+std::popcount(a.v.limb[3]))&1),0,0,1};
+ else{
+  int pc=0;for(int i=0;i<Bits::kLimbs;++i)pc+=std::popcount(a.v.limb[i]);
+  r=u?unknown(1):W{uint64_t(pc&1),0,0,1};
+ }
  return op%2?logical_not(r):r;
 }
 inline W product(const W& a,const W& b,int w,int op){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  if(w<=64)[[likely]]{
   const uint64_t m=mask64_unchecked(w);
   const uint64_t ax=(a.x.limb[0]|a.z.limb[0])&m;
@@ -468,7 +536,7 @@ inline W product(const W& a,const W& b,int w,int op){
  return word(op==0?ar.v*br.v:op==1?ar.v/br.v:ar.v%br.v,0,0,w);
 }
 inline W conditional(const W& condition,const W& a,const W& b,int w){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  const int t=truth(condition);
  if(t==1)return a.w==w?a:resize(a,w);
  if(t==0)return b.w==w?b:resize(b,w);
@@ -482,7 +550,7 @@ inline W conditional(const W& condition,const W& a,const W& b,int w){
  auto same=~((ar.v^br.v)|(ar.x^br.x)|(ar.z^br.z));return word(ar.v&same,(ar.x&same)|~same,ar.z&same,w);
 }
 inline W arithmetic(const W& a,const W& b,int w,bool subtract){
- if(w<0||w>256)throw std::invalid_argument("word width");
+ if(w<0||w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("word width");
  if(has_xz(a)||has_xz(b))return W{Bits(),mask_unchecked(w),Bits(),w};
  if(w<=64)[[likely]]{
   const uint64_t m=mask64_unchecked(w);
@@ -492,7 +560,7 @@ inline W arithmetic(const W& a,const W& b,int w,bool subtract){
 }
 inline W concat(const W& a,const W& b){
  const int total=a.w+b.w;
- if(total>256)throw std::runtime_error("concat width");
+ if(total>VSRTL_MAX_WORD_BITS)throw std::runtime_error("concat width");
  if(total<=64)[[likely]]{
   return W{Bits((a.v.limb[0]<<b.w)|b.v.limb[0]),
            Bits((a.x.limb[0]<<b.w)|b.x.limb[0]),
@@ -531,7 +599,7 @@ struct MemLog {
 // only after all validation/allocation succeeds; model snapshots own the vector.
 inline void dynamic_allocate(std::vector<W>& memory,W count,int width,bool is_two_state,bool preserve,bool is_signed){
  ElementType element(width,is_two_state);
- if(count.w<1||count.w>256)throw std::invalid_argument("dynamic array count width");
+ if(count.w<1||count.w>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("dynamic array count width");
  if(has_xz(count)||(is_signed&&bool(count.v&(Bits(1)<<(count.w-1)))))throw std::invalid_argument("dynamic array count must be known and nonnegative");
  if(count.v>container_capacity)throw std::length_error("dynamic array capacity exceeds256");
  std::vector<W> next(size_t(count.v),element.initial());
@@ -602,7 +670,7 @@ inline W assoc_traverse(const AssociativeStorage& memory,W& key,int key_width,bo
 }
 namespace vsrtl {
 inline W deposit_indexed(W before,const W& base,int width,bool descending,const W& value){
- if(width<1||width>256)throw std::invalid_argument("selected write width must be1..256");
+ if(width<1||width>VSRTL_MAX_WORD_BITS)throw std::invalid_argument("selected write width must be1..256");
  if(has_xz(base))return before;
  if(base.v>2147483647ULL)throw std::out_of_range("known selected write base exceeds qualified range0..INT32_MAX");
  W val=value.w==width?value:resize(value,width);
@@ -778,6 +846,25 @@ inline constexpr W64 bbin(W64 a, W64 b, int w, int op) noexcept {
 inline constexpr bool exact(W64 a, W64 b) noexcept {
  return a.v == b.v && a.x == b.x && a.z == b.z;
 }
+inline constexpr bool casez_match(W64 a, W64 b) noexcept {
+ const int w = a.w > b.w ? a.w : b.w;
+ const uint64_t care = ~(a.z | b.z) & mask64_unchecked(w);
+ return (((a.v ^ b.v) | (a.x ^ b.x)) & care) == 0;
+}
+inline constexpr bool casex_match(W64 a, W64 b) noexcept {
+ const int w = a.w > b.w ? a.w : b.w;
+ const uint64_t care = ~(a.x | a.z | b.x | b.z) & mask64_unchecked(w);
+ return ((a.v ^ b.v) & care) == 0;
+}
+inline constexpr W64 wildeq(W64 a, W64 b) noexcept {
+ const int w = a.w > b.w ? a.w : b.w;
+ const uint64_t care = ~(b.x | b.z) & mask64_unchecked(w);
+ const uint64_t au = (a.x | a.z) & care;
+ const uint64_t known = care & ~au;
+ if ((a.v ^ b.v) & known) return W64{0, 0, 0, 1};
+ return au ? W64{0, 1, 0, 1} : W64{1, 0, 0, 1};
+}
+inline constexpr W64 wildneq(W64 a, W64 b) noexcept { return lnot(wildeq(a, b)); }
 inline constexpr W64 eq(W64 a, W64 b) noexcept {
  const uint64_t u = a.x | a.z | b.x | b.z;
  if ((a.v ^ b.v) & ~u) return W64{0, 0, 0, 1};
@@ -980,6 +1067,10 @@ inline constexpr uint64_t bbin(uint64_t a, uint64_t b, int w, int op) noexcept {
  return (op == 0 ? (a & b) : op == 1 ? (a | b) : (a ^ b)) & mask64_unchecked(w);
 }
 inline constexpr uint64_t eq(uint64_t a, uint64_t b) noexcept { return a == b ? 1ULL : 0ULL; }
+inline constexpr uint64_t wildeq(uint64_t a, uint64_t b) noexcept { return a == b ? 1ULL : 0ULL; }
+inline constexpr uint64_t wildneq(uint64_t a, uint64_t b) noexcept { return a != b ? 1ULL : 0ULL; }
+inline constexpr bool casez_match(uint64_t a, uint64_t b) noexcept { return a == b; }
+inline constexpr bool casex_match(uint64_t a, uint64_t b) noexcept { return a == b; }
 inline constexpr uint64_t cmp(uint64_t a, uint64_t b, int op) noexcept {
  return (op == 0 ? a < b : op == 1 ? a <= b : op == 2 ? a > b : a >= b) ? 1ULL : 0ULL;
 }
