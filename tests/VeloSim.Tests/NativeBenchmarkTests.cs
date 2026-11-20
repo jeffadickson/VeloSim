@@ -36,8 +36,8 @@ public class NativeBenchmarkTests
     [Test] public void BenchmarkCancellationPreservesPartialWorkerOutcomes()
     {
         using var canceled = new CancellationTokenSource(); canceled.Cancel(); Assert.Throws<OperationCanceledException>(() => NativeBenchmark.Run(new(2, 8, 8, 1, 0, [1]), canceled.Token));
-        using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
-        var report = NativeBenchmark.Run(new(2, 100_000, 8, 1, 0, [2, 4]), deadline.Token);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(1));
+        var report = NativeBenchmark.Run(new(10, 100_000, 8, 1, 0, [2, 4]), deadline.Token);
         Assert.That(report.Status, Is.EqualTo("canceled")); Assert.That(report.Cells.Count, Is.EqualTo(2)); Assert.That(report.Cells.All(c => c.Status == "canceled"), Is.True);
     }
 }

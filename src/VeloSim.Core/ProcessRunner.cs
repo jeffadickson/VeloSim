@@ -71,12 +71,20 @@ public sealed partial class ProcessRunner : IProcessRunner
     }
     private static async Task DrainAsync(StreamReader reader, StringBuilder destination, int maximum, Action exceeded, CancellationToken cancellationToken)
     {
-        var buffer = new char[4096]; int count;
-        while ((count = await reader.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false)) != 0)
+        var buffer = System.Buffers.ArrayPool<char>.Shared.Rent(4096);
+        try
         {
-            int available = maximum - destination.Length;
-            destination.Append(buffer, 0, Math.Min(count, available));
-            if (count > available) { exceeded(); return; }
+            int count;
+            while ((count = await reader.ReadAsync(buffer.AsMemory(0, 4096), cancellationToken).ConfigureAwait(false)) != 0)
+            {
+                int available = maximum - destination.Length;
+                destination.Append(buffer, 0, Math.Min(count, available));
+                if (count > available) { exceeded(); return; }
+            }
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<char>.Shared.Return(buffer);
         }
     }
 }

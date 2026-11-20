@@ -107,7 +107,7 @@ public static class BuildDiagnostics
         using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
         {
             writer.WriteStartObject(); writer.WriteString("format", "velosim.coverage.gate.v1"); writer.WriteString("report", Path.GetFullPath(path));
-            writer.WriteString("sha256", Convert.ToHexString(SHA256.HashData(contents)).ToLowerInvariant());
+            writer.WriteString("sha256", Convert.ToHexStringLower(SHA256.HashData(contents)));
             var passed = measurements[0].Percent >= managedMinimum && measurements[1].Percent >= nativeMinimum && (managedBranchMinimum == 0 || measurements[0].BranchPercent >= managedBranchMinimum) && (nativeBranchMinimum == 0 || measurements[1].BranchPercent >= nativeBranchMinimum);
             writer.WriteString("status", passed ? "pass" : "fail"); writer.WriteStartArray("measurements");
             foreach (var measurement in measurements)

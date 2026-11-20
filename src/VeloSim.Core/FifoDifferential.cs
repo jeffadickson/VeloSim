@@ -138,17 +138,22 @@ public sealed class FifoDifferential(IProcessRunner? runner = null)
         var artifacts = new List<FileFingerprint>(sourceHashes) { ArtifactMetadata.Fingerprint(elaboration.UhdmPath), ArtifactMetadata.Fingerprint(irPath), ArtifactMetadata.Fingerprint(stimulus), ArtifactMetadata.Fingerprint(tb) }; artifacts.AddRange(compiledInputs);
         foreach (var file in new[] { compiled, Path.Combine(nativeDir, "build", "velosim_rtl") }) if (File.Exists(file)) artifacts.Add(ArtifactMetadata.Fingerprint(file));
         var tools = recording.Commands.Select(c => ArtifactMetadata.ResolveExecutable(c.Executable, c.WorkingDirectory)).OfType<string>().Distinct().Select(ArtifactMetadata.Fingerprint).Concat(compilerTools).DistinctBy(f => f.Path).ToArray();
-        var report = Path.Combine(output, "fifo-report.json"); using var stream = new MemoryStream(); using (var w = new Utf8JsonWriter(stream, new() { Indented = true }))
+        var report = Path.Combine(output, "fifo-report.json");
+        using (var file = new FileStream(report, FileMode.Create, FileAccess.Write))
         {
-            w.WriteStartObject(); w.WriteString("schema", "velosim.fifo.differential.v1"); w.WriteString("status", status); w.WriteString("source_mode", "actual_RTL_Surelog_UHDM_structural_IR_native_Cpp_compilation"); w.WriteString("execution_scope", "one_posedge_process_NBA_unpacked_memory_acyclic_continuous_logic"); w.WriteNumber("effective_sequential_processes", 1); w.WriteString("worker_scope", "requested_configurations_single_process_executes_serially_no_parallel_speedup_claim"); w.WriteNumber("width", width); w.WriteNumber("depth", depth); w.WriteNumber("cycles", drives.Count); w.WriteNumber("seed", seed); w.WriteNumber("build_jobs", jobs);
-            w.WriteStartObject("scenario_coverage"); foreach (var (scenario, count) in FifoStimulus.Coverage(drives, depth)) w.WriteNumber(scenario, count); w.WriteEndObject();
-            w.WriteStartArray("stimulus"); foreach (var d in drives) { w.WriteStartObject(); w.WriteBoolean("rst_n", d.ResetN); w.WriteBoolean("push", d.Push); w.WriteBoolean("pop", d.Pop); w.WriteString("din", FourStateCodec.FormatBinary(d.Data)); w.WriteString("phase", d.Phase); w.WriteEndObject(); } w.WriteEndArray();
-            w.WriteStartObject("traces"); foreach (var (engine, trace) in traces) { w.WriteStartArray(engine); foreach (var row in trace) { w.WriteStartObject(); foreach (var (signal, value) in row) w.WriteString(signal, value); w.WriteEndObject(); } w.WriteEndArray(); } w.WriteEndObject();
-            w.WriteStartObject("errors"); foreach (var (engine, message) in errors) w.WriteString(engine, message); w.WriteEndObject();
-            w.WriteStartArray("differences"); foreach (var d in differences.Take(1000)) { w.WriteStartObject(); w.WriteString("engine", d.Engine); w.WriteNumber("cycle", d.Cycle); w.WriteString("signal", d.Signal); w.WriteString("expected", d.Expected); w.WriteString("actual", d.Actual); w.WriteEndObject(); } w.WriteEndArray(); w.WriteNumber("total_differences", differences.Count);
-            new ArtifactMetadata(artifacts, null, recording.Commands.ToArray(), versions, tools).Write(w); w.WriteEndObject();
+            using (var w = new Utf8JsonWriter(file, new() { Indented = true }))
+            {
+                w.WriteStartObject(); w.WriteString("schema", "velosim.fifo.differential.v1"); w.WriteString("status", status); w.WriteString("source_mode", "actual_RTL_Surelog_UHDM_structural_IR_native_Cpp_compilation"); w.WriteString("execution_scope", "one_posedge_process_NBA_unpacked_memory_acyclic_continuous_logic"); w.WriteNumber("effective_sequential_processes", 1); w.WriteString("worker_scope", "requested_configurations_single_process_executes_serially_no_parallel_speedup_claim"); w.WriteNumber("width", width); w.WriteNumber("depth", depth); w.WriteNumber("cycles", drives.Count); w.WriteNumber("seed", seed); w.WriteNumber("build_jobs", jobs);
+                w.WriteStartObject("scenario_coverage"); foreach (var (scenario, count) in FifoStimulus.Coverage(drives, depth)) w.WriteNumber(scenario, count); w.WriteEndObject();
+                w.WriteStartArray("stimulus"); foreach (var d in drives) { w.WriteStartObject(); w.WriteBoolean("rst_n", d.ResetN); w.WriteBoolean("push", d.Push); w.WriteBoolean("pop", d.Pop); w.WriteString("din", FourStateCodec.FormatBinary(d.Data)); w.WriteString("phase", d.Phase); w.WriteEndObject(); } w.WriteEndArray();
+                w.WriteStartObject("traces"); foreach (var (engine, trace) in traces) { w.WriteStartArray(engine); foreach (var row in trace) { w.WriteStartObject(); foreach (var (signal, value) in row) w.WriteString(signal, value); w.WriteEndObject(); } w.WriteEndArray(); } w.WriteEndObject();
+                w.WriteStartObject("errors"); foreach (var (engine, message) in errors) w.WriteString(engine, message); w.WriteEndObject();
+                w.WriteStartArray("differences"); foreach (var d in differences.Take(1000)) { w.WriteStartObject(); w.WriteString("engine", d.Engine); w.WriteNumber("cycle", d.Cycle); w.WriteString("signal", d.Signal); w.WriteString("expected", d.Expected); w.WriteString("actual", d.Actual); w.WriteEndObject(); } w.WriteEndArray(); w.WriteNumber("total_differences", differences.Count);
+                new ArtifactMetadata(artifacts, null, recording.Commands.ToArray(), versions, tools).Write(w); w.WriteEndObject();
+            }
+            file.WriteByte((byte)'\n');
         }
-        await File.WriteAllTextAsync(report, Encoding.UTF8.GetString(stream.ToArray()) + "\n", cancellationToken).ConfigureAwait(false); return new(status, report, drives.Count, width, depth);
+        return new(status, report, drives.Count, width, depth);
     }
     private static string FindRuntime()
     {

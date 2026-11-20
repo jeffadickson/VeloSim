@@ -1,5 +1,6 @@
-using Microsoft.Win32.SafeHandles;
+using System.Buffers;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace VeloSim;
 
@@ -15,15 +16,16 @@ internal static partial class NativeMethods
 {
     [LibraryImport("velosim_scheduler", EntryPoint = "vs_sched_new")] internal static partial SchedulerHandle SchedulerNew(uint signalCount);
     [LibraryImport("velosim_scheduler", EntryPoint = "vs_sched_free")] internal static partial void SchedulerFree(nint handle);
-    [LibraryImport("velosim_scheduler", EntryPoint = "vs_sched_get")] internal static partial int SchedulerGet(SchedulerHandle handle, uint id);
-    [LibraryImport("velosim_scheduler", EntryPoint = "vs_sched_ticks")] internal static partial ulong SchedulerTicks(SchedulerHandle handle);
+    [LibraryImport("velosim_scheduler", EntryPoint = "vs_sched_get"), SuppressGCTransition] internal static partial int SchedulerGet(SchedulerHandle handle, uint id);
+    [LibraryImport("velosim_scheduler", EntryPoint = "vs_sched_ticks"), SuppressGCTransition] internal static partial ulong SchedulerTicks(SchedulerHandle handle);
     [LibraryImport("velosim_scheduler", EntryPoint = "vs_sched_add")] internal static partial int SchedulerAdd(SchedulerHandle handle, uint clock, uint dst, uint a, uint b, byte edge, byte operation);
     [LibraryImport("velosim_scheduler", EntryPoint = "vs_sched_drive")] internal static unsafe partial int SchedulerDrive(SchedulerHandle handle, uint* ids, byte* values, uint count, uint workers);
 }
 public sealed class ScalarScheduler : IDisposable
 {
+    private const int StackDriveLimit = 64;
     private readonly SchedulerHandle handle;
-    private readonly object gate = new();
+    private readonly Lock gate = new();
     private readonly HashSet<int> writers = [];
     public int SignalCount { get; }
     public ScalarScheduler(int signalCount)
@@ -58,7 +60,7 @@ public sealed class ScalarScheduler : IDisposable
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(handle.IsClosed, this);
-            foreach (var id in new[] { process.Clock, process.Destination, process.A, process.B }) ValidateSignal(id);
+            ValidateSignal(process.Clock); ValidateSignal(process.Destination); ValidateSignal(process.A); ValidateSignal(process.B);
             if (!Enum.IsDefined(process.Edge) || !Enum.IsDefined(process.Operation)) throw new ArgumentException("Invalid scheduler edge or operation.");
             if (writers.Contains(process.Destination)) throw new ArgumentException("Multiple scheduler writers.");
             var result = NativeMethods.SchedulerAdd(handle, (uint)process.Clock, (uint)process.Destination, (uint)process.A, (uint)process.B, (byte)process.Edge, (byte)process.Operation);
@@ -73,17 +75,44 @@ public sealed class ScalarScheduler : IDisposable
         lock (gate)
         {
             ObjectDisposedException.ThrowIf(handle.IsClosed, this);
-            var ids = new uint[updates.Count]; var values = new byte[updates.Count]; int index = 0;
-            foreach (var (id, value) in updates)
+            int count = updates.Count;
+            if (count <= StackDriveLimit)
             {
-                ValidateSignal(id); if (!Enum.IsDefined(value)) throw new ArgumentException("Invalid scalar value.");
-                ids[index] = (uint)id; values[index++] = (byte)value;
-            }
-            fixed (uint* ip = ids) fixed (byte* vp = values)
-            {
-                var result = NativeMethods.SchedulerDrive(handle, ip, vp, (uint)index, (uint)workers);
+                uint* ids = stackalloc uint[count];
+                byte* values = stackalloc byte[count];
+                int index = 0;
+                foreach (var (id, value) in updates)
+                {
+                    ValidateSignal(id); if (!Enum.IsDefined(value)) throw new ArgumentException("Invalid scalar value.");
+                    ids[index] = (uint)id; values[index++] = (byte)value;
+                }
+                var result = NativeMethods.SchedulerDrive(handle, ids, values, (uint)index, (uint)workers);
                 if (result < 0) throw new InvalidOperationException("Native scheduler drive failed: " + result);
                 return result;
+            }
+            uint[]? pooledIds = null;
+            byte[]? pooledValues = null;
+            try
+            {
+                pooledIds = ArrayPool<uint>.Shared.Rent(count);
+                pooledValues = ArrayPool<byte>.Shared.Rent(count);
+                int index = 0;
+                foreach (var (id, value) in updates)
+                {
+                    ValidateSignal(id); if (!Enum.IsDefined(value)) throw new ArgumentException("Invalid scalar value.");
+                    pooledIds[index] = (uint)id; pooledValues[index++] = (byte)value;
+                }
+                fixed (uint* ip = pooledIds) fixed (byte* vp = pooledValues)
+                {
+                    var result = NativeMethods.SchedulerDrive(handle, ip, vp, (uint)index, (uint)workers);
+                    if (result < 0) throw new InvalidOperationException("Native scheduler drive failed: " + result);
+                    return result;
+                }
+            }
+            finally
+            {
+                if (pooledIds is not null) ArrayPool<uint>.Shared.Return(pooledIds);
+                if (pooledValues is not null) ArrayPool<byte>.Shared.Return(pooledValues);
             }
         }
     }
