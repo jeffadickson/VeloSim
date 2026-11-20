@@ -1,0 +1,6121 @@
+{
+  "schema": "velosim.svint.simd.timing-report.v1",
+  "date": "2026-10-26",
+  "base_commit": "fa7cd2fbd962dde1f95ffb29e6b3e46a01a5cae1",
+  "dirty_sources": [
+    {
+      "path": "tests/native/svint_simd_benchmark.cpp",
+      "sha256": "68004f917da08b7c6c746a1e73264ba6d816544e6824a1e768821e5a2455576b"
+    },
+    {
+      "path": "native/numeric/svint_simd.h",
+      "sha256": "1c85b01e7d9717c7efcd06d10060c29b944dcf680d8299f8680c625fe1f3cbfc"
+    },
+    {
+      "path": "cmake/SVIntQualification.cmake",
+      "sha256": "3fc2e9a136f8a493db5efabb8188bb9d3142f5a2abfda39c15b992fa62750fab"
+    }
+  ],
+  "cpu": "Intel Core i5-10505 @ 3.20GHz",
+  "platform": "WSL2 Ubuntu 24.04 x86_64",
+  "affinity_cpu": 0,
+  "compiler": "Clang 18.1.3",
+  "build": "Release -O3 -DNDEBUG; coverage OFF; sanitizers OFF; Ninja -j4",
+  "slang_commit": "42710c788ce76cd08ce2080773e0b8286c428a05",
+  "binary_sha256": "2c92efbf23210faaa3fe24f86a14a2f530bece7595518af24efd023b46329f88",
+  "method": "3 independent runs; 2 warmups and 7 measured batches per case/run; backend order rotates; normalized ns/op medians across 21 batches. Includes allocation, copy, destruction and identical full result checksum. Excludes input parsing.",
+  "limitations": [
+    "Microbenchmark, not simulator throughput",
+    "Single CPU and Linux compiler; no Windows or non-x86 performance qualification",
+    "Scalar adapter may be autovectorized; unchanged upstream retains its existing optimizations",
+    "Coverage intentionally disabled for timing; separate prior SIMD qualification 74/75 lines,56/58 branches; new timing harness not coverage-measured"
+  ],
+  "summary": [
+    {
+      "width": 127,
+      "workload": "known",
+      "op": "and",
+      "upstream_ns": 28.053061826283543,
+      "scalar_ns": 44.3112184390093,
+      "avx_ns": 42.8304173893863,
+      "speedup_upstream": 0.6549798843014615,
+      "speedup_scalar": 1.0345735843795432
+    },
+    {
+      "width": 127,
+      "workload": "known",
+      "op": "or",
+      "upstream_ns": 26.290918370877886,
+      "scalar_ns": 44.500181667185714,
+      "avx_ns": 43.70487179051471,
+      "speedup_upstream": 0.6015557830004622,
+      "speedup_scalar": 1.0181972819982876
+    },
+    {
+      "width": 127,
+      "workload": "known",
+      "op": "xor",
+      "upstream_ns": 26.291660095128208,
+      "scalar_ns": 44.21837983215599,
+      "avx_ns": 43.137595564004016,
+      "speedup_upstream": 0.6094836708299795,
+      "speedup_scalar": 1.0250543465397461
+    },
+    {
+      "width": 127,
+      "workload": "mixed_left",
+      "op": "and",
+      "upstream_ns": 32.085002406031116,
+      "scalar_ns": 47.191482180713614,
+      "avx_ns": 43.79659947601989,
+      "speedup_upstream": 0.7325911780799039,
+      "speedup_scalar": 1.0775147556045426
+    },
+    {
+      "width": 127,
+      "workload": "mixed_left",
+      "op": "or",
+      "upstream_ns": 33.041077689198545,
+      "scalar_ns": 45.95515599380068,
+      "avx_ns": 43.919018741138764,
+      "speedup_upstream": 0.7523182128440657,
+      "speedup_scalar": 1.046361173610527
+    },
+    {
+      "width": 127,
+      "workload": "mixed_left",
+      "op": "xor",
+      "upstream_ns": 26.252560083594567,
+      "scalar_ns": 43.628300243817485,
+      "avx_ns": 42.74604253277902,
+      "speedup_upstream": 0.6141518261828162,
+      "speedup_scalar": 1.0206395179240726
+    },
+    {
+      "width": 127,
+      "workload": "mixed_both",
+      "op": "and",
+      "upstream_ns": 32.30236641221374,
+      "scalar_ns": 46.3865975115182,
+      "avx_ns": 43.9676881134133,
+      "speedup_upstream": 0.7346842146644322,
+      "speedup_scalar": 1.0550156149185146
+    },
+    {
+      "width": 127,
+      "workload": "mixed_both",
+      "op": "or",
+      "upstream_ns": 32.88422875772601,
+      "scalar_ns": 45.38180624419842,
+      "avx_ns": 43.72865395788343,
+      "speedup_upstream": 0.7520064255670421,
+      "speedup_scalar": 1.0378047832871142
+    },
+    {
+      "width": 127,
+      "workload": "mixed_both",
+      "op": "xor",
+      "upstream_ns": 27.968227394646362,
+      "scalar_ns": 43.7167625277936,
+      "avx_ns": 42.86688469209897,
+      "speedup_upstream": 0.6524436659098145,
+      "speedup_scalar": 1.0198259762004882
+    },
+    {
+      "width": 128,
+      "workload": "known",
+      "op": "and",
+      "upstream_ns": 26.698711264622503,
+      "scalar_ns": 43.000526911517895,
+      "avx_ns": 42.141671282870085,
+      "speedup_upstream": 0.6335465692713308,
+      "speedup_scalar": 1.0203801985659957
+    },
+    {
+      "width": 128,
+      "workload": "known",
+      "op": "or",
+      "upstream_ns": 25.214296875,
+      "scalar_ns": 42.9496171875,
+      "avx_ns": 42.38974818981122,
+      "speedup_upstream": 0.5948206335667853,
+      "speedup_scalar": 1.0132076509438515
+    },
+    {
+      "width": 128,
+      "workload": "known",
+      "op": "xor",
+      "upstream_ns": 24.26711933192851,
+      "scalar_ns": 42.60330770821842,
+      "avx_ns": 41.3114054743519,
+      "speedup_upstream": 0.5874193592129103,
+      "speedup_scalar": 1.0312722895537552
+    },
+    {
+      "width": 128,
+      "workload": "mixed_left",
+      "op": "and",
+      "upstream_ns": 30.15416324944965,
+      "scalar_ns": 44.55142027083112,
+      "avx_ns": 42.12389390080718,
+      "speedup_upstream": 0.7158446301392813,
+      "speedup_scalar": 1.057628251930846
+    },
+    {
+      "width": 128,
+      "workload": "mixed_left",
+      "op": "or",
+      "upstream_ns": 29.89137472482593,
+      "scalar_ns": 45.273351196820435,
+      "avx_ns": 42.91381208892592,
+      "speedup_upstream": 0.6965443820950952,
+      "speedup_scalar": 1.0549832092055835
+    },
+    {
+      "width": 128,
+      "workload": "mixed_left",
+      "op": "xor",
+      "upstream_ns": 25.801766357581297,
+      "scalar_ns": 42.956143071699096,
+      "avx_ns": 42.53500774401635,
+      "speedup_upstream": 0.6066007208194522,
+      "speedup_scalar": 1.0099009110382022
+    },
+    {
+      "width": 128,
+      "workload": "mixed_both",
+      "op": "and",
+      "upstream_ns": 30.50735406226812,
+      "scalar_ns": 44.93399440680636,
+      "avx_ns": 42.9754017544038,
+      "speedup_upstream": 0.7098794383962206,
+      "speedup_scalar": 1.0455747374648303
+    },
+    {
+      "width": 128,
+      "workload": "mixed_both",
+      "op": "or",
+      "upstream_ns": 31.90235575281666,
+      "scalar_ns": 44.9136010583817,
+      "avx_ns": 43.1373733618366,
+      "speedup_upstream": 0.7395525797368205,
+      "speedup_scalar": 1.0411760744365701
+    },
+    {
+      "width": 128,
+      "workload": "mixed_both",
+      "op": "xor",
+      "upstream_ns": 26.410981322573104,
+      "scalar_ns": 42.61168981481482,
+      "avx_ns": 42.26001602564103,
+      "speedup_upstream": 0.624963826481949,
+      "speedup_scalar": 1.0083216671986213
+    },
+    {
+      "width": 256,
+      "workload": "known",
+      "op": "and",
+      "upstream_ns": 26.38871626613359,
+      "scalar_ns": 45.01380515064404,
+      "avx_ns": 46.05599226640209,
+      "speedup_upstream": 0.5729703121690028,
+      "speedup_scalar": 0.9773713025282417
+    },
+    {
+      "width": 256,
+      "workload": "known",
+      "op": "or",
+      "upstream_ns": 26.541666313334748,
+      "scalar_ns": 46.236548653805386,
+      "avx_ns": 47.11681562732751,
+      "speedup_upstream": 0.5633162165131702,
+      "speedup_scalar": 0.9813173500415513
+    },
+    {
+      "width": 256,
+      "workload": "known",
+      "op": "xor",
+      "upstream_ns": 25.859521107743575,
+      "scalar_ns": 46.25219406622246,
+      "avx_ns": 43.57036153923498,
+      "speedup_upstream": 0.5935117404168693,
+      "speedup_scalar": 1.0615517620750632
+    },
+    {
+      "width": 256,
+      "workload": "mixed_left",
+      "op": "and",
+      "upstream_ns": 33.627952448928184,
+      "scalar_ns": 48.35100312902632,
+      "avx_ns": 43.70085049722299,
+      "speedup_upstream": 0.7695033864630416,
+      "speedup_scalar": 1.106408744427041
+    },
+    {
+      "width": 256,
+      "workload": "mixed_left",
+      "op": "or",
+      "upstream_ns": 33.553571827337485,
+      "scalar_ns": 49.69463608815735,
+      "avx_ns": 43.591389205243296,
+      "speedup_upstream": 0.7697293534132554,
+      "speedup_scalar": 1.1400103780629212
+    },
+    {
+      "width": 256,
+      "workload": "mixed_left",
+      "op": "xor",
+      "upstream_ns": 27.9802217669037,
+      "scalar_ns": 46.1881523442208,
+      "avx_ns": 43.81258286127516,
+      "speedup_upstream": 0.6386343817139964,
+      "speedup_scalar": 1.0542211695317636
+    },
+    {
+      "width": 256,
+      "workload": "mixed_both",
+      "op": "and",
+      "upstream_ns": 35.287748985178894,
+      "scalar_ns": 50.30684730051917,
+      "avx_ns": 46.45576666255177,
+      "speedup_upstream": 0.7595988941804405,
+      "speedup_scalar": 1.0828977953574874
+    },
+    {
+      "width": 256,
+      "workload": "mixed_both",
+      "op": "or",
+      "upstream_ns": 35.720803287035395,
+      "scalar_ns": 50.50366281362193,
+      "avx_ns": 45.9301268160989,
+      "speedup_upstream": 0.7777205456030866,
+      "speedup_scalar": 1.0995759496993152
+    },
+    {
+      "width": 256,
+      "workload": "mixed_both",
+      "op": "xor",
+      "upstream_ns": 30.996221649431178,
+      "scalar_ns": 46.99262323477269,
+      "avx_ns": 44.83766022048785,
+      "speedup_upstream": 0.691298821058195,
+      "speedup_scalar": 1.0480614511035562
+    },
+    {
+      "width": 1024,
+      "workload": "known",
+      "op": "and",
+      "upstream_ns": 41.99528070271155,
+      "scalar_ns": 58.63265277207101,
+      "avx_ns": 63.82152599705385,
+      "speedup_upstream": 0.6580112281340648,
+      "speedup_scalar": 0.9186971300996098
+    },
+    {
+      "width": 1024,
+      "workload": "known",
+      "op": "or",
+      "upstream_ns": 42.102428428205414,
+      "scalar_ns": 58.09510391466901,
+      "avx_ns": 63.06820431053442,
+      "speedup_upstream": 0.6675697982600236,
+      "speedup_scalar": 0.9211472650881429
+    },
+    {
+      "width": 1024,
+      "workload": "known",
+      "op": "xor",
+      "upstream_ns": 40.920051875768344,
+      "scalar_ns": 71.48992742127946,
+      "avx_ns": 56.486923195709856,
+      "speedup_upstream": 0.7244163703870526,
+      "speedup_scalar": 1.2656013706674871
+    },
+    {
+      "width": 1024,
+      "workload": "mixed_left",
+      "op": "and",
+      "upstream_ns": 73.67447094495327,
+      "scalar_ns": 95.03053564921657,
+      "avx_ns": 74.30274139601762,
+      "speedup_upstream": 0.9915444512643778,
+      "speedup_scalar": 1.2789640579036547
+    },
+    {
+      "width": 1024,
+      "workload": "mixed_left",
+      "op": "or",
+      "upstream_ns": 73.55506447461084,
+      "scalar_ns": 97.68408654896913,
+      "avx_ns": 76.12423983276321,
+      "speedup_upstream": 0.9662502329902201,
+      "speedup_scalar": 1.2832192053880682
+    },
+    {
+      "width": 1024,
+      "workload": "mixed_left",
+      "op": "xor",
+      "upstream_ns": 61.1294933701234,
+      "scalar_ns": 87.05522342300912,
+      "avx_ns": 71.60711274622518,
+      "speedup_upstream": 0.8536790693791223,
+      "speedup_scalar": 1.2157343046567437
+    },
+    {
+      "width": 1024,
+      "workload": "mixed_both",
+      "op": "and",
+      "upstream_ns": 79.8687306501548,
+      "scalar_ns": 96.7205352035614,
+      "avx_ns": 77.20078072418899,
+      "speedup_upstream": 1.0345585873735843,
+      "speedup_scalar": 1.2528440036002948
+    },
+    {
+      "width": 1024,
+      "workload": "mixed_both",
+      "op": "or",
+      "upstream_ns": 80.12010144808967,
+      "scalar_ns": 97.04122392211404,
+      "avx_ns": 76.46522948539638,
+      "speedup_upstream": 1.0477978289909051,
+      "speedup_scalar": 1.2690895531889739
+    },
+    {
+      "width": 1024,
+      "workload": "mixed_both",
+      "op": "xor",
+      "upstream_ns": 70.37594868780825,
+      "scalar_ns": 83.92218843431375,
+      "avx_ns": 72.83900126126967,
+      "speedup_upstream": 0.966184976031912,
+      "speedup_scalar": 1.1521600650905313
+    },
+    {
+      "width": 4096,
+      "workload": "known",
+      "op": "and",
+      "upstream_ns": 122.55912232492298,
+      "scalar_ns": 140.5182028491416,
+      "avx_ns": 160.7952027273834,
+      "speedup_upstream": 0.7622063360479296,
+      "speedup_scalar": 0.873895492313785
+    },
+    {
+      "width": 4096,
+      "workload": "known",
+      "op": "or",
+      "upstream_ns": 123.27996804661436,
+      "scalar_ns": 139.0123018593958,
+      "avx_ns": 159.38514903400153,
+      "speedup_upstream": 0.7734721132664318,
+      "speedup_scalar": 0.87217851036887
+    },
+    {
+      "width": 4096,
+      "workload": "known",
+      "op": "xor",
+      "upstream_ns": 126.27214999785473,
+      "scalar_ns": 202.8699306577012,
+      "avx_ns": 139.7188398335264,
+      "speedup_upstream": 0.9037589357906688,
+      "speedup_scalar": 1.4519869396240241
+    },
+    {
+      "width": 4096,
+      "workload": "mixed_left",
+      "op": "and",
+      "upstream_ns": 246.76443591455273,
+      "scalar_ns": 298.51727250348733,
+      "avx_ns": 220.23854353069322,
+      "speedup_upstream": 1.1204416445850804,
+      "speedup_scalar": 1.35542701889456
+    },
+    {
+      "width": 4096,
+      "workload": "mixed_left",
+      "op": "or",
+      "upstream_ns": 255.14638447971782,
+      "scalar_ns": 301.3744855967078,
+      "avx_ns": 213.17836450918722,
+      "speedup_upstream": 1.1968681018224152,
+      "speedup_scalar": 1.4137198504669064
+    },
+    {
+      "width": 4096,
+      "workload": "mixed_left",
+      "op": "xor",
+      "upstream_ns": 202.65717796436616,
+      "scalar_ns": 239.35088195386703,
+      "avx_ns": 201.75943066034068,
+      "speedup_upstream": 1.004449592770396,
+      "speedup_scalar": 1.1863181868153219
+    },
+    {
+      "width": 4096,
+      "workload": "mixed_both",
+      "op": "and",
+      "upstream_ns": 270.81768008373774,
+      "scalar_ns": 300.2308497478352,
+      "avx_ns": 234.16309829669808,
+      "speedup_upstream": 1.1565344072301103,
+      "speedup_scalar": 1.2821441633276711
+    },
+    {
+      "width": 4096,
+      "workload": "mixed_both",
+      "op": "or",
+      "upstream_ns": 270.50808574652126,
+      "scalar_ns": 297.0706618962433,
+      "avx_ns": 222.35981572019557,
+      "speedup_upstream": 1.2165331441311888,
+      "speedup_scalar": 1.3359907721369018
+    },
+    {
+      "width": 4096,
+      "workload": "mixed_both",
+      "op": "xor",
+      "upstream_ns": 244.48297574626866,
+      "scalar_ns": 236.98816568047337,
+      "avx_ns": 211.59025944469732,
+      "speedup_upstream": 1.1554547756021274,
+      "speedup_scalar": 1.1200334377510144
+    },
+    {
+      "width": 16384,
+      "workload": "known",
+      "op": "and",
+      "upstream_ns": 517.7742,
+      "scalar_ns": 580.1948,
+      "avx_ns": 662.4154,
+      "speedup_upstream": 0.7816457769550647,
+      "speedup_scalar": 0.875877583763904
+    },
+    {
+      "width": 16384,
+      "workload": "known",
+      "op": "or",
+      "upstream_ns": 518.6943,
+      "scalar_ns": 598.2549,
+      "avx_ns": 652.7954,
+      "speedup_upstream": 0.7945740732854429,
+      "speedup_scalar": 0.9164508512161698
+    },
+    {
+      "width": 16384,
+      "workload": "known",
+      "op": "xor",
+      "upstream_ns": 523.3343,
+      "scalar_ns": 788.3564,
+      "avx_ns": 565.6146,
+      "speedup_upstream": 0.9252489239139159,
+      "speedup_scalar": 1.3938048982469688
+    },
+    {
+      "width": 16384,
+      "workload": "mixed_left",
+      "op": "and",
+      "upstream_ns": 998.3993,
+      "scalar_ns": 1246.4002,
+      "avx_ns": 894.2773,
+      "speedup_upstream": 1.1164314469348602,
+      "speedup_scalar": 1.3937513565423165
+    },
+    {
+      "width": 16384,
+      "workload": "mixed_left",
+      "op": "or",
+      "upstream_ns": 979.2591,
+      "scalar_ns": 1195.0697,
+      "avx_ns": 850.5569,
+      "speedup_upstream": 1.1513152147728152,
+      "speedup_scalar": 1.4050438013024171
+    },
+    {
+      "width": 16384,
+      "workload": "mixed_left",
+      "op": "xor",
+      "upstream_ns": 799.2365,
+      "scalar_ns": 955.3288,
+      "avx_ns": 805.2966,
+      "speedup_upstream": 0.9924746981422745,
+      "speedup_scalar": 1.1863067595218955
+    },
+    {
+      "width": 16384,
+      "workload": "mixed_both",
+      "op": "and",
+      "upstream_ns": 1088.3061,
+      "scalar_ns": 1211.128,
+      "avx_ns": 922.3886,
+      "speedup_upstream": 1.1798780904273969,
+      "speedup_scalar": 1.3130344412322528
+    },
+    {
+      "width": 16384,
+      "workload": "mixed_both",
+      "op": "or",
+      "upstream_ns": 1067.3099,
+      "scalar_ns": 1181.1775,
+      "avx_ns": 896.2683,
+      "speedup_upstream": 1.190837498101852,
+      "speedup_scalar": 1.3178838300986435
+    },
+    {
+      "width": 16384,
+      "workload": "mixed_both",
+      "op": "xor",
+      "upstream_ns": 998.8982,
+      "scalar_ns": 949.6387,
+      "avx_ns": 853.857,
+      "speedup_upstream": 1.1698659143158632,
+      "speedup_scalar": 1.1121753408357606
+    }
+  ],
+  "runs": [
+    {
+      "schema": "velosim.svint.simd.benchmark.v1",
+      "seed": 20261029,
+      "warmups": 2,
+      "repeats": 7,
+      "avx128": true,
+      "cases": [
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 61042,
+          "checksum": "8676059969605707246",
+          "upstream_ns": [
+            1723214,
+            1612814,
+            1640314,
+            1712415,
+            1628513,
+            2090218,
+            1690114
+          ],
+          "scalar_adapter_ns": [
+            2773123,
+            2766423,
+            2665023,
+            2793023,
+            2648122,
+            2635822,
+            2649222
+          ],
+          "avx128_adapter_ns": [
+            2804923,
+            2736722,
+            2686422,
+            2744122,
+            2607722,
+            2587921,
+            2922824
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 115596,
+          "checksum": "14019539546877482466",
+          "upstream_ns": [
+            3106526,
+            3028625,
+            3039125,
+            2957525,
+            3209527,
+            2917624,
+            3360628
+          ],
+          "scalar_adapter_ns": [
+            5144043,
+            5024542,
+            8353070,
+            5229743,
+            4909241,
+            5126343,
+            5178143
+          ],
+          "avx128_adapter_ns": [
+            5148943,
+            4894340,
+            4851940,
+            5281544,
+            4803139,
+            4904241,
+            4954741
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 120469,
+          "checksum": "12333849777433121085",
+          "upstream_ns": [
+            3070025,
+            3432529,
+            3623130,
+            3298428,
+            3224527,
+            3007225,
+            3292127
+          ],
+          "scalar_adapter_ns": [
+            5545046,
+            5326944,
+            5501946,
+            5450345,
+            5388745,
+            5627746,
+            5454845
+          ],
+          "avx128_adapter_ns": [
+            7424762,
+            5544946,
+            5190343,
+            5593646,
+            5196743,
+            4957642,
+            5321344
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 97060,
+          "checksum": "15337911600152491515",
+          "upstream_ns": [
+            3019525,
+            3260427,
+            3178226,
+            3218526,
+            3208427,
+            3106926,
+            3112325
+          ],
+          "scalar_adapter_ns": [
+            4590438,
+            4521238,
+            4755339,
+            4824340,
+            4450937,
+            4507237,
+            4430237
+          ],
+          "avx128_adapter_ns": [
+            4567138,
+            4254635,
+            4189635,
+            4163735,
+            4359236,
+            4231935,
+            4314636
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 89562,
+          "checksum": "7031297371660843646",
+          "upstream_ns": [
+            2972225,
+            2982025,
+            2966325,
+            2959225,
+            2888424,
+            2931924,
+            2946624
+          ],
+          "scalar_adapter_ns": [
+            4045133,
+            4067834,
+            4068934,
+            4137134,
+            4086534,
+            4055334,
+            4206235
+          ],
+          "avx128_adapter_ns": [
+            3934732,
+            3938432,
+            3915032,
+            3911232,
+            3888732,
+            4175734,
+            5689048
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 114947,
+          "checksum": "3415100043811823960",
+          "upstream_ns": [
+            3391528,
+            3018025,
+            2962224,
+            2953924,
+            3005825,
+            3920132,
+            3884332
+          ],
+          "scalar_adapter_ns": [
+            4893541,
+            4983941,
+            4806539,
+            5069942,
+            5043042,
+            5631347,
+            6104151
+          ],
+          "avx128_adapter_ns": [
+            4955441,
+            4807240,
+            4989042,
+            4976742,
+            5039241,
+            5206043,
+            5235544
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 92738,
+          "checksum": "10838035844791850976",
+          "upstream_ns": [
+            4197935,
+            3125925,
+            3137226,
+            3099226,
+            5007941,
+            3073725,
+            3014325
+          ],
+          "scalar_adapter_ns": [
+            7337561,
+            4325436,
+            4300436,
+            4357836,
+            8034867,
+            4306835,
+            4227535
+          ],
+          "avx128_adapter_ns": [
+            4193735,
+            4104434,
+            4151534,
+            4108934,
+            5750448,
+            4091034,
+            4138735
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 89236,
+          "checksum": "16978030654172065613",
+          "upstream_ns": [
+            2917724,
+            3071726,
+            2937524,
+            3012925,
+            2907424,
+            2860323,
+            3016125
+          ],
+          "scalar_adapter_ns": [
+            4072334,
+            4072933,
+            4621438,
+            4059934,
+            4069233,
+            4093834,
+            4052134
+          ],
+          "avx128_adapter_ns": [
+            3882732,
+            3913833,
+            5274444,
+            3869232,
+            4244435,
+            3883233,
+            3842332
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 111102,
+          "checksum": "11741083376027336833",
+          "upstream_ns": [
+            3107326,
+            3179127,
+            3355628,
+            3301028,
+            3068025,
+            3294427,
+            3140526
+          ],
+          "scalar_adapter_ns": [
+            4857340,
+            4735539,
+            4861740,
+            4731139,
+            4735639,
+            4905540,
+            5050942
+          ],
+          "avx128_adapter_ns": [
+            4984941,
+            4752139,
+            4883541,
+            4910040,
+            4970942,
+            4823440,
+            5181343
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 122756,
+          "checksum": "8694513643323570732",
+          "upstream_ns": [
+            3277427,
+            3169026,
+            3120226,
+            3067526,
+            3008025,
+            2996325,
+            3002125
+          ],
+          "scalar_adapter_ns": [
+            5321144,
+            5458545,
+            5158643,
+            5410544,
+            5343244,
+            5107043,
+            5136942
+          ],
+          "avx128_adapter_ns": [
+            5109043,
+            5162443,
+            5384044,
+            5442745,
+            5173143,
+            5107542,
+            5222143
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 124751,
+          "checksum": "16216428876446393920",
+          "upstream_ns": [
+            3123326,
+            3032925,
+            3233627,
+            3324028,
+            3250627,
+            3013425,
+            3000525
+          ],
+          "scalar_adapter_ns": [
+            5267544,
+            5231943,
+            5281144,
+            5855548,
+            5361144,
+            5199643,
+            5480245
+          ],
+          "avx128_adapter_ns": [
+            5073942,
+            6075150,
+            5099942,
+            5550746,
+            5307944,
+            5214444,
+            5230843
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 127732,
+          "checksum": "3205794970025338886",
+          "upstream_ns": [
+            3289027,
+            3107926,
+            3391528,
+            3042925,
+            3086826,
+            3045225,
+            3099226
+          ],
+          "scalar_adapter_ns": [
+            5326444,
+            5282744,
+            5262944,
+            5499045,
+            5278443,
+            5417245,
+            5462245
+          ],
+          "avx128_adapter_ns": [
+            5196143,
+            5622346,
+            5155242,
+            5217044,
+            5181343,
+            5385044,
+            5228043
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 103607,
+          "checksum": "3344420833436602389",
+          "upstream_ns": [
+            3067425,
+            3004625,
+            2985725,
+            3296927,
+            3237426,
+            3340727,
+            3679030
+          ],
+          "scalar_adapter_ns": [
+            4842140,
+            4664538,
+            4529637,
+            4876841,
+            4693939,
+            4615839,
+            4551538
+          ],
+          "avx128_adapter_ns": [
+            4274335,
+            4285236,
+            4264935,
+            4260635,
+            4646438,
+            4488737,
+            4565638
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 100391,
+          "checksum": "10837340154928235703",
+          "upstream_ns": [
+            3000825,
+            2904024,
+            3037825,
+            2991925,
+            2958424,
+            3338627,
+            3050025
+          ],
+          "scalar_adapter_ns": [
+            4617438,
+            4427036,
+            4625538,
+            4367636,
+            4566138,
+            4545037,
+            4471837
+          ],
+          "avx128_adapter_ns": [
+            4230935,
+            4147135,
+            4550037,
+            4538038,
+            4345836,
+            4338636,
+            4285536
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 122512,
+          "checksum": "11378139251737988510",
+          "upstream_ns": [
+            3184026,
+            3022225,
+            3262527,
+            3161026,
+            2940924,
+            3008425,
+            3040125
+          ],
+          "scalar_adapter_ns": [
+            5262643,
+            5150643,
+            5138543,
+            5566046,
+            6102251,
+            6224852,
+            5078242
+          ],
+          "avx128_adapter_ns": [
+            5176743,
+            5253943,
+            5089242,
+            5143442,
+            5194342,
+            5697547,
+            5281643
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 101552,
+          "checksum": "16346365136972904093",
+          "upstream_ns": [
+            3031225,
+            3095125,
+            3047825,
+            3085126,
+            3036626,
+            3051525,
+            3050325
+          ],
+          "scalar_adapter_ns": [
+            4904641,
+            4586338,
+            4563137,
+            4429336,
+            4580637,
+            4477637,
+            4539238
+          ],
+          "avx128_adapter_ns": [
+            4266535,
+            4321636,
+            4208835,
+            4264435,
+            4450337,
+            4336536,
+            4395736
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 96831,
+          "checksum": "7499823391753588182",
+          "upstream_ns": [
+            2967525,
+            3443228,
+            3093926,
+            2972524,
+            2921524,
+            3052725,
+            3172726
+          ],
+          "scalar_adapter_ns": [
+            4242535,
+            4561638,
+            4269435,
+            4336836,
+            4396836,
+            4326235,
+            4265035
+          ],
+          "avx128_adapter_ns": [
+            4070233,
+            4220935,
+            4261435,
+            4127134,
+            4024234,
+            4177035,
+            4083734
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 115487,
+          "checksum": "9055804936299418230",
+          "upstream_ns": [
+            2995925,
+            3417828,
+            3052525,
+            3050125,
+            2988725,
+            3120926,
+            3134426
+          ],
+          "scalar_adapter_ns": [
+            4940441,
+            5090842,
+            5192343,
+            5149842,
+            4809140,
+            4734339,
+            4873940
+          ],
+          "avx128_adapter_ns": [
+            4807339,
+            4929441,
+            4869340,
+            4783540,
+            4925540,
+            4716839,
+            4843440
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 117927,
+          "checksum": "5722442431116089863",
+          "upstream_ns": [
+            2990824,
+            2989524,
+            3062325,
+            3060725,
+            2993024,
+            3201826,
+            3033825
+          ],
+          "scalar_adapter_ns": [
+            5229444,
+            5340944,
+            5164043,
+            8091867,
+            5221144,
+            5220343,
+            5308343
+          ],
+          "avx128_adapter_ns": [
+            5431245,
+            5165343,
+            5698447,
+            5186843,
+            5744647,
+            5153343,
+            5284344
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 117925,
+          "checksum": "17031452447050689192",
+          "upstream_ns": [
+            3161826,
+            3348528,
+            3354428,
+            3266527,
+            3129926,
+            3223327,
+            2955425
+          ],
+          "scalar_adapter_ns": [
+            5481145,
+            5334744,
+            5610746,
+            5327444,
+            5452445,
+            5251843,
+            5358944
+          ],
+          "avx128_adapter_ns": [
+            5803248,
+            5195643,
+            5325144,
+            5527045,
+            5675747,
+            5298644,
+            5516845
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 69619,
+          "checksum": "11161532382021037324",
+          "upstream_ns": [
+            1742714,
+            1787615,
+            1733814,
+            1735714,
+            1754814,
+            1800314,
+            1748114
+          ],
+          "scalar_adapter_ns": [
+            3101826,
+            3062125,
+            3058125,
+            3179927,
+            3059725,
+            3374127,
+            3081425
+          ],
+          "avx128_adapter_ns": [
+            3033325,
+            2955824,
+            3005025,
+            3029525,
+            2975525,
+            2950925,
+            2947025
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 48897,
+          "checksum": "17303550754650028989",
+          "upstream_ns": [
+            1662414,
+            1583413,
+            1726414,
+            2095217,
+            1643713,
+            1603013,
+            1603113
+          ],
+          "scalar_adapter_ns": [
+            2371820,
+            2322919,
+            2324219,
+            2364219,
+            2387420,
+            2681122,
+            2336119
+          ],
+          "avx128_adapter_ns": [
+            2115717,
+            2119817,
+            2109418,
+            2189418,
+            2149617,
+            2155718,
+            2098618
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 86412,
+          "checksum": "3323076490797365878",
+          "upstream_ns": [
+            2857124,
+            2918824,
+            3228426,
+            3066725,
+            6362353,
+            2882724,
+            3108726
+          ],
+          "scalar_adapter_ns": [
+            4127734,
+            4500337,
+            4540037,
+            5216243,
+            7534562,
+            4211535,
+            4257535
+          ],
+          "avx128_adapter_ns": [
+            3705830,
+            3769331,
+            4014133,
+            4336936,
+            4571637,
+            3767731,
+            4100433
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 82970,
+          "checksum": "5037094649850529748",
+          "upstream_ns": [
+            2473720,
+            2406720,
+            2321519,
+            2360620,
+            2370220,
+            2347019,
+            2312019
+          ],
+          "scalar_adapter_ns": [
+            3881232,
+            3832231,
+            3770631,
+            3828831,
+            3871832,
+            3816431,
+            3861432
+          ],
+          "avx128_adapter_ns": [
+            3578630,
+            3635130,
+            3602430,
+            3694630,
+            3646930,
+            3711631,
+            3702630
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 84744,
+          "checksum": "12732443782408594039",
+          "upstream_ns": [
+            2990425,
+            3015725,
+            3145326,
+            4221835,
+            3555729,
+            4473737,
+            3665030
+          ],
+          "scalar_adapter_ns": [
+            4386536,
+            4514837,
+            4171134,
+            5500445,
+            5527146,
+            7308760,
+            5873049
+          ],
+          "avx128_adapter_ns": [
+            3869032,
+            3777931,
+            4024433,
+            4571538,
+            4020233,
+            7688863,
+            4421036
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 48187,
+          "checksum": "13776229406057585546",
+          "upstream_ns": [
+            1738214,
+            1689114,
+            1738215,
+            1714914,
+            1917416,
+            1780014,
+            1965916
+          ],
+          "scalar_adapter_ns": [
+            2506221,
+            2425920,
+            2429420,
+            2433620,
+            2451220,
+            2500320,
+            2824623
+          ],
+          "avx128_adapter_ns": [
+            2292519,
+            2328219,
+            2228618,
+            2181818,
+            2320219,
+            2223319,
+            2278319
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 98146,
+          "checksum": "3178076781397442054",
+          "upstream_ns": [
+            3045825,
+            3006225,
+            3129925,
+            2997824,
+            3266227,
+            2963525,
+            3015625
+          ],
+          "scalar_adapter_ns": [
+            4690438,
+            4585338,
+            4646638,
+            4649338,
+            4534338,
+            4803840,
+            4612138
+          ],
+          "avx128_adapter_ns": [
+            4369736,
+            4411736,
+            4765240,
+            4400637,
+            4451236,
+            4449436,
+            4453336
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 73316,
+          "checksum": "8955970999395144388",
+          "upstream_ns": [
+            3166626,
+            3740531,
+            3053225,
+            3078926,
+            3100425,
+            3357927,
+            3237526
+          ],
+          "scalar_adapter_ns": [
+            4350036,
+            5805248,
+            4299235,
+            4390936,
+            4376636,
+            7430961,
+            4239635
+          ],
+          "avx128_adapter_ns": [
+            4820239,
+            4802939,
+            4715039,
+            4759039,
+            6115851,
+            4725339,
+            4679139
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 72752,
+          "checksum": "3509109792361827320",
+          "upstream_ns": [
+            3454229,
+            3396128,
+            3412028,
+            3827531,
+            3178526,
+            3311727,
+            3739831
+          ],
+          "scalar_adapter_ns": [
+            4768639,
+            4878940,
+            4757439,
+            4655739,
+            4195934,
+            4220635,
+            4226535
+          ],
+          "avx128_adapter_ns": [
+            4794839,
+            5203343,
+            5128942,
+            5202743,
+            4604038,
+            4588338,
+            4562637
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 74023,
+          "checksum": "18167381225384863719",
+          "upstream_ns": [
+            3004424,
+            3022725,
+            3029025,
+            3019325,
+            3045525,
+            3022325,
+            3023325
+          ],
+          "scalar_adapter_ns": [
+            5207343,
+            5269643,
+            5222643,
+            5382444,
+            5386944,
+            5324443,
+            5082242
+          ],
+          "avx128_adapter_ns": [
+            4182635,
+            4193935,
+            4244135,
+            4161134,
+            4402037,
+            4143834,
+            4448937
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 41165,
+          "checksum": "5504746438947374223",
+          "upstream_ns": [
+            3029725,
+            2999625,
+            3452628,
+            3201227,
+            3033825,
+            3091325,
+            3120225
+          ],
+          "scalar_adapter_ns": [
+            3956932,
+            4394136,
+            3894732,
+            3848231,
+            3911932,
+            3838532,
+            4070534
+          ],
+          "avx128_adapter_ns": [
+            3171626,
+            3087826,
+            3046925,
+            3227126,
+            3090325,
+            3054925,
+            3124826
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 41179,
+          "checksum": "9723583033126009091",
+          "upstream_ns": [
+            3030325,
+            3113326,
+            4090634,
+            4105034,
+            3598829,
+            3070925,
+            3028924
+          ],
+          "scalar_adapter_ns": [
+            4213834,
+            3959732,
+            4588738,
+            4026633,
+            4141334,
+            4022533,
+            3831832
+          ],
+          "avx128_adapter_ns": [
+            3016225,
+            3142426,
+            3969532,
+            3205526,
+            3045125,
+            3124626,
+            3153426
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 31515,
+          "checksum": "5085739444087015061",
+          "upstream_ns": [
+            2207818,
+            2018616,
+            1952716,
+            1929216,
+            1860415,
+            2098317,
+            1937516
+          ],
+          "scalar_adapter_ns": [
+            2900024,
+            2714723,
+            2749323,
+            2755623,
+            2689822,
+            2755223,
+            2676821
+          ],
+          "avx128_adapter_ns": [
+            2166618,
+            2376819,
+            2330119,
+            2229418,
+            2352419,
+            2301819,
+            2412820
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 26917,
+          "checksum": "10524340621802283462",
+          "upstream_ns": [
+            2159018,
+            2100817,
+            2409519,
+            2187018,
+            2227019,
+            2046117,
+            2436719
+          ],
+          "scalar_adapter_ns": [
+            2534721,
+            2606421,
+            2656022,
+            2509020,
+            2928824,
+            2587421,
+            2549321
+          ],
+          "avx128_adapter_ns": [
+            2044817,
+            2030417,
+            2299119,
+            2038917,
+            2047317,
+            2125317,
+            2018217
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 38935,
+          "checksum": "7794583933675203904",
+          "upstream_ns": [
+            3016924,
+            3286726,
+            3861532,
+            3194426,
+            3023525,
+            3276727,
+            3111925
+          ],
+          "scalar_adapter_ns": [
+            3817332,
+            3957833,
+            4273235,
+            3892232,
+            3777031,
+            3857531,
+            3760731
+          ],
+          "avx128_adapter_ns": [
+            2950925,
+            3055625,
+            3801131,
+            3167626,
+            2914324,
+            2958324,
+            2950925
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 42270,
+          "checksum": "16189311723540131629",
+          "upstream_ns": [
+            2884623,
+            2935124,
+            3020325,
+            3028425,
+            3048125,
+            2984424,
+            2997125
+          ],
+          "scalar_adapter_ns": [
+            3579830,
+            3633630,
+            3509628,
+            3505629,
+            3707630,
+            3648929,
+            3531929
+          ],
+          "avx128_adapter_ns": [
+            3081226,
+            3048825,
+            3535129,
+            3080225,
+            3201026,
+            3572030,
+            3041525
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 24639,
+          "checksum": "18431819038010168838",
+          "upstream_ns": [
+            3136225,
+            3015025,
+            3049225,
+            3116525,
+            3129026,
+            3608429,
+            3548129
+          ],
+          "scalar_adapter_ns": [
+            3625730,
+            3430728,
+            3458628,
+            3462228,
+            3593330,
+            3540229,
+            4010133
+          ],
+          "avx128_adapter_ns": [
+            4406536,
+            3964733,
+            3919032,
+            3961833,
+            3937432,
+            4145834,
+            4140734
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 16144,
+          "checksum": "2302462008835862569",
+          "upstream_ns": [
+            2460620,
+            1993316,
+            2045117,
+            2181818,
+            1951716,
+            2432420,
+            2390520
+          ],
+          "scalar_adapter_ns": [
+            2384020,
+            3193026,
+            2208119,
+            2451720,
+            2278619,
+            2471120,
+            3473228
+          ],
+          "avx128_adapter_ns": [
+            2579621,
+            3171426,
+            2664121,
+            2729222,
+            3249227,
+            2746323,
+            3235426
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 19036,
+          "checksum": "7172195869185668601",
+          "upstream_ns": [
+            3101125,
+            2889523,
+            2394519,
+            2365819,
+            2439420,
+            2414320,
+            2323619
+          ],
+          "scalar_adapter_ns": [
+            5789548,
+            5448545,
+            5018841,
+            3861832,
+            3814331,
+            3927332,
+            3731831
+          ],
+          "avx128_adapter_ns": [
+            3881432,
+            4042333,
+            2622422,
+            2749623,
+            2657322,
+            2624522,
+            2612521
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 12187,
+          "checksum": "361943563328949486",
+          "upstream_ns": [
+            2950024,
+            3042725,
+            2977825,
+            2913724,
+            3258827,
+            3071025,
+            2983025
+          ],
+          "scalar_adapter_ns": [
+            3670730,
+            3638030,
+            3778331,
+            3615030,
+            3735230,
+            3591029,
+            3577029
+          ],
+          "avx128_adapter_ns": [
+            2596622,
+            2706722,
+            2589421,
+            2544020,
+            2633422,
+            2659022,
+            2693122
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 12082,
+          "checksum": "7214871264688186100",
+          "upstream_ns": [
+            3700130,
+            2911624,
+            3005025,
+            3030025,
+            3048725,
+            3077825,
+            3018125
+          ],
+          "scalar_adapter_ns": [
+            3892132,
+            3556729,
+            3535229,
+            3778331,
+            3560529,
+            3544629,
+            3563229
+          ],
+          "avx128_adapter_ns": [
+            3226027,
+            2564321,
+            2575621,
+            2589421,
+            2498721,
+            2487220,
+            2550821
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 14649,
+          "checksum": "14218735303094547003",
+          "upstream_ns": [
+            2968725,
+            2982724,
+            3016424,
+            2915424,
+            2992024,
+            2953724,
+            2891624
+          ],
+          "scalar_adapter_ns": [
+            3534829,
+            3500529,
+            3674630,
+            3508629,
+            3383228,
+            3516229,
+            3455328
+          ],
+          "avx128_adapter_ns": [
+            3098025,
+            3039025,
+            3028525,
+            2977225,
+            2929024,
+            2837923,
+            2902824
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 10509,
+          "checksum": "14524698427680989145",
+          "upstream_ns": [
+            2771322,
+            2721022,
+            2846023,
+            2786522,
+            2761722,
+            2924724,
+            2940324
+          ],
+          "scalar_adapter_ns": [
+            3247127,
+            3180826,
+            3116025,
+            3102426,
+            3155126,
+            3115626,
+            3173426
+          ],
+          "avx128_adapter_ns": [
+            2353920,
+            2493521,
+            2460820,
+            2349620,
+            2489120,
+            2373019,
+            2555421
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 10062,
+          "checksum": "17283646666725517204",
+          "upstream_ns": [
+            2718822,
+            2660321,
+            2822023,
+            2835523,
+            2679922,
+            2753723,
+            2865624
+          ],
+          "scalar_adapter_ns": [
+            3126826,
+            3019725,
+            3076925,
+            2982724,
+            2944724,
+            2989125,
+            2999324
+          ],
+          "avx128_adapter_ns": [
+            2215118,
+            2195318,
+            2318419,
+            2287219,
+            2183318,
+            2260518,
+            2180017
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 12675,
+          "checksum": "15442132841337055036",
+          "upstream_ns": [
+            3084926,
+            3045225,
+            3067325,
+            3210226,
+            3024525,
+            2973025,
+            3025825
+          ],
+          "scalar_adapter_ns": [
+            3037824,
+            3003825,
+            3079025,
+            3040825,
+            2992524,
+            2944524,
+            2901623
+          ],
+          "avx128_adapter_ns": [
+            2707022,
+            2707022,
+            2760623,
+            2603421,
+            2561221,
+            2590321,
+            2597821
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "9180332514659059472",
+          "upstream_ns": [
+            5212943,
+            5391444,
+            5177742,
+            5180742,
+            5518545,
+            5241843,
+            5394444
+          ],
+          "scalar_adapter_ns": [
+            6231651,
+            8186266,
+            6775956,
+            6468153,
+            5906048,
+            6411852,
+            7212159
+          ],
+          "avx128_adapter_ns": [
+            6910856,
+            7338260,
+            6822356,
+            6719555,
+            8256568,
+            6802556,
+            7046857
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "13902240098235487479",
+          "upstream_ns": [
+            5239943,
+            5320243,
+            5119642,
+            5313144,
+            5193943,
+            5457644,
+            5025041
+          ],
+          "scalar_adapter_ns": [
+            6229851,
+            6252351,
+            5949449,
+            6071849,
+            6018849,
+            5982549,
+            5803648
+          ],
+          "avx128_adapter_ns": [
+            6550153,
+            6664055,
+            6581453,
+            6491453,
+            6516453,
+            6579654,
+            6573754
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "7987800271997584764",
+          "upstream_ns": [
+            5296044,
+            5383944,
+            5727446,
+            5177543,
+            5433144,
+            5120542,
+            5233343
+          ],
+          "scalar_adapter_ns": [
+            8421168,
+            8232568,
+            8080566,
+            7760563,
+            8242268,
+            7728164,
+            8751172
+          ],
+          "avx128_adapter_ns": [
+            5695546,
+            5727547,
+            5990349,
+            5736747,
+            5946348,
+            5931848,
+            6185250
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "15931386383711774584",
+          "upstream_ns": [
+            9815680,
+            9783380,
+            9748180,
+            9691279,
+            9898480,
+            9667378,
+            9734579
+          ],
+          "scalar_adapter_ns": [
+            11937498,
+            12635703,
+            12037398,
+            12464002,
+            11681695,
+            11864196,
+            11865997
+          ],
+          "avx128_adapter_ns": [
+            9646179,
+            9040474,
+            8862673,
+            9119774,
+            8886873,
+            8601571,
+            8635671
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "11318774237413794847",
+          "upstream_ns": [
+            9975781,
+            9749879,
+            9656879,
+            9930981,
+            9559378,
+            10054182,
+            9693479
+          ],
+          "scalar_adapter_ns": [
+            11761596,
+            11624595,
+            12182800,
+            11703895,
+            11952598,
+            11649895,
+            11876597
+          ],
+          "avx128_adapter_ns": [
+            8375468,
+            8511469,
+            8334367,
+            8358968,
+            8498869,
+            8411168,
+            8430669
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "8817313838762358370",
+          "upstream_ns": [
+            8136466,
+            8080165,
+            8382168,
+            8093566,
+            8115166,
+            7987165,
+            8541627
+          ],
+          "scalar_adapter_ns": [
+            9599679,
+            10276584,
+            10090682,
+            9572278,
+            9409777,
+            9394176,
+            10141451
+          ],
+          "avx128_adapter_ns": [
+            8049466,
+            8121266,
+            7960665,
+            7980665,
+            8654571,
+            7865464,
+            7796691
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "1807168128447507053",
+          "upstream_ns": [
+            10719559,
+            10922162,
+            10284152,
+            10637658,
+            10663958,
+            11185466,
+            10883061
+          ],
+          "scalar_adapter_ns": [
+            12111280,
+            12035078,
+            12339683,
+            12393184,
+            12085279,
+            12392784,
+            12384184
+          ],
+          "avx128_adapter_ns": [
+            8948933,
+            9173036,
+            9458241,
+            9050034,
+            8728530,
+            9329338,
+            9018534
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "14614897674280176439",
+          "upstream_ns": [
+            10802460,
+            10513755,
+            10610757,
+            10959862,
+            10665558,
+            10483155,
+            10563456
+          ],
+          "scalar_adapter_ns": [
+            11895676,
+            11544371,
+            11491671,
+            11761674,
+            11792975,
+            11664072,
+            11811775
+          ],
+          "avx128_adapter_ns": [
+            8712229,
+            8796730,
+            9373738,
+            8671829,
+            8834831,
+            8829031,
+            8640128
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "2187105155126654839",
+          "upstream_ns": [
+            9392539,
+            9613843,
+            9812645,
+            10357353,
+            9580642,
+            10292753,
+            9825346
+          ],
+          "scalar_adapter_ns": [
+            9172536,
+            9129635,
+            11096265,
+            9236137,
+            9611442,
+            9202536,
+            9257537
+          ],
+          "avx128_adapter_ns": [
+            8124020,
+            8085319,
+            8268322,
+            8464026,
+            8644028,
+            10086549,
+            8189321
+          ]
+        }
+      ],
+      "correctness_comparisons": 6912,
+      "current_runtime_comparisons": 1728,
+      "status": "pass"
+    },
+    {
+      "schema": "velosim.svint.simd.benchmark.v1",
+      "seed": 20261029,
+      "warmups": 2,
+      "repeats": 7,
+      "avx128": true,
+      "cases": [
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 99739,
+          "checksum": "12750226912754537035",
+          "upstream_ns": [
+            3037145,
+            2923744,
+            2961644,
+            2914644,
+            2930743,
+            3021544,
+            3189548
+          ],
+          "scalar_adapter_ns": [
+            4277363,
+            4488166,
+            4226863,
+            4226462,
+            4948674,
+            4245863,
+            5827486
+          ],
+          "avx128_adapter_ns": [
+            4166362,
+            4285363,
+            4203062,
+            4271863,
+            4586768,
+            4117661,
+            4335664
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 117698,
+          "checksum": "2621174090431023319",
+          "upstream_ns": [
+            3192347,
+            3064446,
+            3016545,
+            5431980,
+            3384850,
+            3045145,
+            3269049
+          ],
+          "scalar_adapter_ns": [
+            5596583,
+            6480896,
+            5566283,
+            8360524,
+            5505482,
+            5806186,
+            4994674
+          ],
+          "avx128_adapter_ns": [
+            5127676,
+            9716543,
+            5291078,
+            7426910,
+            5143976,
+            5493781,
+            5548482
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 121300,
+          "checksum": "6331646575669476860",
+          "upstream_ns": [
+            3283949,
+            3106046,
+            3141547,
+            3130547,
+            3114346,
+            3108346,
+            3144247
+          ],
+          "scalar_adapter_ns": [
+            5292278,
+            5211877,
+            5259678,
+            5337379,
+            5171476,
+            5248878,
+            5265778
+          ],
+          "avx128_adapter_ns": [
+            5022674,
+            5125676,
+            5208877,
+            5178876,
+            5095476,
+            5107275,
+            5194677
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 94813,
+          "checksum": "17636752208933323509",
+          "upstream_ns": [
+            2979044,
+            3106246,
+            2940343,
+            2949644,
+            3330249,
+            3068945,
+            3133346
+          ],
+          "scalar_adapter_ns": [
+            4530768,
+            4376164,
+            4202162,
+            4673169,
+            4781171,
+            4500866,
+            4474366
+          ],
+          "avx128_adapter_ns": [
+            4024159,
+            4337765,
+            4171562,
+            4114761,
+            4684869,
+            4161362,
+            4232263
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 83933,
+          "checksum": "4440992140473143686",
+          "upstream_ns": [
+            3370050,
+            3055745,
+            2687040,
+            2920243,
+            2836842,
+            2729340,
+            2736640
+          ],
+          "scalar_adapter_ns": [
+            3978559,
+            4112661,
+            3751956,
+            3928558,
+            3960758,
+            3707955,
+            4130462
+          ],
+          "avx128_adapter_ns": [
+            4343364,
+            3540852,
+            3774055,
+            3686255,
+            3569753,
+            3580353,
+            3854757
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 114840,
+          "checksum": "8451196741708516041",
+          "upstream_ns": [
+            2939744,
+            3013845,
+            2971944,
+            3155946,
+            2947544,
+            3014844,
+            2933243
+          ],
+          "scalar_adapter_ns": [
+            5124975,
+            4813771,
+            5010274,
+            5185877,
+            4961873,
+            4959173,
+            4808271
+          ],
+          "avx128_adapter_ns": [
+            4812071,
+            4826771,
+            4773571,
+            4800071,
+            4793671,
+            4779371,
+            4768871
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 72494,
+          "checksum": "16616208135493701673",
+          "upstream_ns": [
+            2272534,
+            2328835,
+            2266534,
+            2293434,
+            2276234,
+            2329034,
+            2309834
+          ],
+          "scalar_adapter_ns": [
+            3220647,
+            3494351,
+            3322249,
+            3210247,
+            3253448,
+            4210563,
+            3362750
+          ],
+          "avx128_adapter_ns": [
+            3076245,
+            3099646,
+            3121646,
+            3401950,
+            3066645,
+            3246048,
+            3116646
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 91223,
+          "checksum": "8255711823688037670",
+          "upstream_ns": [
+            3040045,
+            2936843,
+            3040445,
+            2891243,
+            2903143,
+            2892743,
+            3031845
+          ],
+          "scalar_adapter_ns": [
+            4030559,
+            4027759,
+            4145061,
+            4050560,
+            4007559,
+            4088260,
+            4031859
+          ],
+          "avx128_adapter_ns": [
+            3949358,
+            3931459,
+            3971358,
+            3989059,
+            4035860,
+            3870057,
+            4119861
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 111302,
+          "checksum": "6748442155011415902",
+          "upstream_ns": [
+            3010644,
+            3244748,
+            3076246,
+            3238648,
+            3245448,
+            3519252,
+            3059645
+          ],
+          "scalar_adapter_ns": [
+            4657169,
+            4934573,
+            4788171,
+            4877472,
+            4833471,
+            4951674,
+            5082075
+          ],
+          "avx128_adapter_ns": [
+            4638869,
+            4882472,
+            4685169,
+            4639468,
+            5071875,
+            4771170,
+            4770271
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 102484,
+          "checksum": "18305905857185457742",
+          "upstream_ns": [
+            3165346,
+            2963943,
+            2929644,
+            2904343,
+            2919444,
+            2932143,
+            3031744
+          ],
+          "scalar_adapter_ns": [
+            4406866,
+            4307164,
+            4259063,
+            4535667,
+            4302863,
+            4245963,
+            4618469
+          ],
+          "avx128_adapter_ns": [
+            4565168,
+            4375765,
+            4183361,
+            4378564,
+            4202462,
+            4204162,
+            4882673
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 123744,
+          "checksum": "8218966463066055535",
+          "upstream_ns": [
+            3186047,
+            3009145,
+            3135046,
+            3003144,
+            3330449,
+            3172447,
+            3193648
+          ],
+          "scalar_adapter_ns": [
+            5144976,
+            5311578,
+            5412080,
+            5763285,
+            5371980,
+            5811786,
+            5274678
+          ],
+          "avx128_adapter_ns": [
+            5245477,
+            5614383,
+            5289479,
+            5125476,
+            5695484,
+            5411580,
+            5458680
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 128130,
+          "checksum": "12547473849582869819",
+          "upstream_ns": [
+            4673769,
+            3317749,
+            3133046,
+            3080145,
+            3109346,
+            3066445,
+            3069846
+          ],
+          "scalar_adapter_ns": [
+            7987718,
+            5493781,
+            5491681,
+            5305379,
+            5381279,
+            5602883,
+            5307978
+          ],
+          "avx128_adapter_ns": [
+            8336523,
+            5689384,
+            5229978,
+            5327079,
+            5281978,
+            5208277,
+            5286378
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 100308,
+          "checksum": "12184271290137525357",
+          "upstream_ns": [
+            2930844,
+            3392450,
+            2916443,
+            2848242,
+            3244648,
+            2881442,
+            3479852
+          ],
+          "scalar_adapter_ns": [
+            4269663,
+            4798371,
+            4282864,
+            4465866,
+            4257063,
+            4546367,
+            4392664
+          ],
+          "avx128_adapter_ns": [
+            4148361,
+            4160161,
+            4274263,
+            4046460,
+            4077060,
+            4267563,
+            4067360
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 100719,
+          "checksum": "9129834709682880895",
+          "upstream_ns": [
+            3143746,
+            3355349,
+            3058145,
+            3017445,
+            2986344,
+            3339549,
+            3185947
+          ],
+          "scalar_adapter_ns": [
+            4577268,
+            4704170,
+            4380165,
+            4807371,
+            4491166,
+            6037089,
+            4893272
+          ],
+          "avx128_adapter_ns": [
+            5605983,
+            4173461,
+            6292493,
+            4295863,
+            4141261,
+            5288178,
+            6530397
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 57527,
+          "checksum": "9037469094934417874",
+          "upstream_ns": [
+            1548123,
+            1501022,
+            1487322,
+            1461921,
+            1488922,
+            1428121,
+            1419621
+          ],
+          "scalar_adapter_ns": [
+            2462236,
+            2459536,
+            2427536,
+            2474037,
+            2649439,
+            2616038,
+            2402436
+          ],
+          "avx128_adapter_ns": [
+            2484137,
+            2411536,
+            2507637,
+            2496237,
+            2456536,
+            2420236,
+            2380835
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 98381,
+          "checksum": "16732415304743645062",
+          "upstream_ns": [
+            3001344,
+            3053845,
+            3146846,
+            2924043,
+            3052745,
+            2971344,
+            3186647
+          ],
+          "scalar_adapter_ns": [
+            4364465,
+            4439365,
+            4279063,
+            4463566,
+            4330964,
+            4327764,
+            4379164
+          ],
+          "avx128_adapter_ns": [
+            4199862,
+            4227963,
+            4668169,
+            4130661,
+            4397965,
+            4086760,
+            4271463
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 93728,
+          "checksum": "7899440322098926840",
+          "upstream_ns": [
+            3271049,
+            3243748,
+            2990144,
+            2944444,
+            3205347,
+            2831542,
+            2860342
+          ],
+          "scalar_adapter_ns": [
+            4200862,
+            4697269,
+            4267363,
+            4349364,
+            4638269,
+            4209662,
+            4078660
+          ],
+          "avx128_adapter_ns": [
+            4264062,
+            3997659,
+            4886472,
+            4163561,
+            3958558,
+            4043260,
+            3925658
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 115922,
+          "checksum": "993837412498961212",
+          "upstream_ns": [
+            2977844,
+            3023044,
+            2966643,
+            2974744,
+            2991244,
+            2969444,
+            3151146
+          ],
+          "scalar_adapter_ns": [
+            4783771,
+            4976174,
+            4921172,
+            5395179,
+            5422480,
+            5272578,
+            4929173
+          ],
+          "avx128_adapter_ns": [
+            4938473,
+            4806271,
+            4902473,
+            4775671,
+            5144776,
+            4834871,
+            5035875
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 117812,
+          "checksum": "8181641905243615915",
+          "upstream_ns": [
+            3235248,
+            3023444,
+            3108845,
+            2976541,
+            3165326,
+            2993025,
+            3166126
+          ],
+          "scalar_adapter_ns": [
+            5273778,
+            5277978,
+            5187076,
+            5165042,
+            5163242,
+            5453845,
+            5202343
+          ],
+          "avx128_adapter_ns": [
+            5803685,
+            5462081,
+            5294679,
+            5171277,
+            5132943,
+            5218543,
+            5311644
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 118152,
+          "checksum": "18393759105456995016",
+          "upstream_ns": [
+            3133926,
+            2999425,
+            3181326,
+            2978825,
+            3316328,
+            3085325,
+            3099026
+          ],
+          "scalar_adapter_ns": [
+            5286744,
+            5276843,
+            5435544,
+            5237143,
+            5447945,
+            5955949,
+            5525245
+          ],
+          "avx128_adapter_ns": [
+            5566946,
+            5572447,
+            5490946,
+            5227843,
+            5305844,
+            5781248,
+            5987550
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 120469,
+          "checksum": "15975134464265922432",
+          "upstream_ns": [
+            4999141,
+            4807240,
+            3025125,
+            3135026,
+            3005024,
+            3747531,
+            3037626
+          ],
+          "scalar_adapter_ns": [
+            9536979,
+            9350577,
+            9559779,
+            5328344,
+            5453946,
+            5365344,
+            5490345
+          ],
+          "avx128_adapter_ns": [
+            5292944,
+            8949374,
+            6607355,
+            5129843,
+            5100842,
+            5107442,
+            5321344
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 92390,
+          "checksum": "17713321765426881264",
+          "upstream_ns": [
+            3280228,
+            3006325,
+            3004125,
+            3074026,
+            3051525,
+            3229427,
+            3129025
+          ],
+          "scalar_adapter_ns": [
+            4428036,
+            4413537,
+            4421937,
+            4463137,
+            4509837,
+            4420836,
+            4480137
+          ],
+          "avx128_adapter_ns": [
+            3979032,
+            4169934,
+            3993133,
+            4222934,
+            3978033,
+            4085834,
+            4105134
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 89562,
+          "checksum": "8261205610143435359",
+          "upstream_ns": [
+            2980124,
+            2920325,
+            3005125,
+            3024325,
+            2919624,
+            3104926,
+            3092625
+          ],
+          "scalar_adapter_ns": [
+            4490137,
+            4299935,
+            4527737,
+            4283736,
+            4366636,
+            4592338,
+            4322236
+          ],
+          "avx128_adapter_ns": [
+            3867432,
+            3850832,
+            3917632,
+            3904132,
+            3832431,
+            3899432,
+            3891532
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 81322,
+          "checksum": "13919645558098556442",
+          "upstream_ns": [
+            2318320,
+            2276618,
+            2205218,
+            2593221,
+            2215218,
+            2234418,
+            2215619
+          ],
+          "scalar_adapter_ns": [
+            3871832,
+            3603230,
+            3978833,
+            3605430,
+            3620130,
+            3785531,
+            3749631
+          ],
+          "avx128_adapter_ns": [
+            3533329,
+            3992533,
+            3579329,
+            3408129,
+            3412228,
+            3634830,
+            3507329
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 89107,
+          "checksum": "17674664813218970016",
+          "upstream_ns": [
+            3080625,
+            3025725,
+            3041725,
+            3063925,
+            3009925,
+            3379628,
+            2985724
+          ],
+          "scalar_adapter_ns": [
+            4424637,
+            4288435,
+            4797040,
+            4315036,
+            4569637,
+            4370436,
+            4271636
+          ],
+          "avx128_adapter_ns": [
+            3891632,
+            4759639,
+            4005833,
+            4253335,
+            3940333,
+            3877732,
+            4139534
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 85214,
+          "checksum": "4180404219984672676",
+          "upstream_ns": [
+            2887924,
+            2953524,
+            2936125,
+            2960125,
+            2982724,
+            2909424,
+            3057825
+          ],
+          "scalar_adapter_ns": [
+            4208035,
+            4070634,
+            4066834,
+            4350236,
+            4289335,
+            4447337,
+            4315836
+          ],
+          "avx128_adapter_ns": [
+            3754530,
+            3701030,
+            3926632,
+            3845631,
+            3759631,
+            3697831,
+            3714030
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 99820,
+          "checksum": "2868761781345704478",
+          "upstream_ns": [
+            3135326,
+            3141126,
+            3084325,
+            2959024,
+            3216827,
+            3033625,
+            2940424
+          ],
+          "scalar_adapter_ns": [
+            4585138,
+            4784039,
+            4451937,
+            4425836,
+            4486337,
+            4785840,
+            4927941
+          ],
+          "avx128_adapter_ns": [
+            4705639,
+            4283335,
+            4241935,
+            4253036,
+            4521837,
+            4528937,
+            4472337
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 70579,
+          "checksum": "10307472940005513439",
+          "upstream_ns": [
+            4040533,
+            2893224,
+            3124826,
+            3149026,
+            2928124,
+            2962224,
+            2901424
+          ],
+          "scalar_adapter_ns": [
+            3987033,
+            4286635,
+            3897532,
+            4344036,
+            4142635,
+            4092634,
+            4138234
+          ],
+          "avx128_adapter_ns": [
+            6791956,
+            4324236,
+            4541737,
+            4395036,
+            4277935,
+            4364336,
+            4391336
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 61103,
+          "checksum": "16312287285626667400",
+          "upstream_ns": [
+            2453620,
+            3691931,
+            2665922,
+            2447421,
+            2564722,
+            2477821,
+            2501121
+          ],
+          "scalar_adapter_ns": [
+            5662846,
+            6150151,
+            6701456,
+            3507728,
+            3477528,
+            3391528,
+            3419428
+          ],
+          "avx128_adapter_ns": [
+            3762531,
+            7471461,
+            6486953,
+            3802331,
+            3782531,
+            3868432,
+            3704430
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 71233,
+          "checksum": "11291084146603357394",
+          "upstream_ns": [
+            2926924,
+            2921524,
+            2962625,
+            2921324,
+            2889524,
+            2961324,
+            2852024
+          ],
+          "scalar_adapter_ns": [
+            5060042,
+            5043441,
+            5064842,
+            5135942,
+            5147343,
+            5092442,
+            4954341
+          ],
+          "avx128_adapter_ns": [
+            3968033,
+            4046734,
+            3984432,
+            4026033,
+            4023733,
+            3996033,
+            3877132
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 31991,
+          "checksum": "14903425672521186944",
+          "upstream_ns": [
+            2445520,
+            2316719,
+            2356920,
+            2312719,
+            2279619,
+            2882423,
+            2279419
+          ],
+          "scalar_adapter_ns": [
+            3072125,
+            3092726,
+            3002625,
+            3345828,
+            3046525,
+            3239927,
+            3058525
+          ],
+          "avx128_adapter_ns": [
+            2437320,
+            2444020,
+            2377019,
+            2372219,
+            2376919,
+            2363420,
+            3002325
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 42096,
+          "checksum": "6280565067569173362",
+          "upstream_ns": [
+            3030225,
+            3008425,
+            3928833,
+            3357127,
+            3483028,
+            3015025,
+            3024125
+          ],
+          "scalar_adapter_ns": [
+            4037733,
+            4358236,
+            4683438,
+            3950233,
+            4231435,
+            4123634,
+            3954732
+          ],
+          "avx128_adapter_ns": [
+            3187726,
+            3741331,
+            3392228,
+            3370528,
+            3214027,
+            3343427,
+            3204526
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 26094,
+          "checksum": "12240865256576068571",
+          "upstream_ns": [
+            1537613,
+            1617613,
+            1536213,
+            2047217,
+            1595113,
+            2359919,
+            1984116
+          ],
+          "scalar_adapter_ns": [
+            2540821,
+            2305819,
+            2271619,
+            2385320,
+            2398219,
+            2445320,
+            2933124
+          ],
+          "avx128_adapter_ns": [
+            1838915,
+            1847715,
+            1984916,
+            1840215,
+            1868516,
+            3069925,
+            2464821
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 37145,
+          "checksum": "6381378876830869249",
+          "upstream_ns": [
+            2804723,
+            2918624,
+            2883224,
+            3184826,
+            2920724,
+            2966724,
+            2900724
+          ],
+          "scalar_adapter_ns": [
+            3480829,
+            3601729,
+            3544029,
+            3593130,
+            3507029,
+            3600830,
+            3537529
+          ],
+          "avx128_adapter_ns": [
+            3018925,
+            3225327,
+            2981924,
+            2828023,
+            2867623,
+            2867224,
+            2831523
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 36669,
+          "checksum": "4679235039155874547",
+          "upstream_ns": [
+            2899124,
+            2937924,
+            3007125,
+            2984525,
+            3030025,
+            2937624,
+            2937024
+          ],
+          "scalar_adapter_ns": [
+            3581230,
+            3453928,
+            3475728,
+            3639330,
+            3604529,
+            3449829,
+            3652830
+          ],
+          "avx128_adapter_ns": [
+            2899723,
+            2758023,
+            2836424,
+            2788622,
+            2774423,
+            2827423,
+            2825523
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 39133,
+          "checksum": "15999622016849158303",
+          "upstream_ns": [
+            2691222,
+            2769123,
+            2754022,
+            2673822,
+            2693822,
+            2794923,
+            2846324
+          ],
+          "scalar_adapter_ns": [
+            3177326,
+            3412928,
+            4160334,
+            3284127,
+            3249626,
+            3215327,
+            3326627
+          ],
+          "avx128_adapter_ns": [
+            2809423,
+            2863923,
+            2845824,
+            2823924,
+            2901824,
+            3044025,
+            2996124
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 24018,
+          "checksum": "6926581913470670209",
+          "upstream_ns": [
+            2878524,
+            3022325,
+            2943625,
+            2875923,
+            2938024,
+            2877123,
+            2870124
+          ],
+          "scalar_adapter_ns": [
+            3494229,
+            3302027,
+            3229226,
+            3560730,
+            3431628,
+            3261927,
+            3396428
+          ],
+          "avx128_adapter_ns": [
+            3869632,
+            3779531,
+            4023833,
+            3785731,
+            3933032,
+            3956033,
+            3790531
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 21281,
+          "checksum": "7567971395895798160",
+          "upstream_ns": [
+            2623521,
+            2988424,
+            2697423,
+            2520221,
+            2540920,
+            2743322,
+            3286727
+          ],
+          "scalar_adapter_ns": [
+            2864424,
+            2873424,
+            2851123,
+            2909724,
+            2896124,
+            2989525,
+            2967725
+          ],
+          "avx128_adapter_ns": [
+            3373928,
+            3350728,
+            3343227,
+            3328227,
+            3761231,
+            3745731,
+            3787131
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 23307,
+          "checksum": "1294676057524612689",
+          "upstream_ns": [
+            2943025,
+            2773722,
+            2987124,
+            2791323,
+            2760922,
+            2896824,
+            2757422
+          ],
+          "scalar_adapter_ns": [
+            4632838,
+            5054742,
+            5076741,
+            4567238,
+            4660839,
+            4598538,
+            4664539
+          ],
+          "avx128_adapter_ns": [
+            3517829,
+            3256427,
+            3317028,
+            3142826,
+            3119325,
+            3094125,
+            3088726
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 11984,
+          "checksum": "18382173041514889598",
+          "upstream_ns": [
+            2837423,
+            2957225,
+            3283327,
+            3043825,
+            3193526,
+            3051725,
+            3073925
+          ],
+          "scalar_adapter_ns": [
+            3504129,
+            3518028,
+            3501029,
+            3749531,
+            3547129,
+            3555629,
+            4185035
+          ],
+          "avx128_adapter_ns": [
+            2526521,
+            2509921,
+            2826923,
+            2685122,
+            2607722,
+            2561721,
+            2784123
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 10673,
+          "checksum": "2568057936572652118",
+          "upstream_ns": [
+            3133026,
+            2977224,
+            2999724,
+            2810923,
+            2990625,
+            2737622,
+            2724522
+          ],
+          "scalar_adapter_ns": [
+            4379236,
+            3598630,
+            3516929,
+            3472428,
+            3074725,
+            3439629,
+            3705530
+          ],
+          "avx128_adapter_ns": [
+            2292619,
+            2614121,
+            2353120,
+            2505221,
+            2565021,
+            2226118,
+            2206119
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 12857,
+          "checksum": "12587438399278334059",
+          "upstream_ns": [
+            2468720,
+            3654630,
+            2591022,
+            2684122,
+            2598821,
+            2689622,
+            2646321
+          ],
+          "scalar_adapter_ns": [
+            3656730,
+            4600638,
+            3092626,
+            3143826,
+            3068025,
+            3084225,
+            3222427
+          ],
+          "avx128_adapter_ns": [
+            2497021,
+            2683622,
+            2874623,
+            2594021,
+            2838824,
+            2626522,
+            2777123
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 10545,
+          "checksum": "1094410763691260309",
+          "upstream_ns": [
+            2909724,
+            3452928,
+            3144625,
+            2795423,
+            2827224,
+            3159626,
+            2928224
+          ],
+          "scalar_adapter_ns": [
+            3356028,
+            3393128,
+            3514829,
+            3088625,
+            3229126,
+            3213426,
+            3121026
+          ],
+          "avx128_adapter_ns": [
+            2426620,
+            2672722,
+            2618422,
+            2502721,
+            2381020,
+            2489621,
+            2394119
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 10636,
+          "checksum": "4314964461295769497",
+          "upstream_ns": [
+            2876323,
+            3009925,
+            3122926,
+            2877124,
+            2955724,
+            3136126,
+            3226726
+          ],
+          "scalar_adapter_ns": [
+            3586730,
+            3349327,
+            3432629,
+            3099325,
+            3160126,
+            3105925,
+            3447228
+          ],
+          "avx128_adapter_ns": [
+            2366320,
+            2627721,
+            2513920,
+            2365019,
+            2370420,
+            2322419,
+            2538921
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 10985,
+          "checksum": "5119602499523672797",
+          "upstream_ns": [
+            2725122,
+            2865823,
+            2714023,
+            2689422,
+            2801923,
+            2688522,
+            3091526
+          ],
+          "scalar_adapter_ns": [
+            3030225,
+            2827423,
+            2714322,
+            2649222,
+            2634222,
+            2700622,
+            2947924
+          ],
+          "avx128_adapter_ns": [
+            2460821,
+            2419220,
+            2301619,
+            2413019,
+            2394019,
+            2324319,
+            2295719
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "9180332514659059472",
+          "upstream_ns": [
+            4960941,
+            5362544,
+            5958749,
+            4991341,
+            5191442,
+            5199443,
+            5138942
+          ],
+          "scalar_adapter_ns": [
+            6109850,
+            6084049,
+            5801948,
+            5591246,
+            5678147,
+            5765947,
+            9269476
+          ],
+          "avx128_adapter_ns": [
+            6558654,
+            6457153,
+            8319468,
+            6962657,
+            6469353,
+            6370052,
+            6624154
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "13902240098235487479",
+          "upstream_ns": [
+            5369444,
+            5247143,
+            5186943,
+            5410845,
+            5076442,
+            5183242,
+            5668547
+          ],
+          "scalar_adapter_ns": [
+            5834148,
+            5666947,
+            6806055,
+            6147350,
+            6179150,
+            6046949,
+            5983449
+          ],
+          "avx128_adapter_ns": [
+            8110066,
+            6350552,
+            6809156,
+            6925256,
+            7133559,
+            6527954,
+            9384977
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "7987800271997584764",
+          "upstream_ns": [
+            6473353,
+            5497145,
+            5023042,
+            5251343,
+            5415344,
+            5063641,
+            5604946
+          ],
+          "scalar_adapter_ns": [
+            9543078,
+            7792864,
+            7883564,
+            8178867,
+            7898365,
+            7711164,
+            8777971
+          ],
+          "avx128_adapter_ns": [
+            7863865,
+            5452845,
+            5513545,
+            5656146,
+            5551145,
+            5541345,
+            5755648
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "15931386383711774584",
+          "upstream_ns": [
+            12094699,
+            11648396,
+            9794480,
+            9984082,
+            12124199,
+            9703579,
+            9975681
+          ],
+          "scalar_adapter_ns": [
+            17160540,
+            14109815,
+            12346901,
+            12075799,
+            13813113,
+            11747696,
+            11653496
+          ],
+          "avx128_adapter_ns": [
+            9251776,
+            9069075,
+            8759972,
+            8942773,
+            8683771,
+            8910673,
+            8557470
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "11318774237413794847",
+          "upstream_ns": [
+            9733280,
+            10445785,
+            10284384,
+            9572478,
+            9601579,
+            9805680,
+            9748479
+          ],
+          "scalar_adapter_ns": [
+            11856797,
+            11782096,
+            12135999,
+            11950697,
+            11942197,
+            12124199,
+            12162199
+          ],
+          "avx128_adapter_ns": [
+            9742979,
+            8591270,
+            8505569,
+            8669471,
+            8488970,
+            8362068,
+            8508770
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "8817313838762358370",
+          "upstream_ns": [
+            7920765,
+            8041966,
+            7992365,
+            7799764,
+            7843164,
+            7857264,
+            8016165
+          ],
+          "scalar_adapter_ns": [
+            9330576,
+            9527378,
+            9300875,
+            9693079,
+            9563978,
+            9742980,
+            9535278
+          ],
+          "avx128_adapter_ns": [
+            8893472,
+            8067766,
+            8036366,
+            8021766,
+            8379468,
+            8052966,
+            8447869
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "1807168128447507053",
+          "upstream_ns": [
+            10631687,
+            12025498,
+            11379393,
+            11826196,
+            11168591,
+            10716288,
+            10813788
+          ],
+          "scalar_adapter_ns": [
+            12427302,
+            12062198,
+            13669812,
+            12166400,
+            12675404,
+            12251800,
+            11870597
+          ],
+          "avx128_adapter_ns": [
+            9162174,
+            10108083,
+            9621478,
+            9285876,
+            9026373,
+            10417285,
+            9195075
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "14614897674280176439",
+          "upstream_ns": [
+            10635586,
+            10333784,
+            11887797,
+            15459226,
+            10787488,
+            10479886,
+            12112899
+          ],
+          "scalar_adapter_ns": [
+            11588895,
+            11559694,
+            12794804,
+            12121699,
+            12280099,
+            13170507,
+            13108206
+          ],
+          "avx128_adapter_ns": [
+            9005474,
+            9467777,
+            8836772,
+            9023073,
+            10139783,
+            9612978,
+            9484877
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "2187105155126654839",
+          "upstream_ns": [
+            10835089,
+            9988982,
+            9883181,
+            12454001,
+            11451893,
+            9775979,
+            10638387
+          ],
+          "scalar_adapter_ns": [
+            10166382,
+            9313075,
+            10667387,
+            12992806,
+            9606278,
+            9453477,
+            9271575
+          ],
+          "avx128_adapter_ns": [
+            8893772,
+            8697771,
+            8349268,
+            8872672,
+            8741471,
+            8538570,
+            8610270
+          ]
+        }
+      ],
+      "correctness_comparisons": 6912,
+      "current_runtime_comparisons": 1728,
+      "status": "pass"
+    },
+    {
+      "schema": "velosim.svint.simd.benchmark.v1",
+      "seed": 20261029,
+      "warmups": 2,
+      "repeats": 7,
+      "avx128": true,
+      "cases": [
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 116362,
+          "checksum": "10523057023868391336",
+          "upstream_ns": [
+            3096925,
+            3050025,
+            3110625,
+            3233227,
+            3277627,
+            3038025,
+            3002924
+          ],
+          "scalar_adapter_ns": [
+            5200842,
+            4940840,
+            5458745,
+            4909739,
+            5417144,
+            5156142,
+            6491453
+          ],
+          "avx128_adapter_ns": [
+            4978541,
+            4913440,
+            4935440,
+            5050241,
+            4866140,
+            5606045,
+            4833640
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 93586,
+          "checksum": "6143287932639198768",
+          "upstream_ns": [
+            2461023,
+            2564724,
+            2380822,
+            2416623,
+            2408523,
+            2741026,
+            2429022
+          ],
+          "scalar_adapter_ns": [
+            3937537,
+            4094239,
+            4009438,
+            4037438,
+            3934037,
+            3954137,
+            4798346
+          ],
+          "avx128_adapter_ns": [
+            4035638,
+            3990737,
+            4238840,
+            3902737,
+            3915137,
+            5866555,
+            4412842
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 120469,
+          "checksum": "12333849777433121085",
+          "upstream_ns": [
+            3092029,
+            3426433,
+            3285531,
+            3194730,
+            3167330,
+            3119930,
+            3230830
+          ],
+          "scalar_adapter_ns": [
+            5796954,
+            6128457,
+            5772954,
+            5230349,
+            5205749,
+            6389960,
+            5215049
+          ],
+          "avx128_adapter_ns": [
+            5202349,
+            5482852,
+            5453652,
+            5394651,
+            5033847,
+            5316850,
+            5287950
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 93515,
+          "checksum": "17950435777129930146",
+          "upstream_ns": [
+            3000429,
+            2997728,
+            2999228,
+            3012229,
+            2990428,
+            2983528,
+            3035528
+          ],
+          "scalar_adapter_ns": [
+            4242240,
+            4291440,
+            4213939,
+            4872746,
+            4578243,
+            4555243,
+            4317141
+          ],
+          "avx128_adapter_ns": [
+            4058938,
+            4088439,
+            4095639,
+            4061938,
+            4233740,
+            4073738,
+            4084339
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 89042,
+          "checksum": "6460328987322460481",
+          "upstream_ns": [
+            2874827,
+            2964328,
+            2923227,
+            2941427,
+            2934228,
+            2987428,
+            2967228
+          ],
+          "scalar_adapter_ns": [
+            4080838,
+            4106139,
+            4060139,
+            4059638,
+            4144339,
+            4105438,
+            4091939
+          ],
+          "avx128_adapter_ns": [
+            3813436,
+            3931036,
+            3872736,
+            3970138,
+            3892137,
+            3922637,
+            3862036
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 100064,
+          "checksum": "2601027063829986108",
+          "upstream_ns": [
+            2620624,
+            2639525,
+            2687625,
+            3044628,
+            2700425,
+            2613825,
+            3411132
+          ],
+          "scalar_adapter_ns": [
+            4464142,
+            4308041,
+            4402342,
+            4420642,
+            4319941,
+            4363041,
+            4424342
+          ],
+          "avx128_adapter_ns": [
+            4274740,
+            4236139,
+            4277340,
+            4420842,
+            4419741,
+            4338941,
+            5814654
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 91700,
+          "checksum": "7502465292141257889",
+          "upstream_ns": [
+            2954027,
+            3046628,
+            2947427,
+            2962127,
+            3016328,
+            2956928,
+            3040128
+          ],
+          "scalar_adapter_ns": [
+            4194240,
+            4286141,
+            4356841,
+            4302941,
+            4203240,
+            4250740,
+            4202240
+          ],
+          "avx128_adapter_ns": [
+            4003638,
+            4073438,
+            4030138,
+            3968938,
+            4031837,
+            3975938,
+            3978337
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 88338,
+          "checksum": "10986948008033092618",
+          "upstream_ns": [
+            2906527,
+            2916527,
+            2904927,
+            2860627,
+            2922527,
+            2835127,
+            2825227
+          ],
+          "scalar_adapter_ns": [
+            4088439,
+            4080238,
+            4008938,
+            3941337,
+            3973838,
+            3925537,
+            3967937
+          ],
+          "avx128_adapter_ns": [
+            3964437,
+            4136039,
+            3841136,
+            3899937,
+            4005937,
+            3750435,
+            3968237
+          ]
+        },
+        {
+          "width": 127,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 108838,
+          "checksum": "11301813523740223528",
+          "upstream_ns": [
+            2956428,
+            3002629,
+            2989828,
+            2941428,
+            2967727,
+            3224130,
+            2967828
+          ],
+          "scalar_adapter_ns": [
+            4967746,
+            4672343,
+            4999847,
+            4623644,
+            4758045,
+            4686744,
+            4575043
+          ],
+          "avx128_adapter_ns": [
+            5268850,
+            4548543,
+            4630144,
+            4665743,
+            4565343,
+            4541943,
+            4571343
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 124119,
+          "checksum": "14174510008736707431",
+          "upstream_ns": [
+            3197430,
+            3007828,
+            3320731,
+            3573433,
+            3053228,
+            3531533,
+            3221430
+          ],
+          "scalar_adapter_ns": [
+            5163549,
+            5808654,
+            7604372,
+            5576453,
+            5101248,
+            5244149,
+            5510452
+          ],
+          "avx128_adapter_ns": [
+            5058147,
+            6050357,
+            5740754,
+            4984747,
+            5292350,
+            4988847,
+            5213249
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 128000,
+          "checksum": "13536487398809803907",
+          "upstream_ns": [
+            3177029,
+            3227430,
+            3182730,
+            3526233,
+            3185730,
+            3215230,
+            3484833
+          ],
+          "scalar_adapter_ns": [
+            5477752,
+            5432651,
+            7480771,
+            5460852,
+            5497551,
+            5581952,
+            5860455
+          ],
+          "avx128_adapter_ns": [
+            5412151,
+            5338750,
+            5608352,
+            5436751,
+            5376651,
+            5321150,
+            5324150
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 116032,
+          "checksum": "6259734475890362988",
+          "upstream_ns": [
+            3797236,
+            3294031,
+            2950928,
+            2741926,
+            2889727,
+            2809426,
+            2794426
+          ],
+          "scalar_adapter_ns": [
+            5081747,
+            5523952,
+            5333250,
+            4803945,
+            4897346,
+            4943347,
+            8592281
+          ],
+          "avx128_adapter_ns": [
+            5275549,
+            5903856,
+            5450851,
+            4650343,
+            4875246,
+            4793445,
+            4804545
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 92668,
+          "checksum": "10214855952027899010",
+          "upstream_ns": [
+            2829827,
+            2773726,
+            2809326,
+            2794326,
+            2709526,
+            2864527,
+            2713326
+          ],
+          "scalar_adapter_ns": [
+            4185439,
+            4227740,
+            4232940,
+            4081838,
+            4374841,
+            4065438,
+            4086538
+          ],
+          "avx128_adapter_ns": [
+            4161139,
+            4021637,
+            3903537,
+            3977538,
+            3931337,
+            3817136,
+            4134538
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 100803,
+          "checksum": "1470193412239793054",
+          "upstream_ns": [
+            3012828,
+            2963328,
+            2967028,
+            3197830,
+            2984728,
+            3005628,
+            2962928
+          ],
+          "scalar_adapter_ns": [
+            4603743,
+            4384341,
+            4779645,
+            4427442,
+            4397041,
+            4400441,
+            4364441
+          ],
+          "avx128_adapter_ns": [
+            4325841,
+            4161939,
+            4183239,
+            4236339,
+            4358541,
+            4161539,
+            5883655
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 125258,
+          "checksum": "7349040361155405854",
+          "upstream_ns": [
+            5702753,
+            3345131,
+            3025528,
+            3525633,
+            3078129,
+            3977637,
+            3008728
+          ],
+          "scalar_adapter_ns": [
+            9029585,
+            6293459,
+            5388650,
+            5290250,
+            5917555,
+            5172948,
+            5283249
+          ],
+          "avx128_adapter_ns": [
+            10432798,
+            5327850,
+            5196649,
+            5454651,
+            5301950,
+            6172658,
+            5273450
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 92044,
+          "checksum": "4613016331409813783",
+          "upstream_ns": [
+            2988428,
+            3581434,
+            2798226,
+            2867527,
+            2833327,
+            4203840,
+            2853127
+          ],
+          "scalar_adapter_ns": [
+            4172539,
+            4147838,
+            4234440,
+            4158739,
+            4267739,
+            4117638,
+            4118038
+          ],
+          "avx128_adapter_ns": [
+            4121739,
+            4052738,
+            3948537,
+            4588443,
+            3982938,
+            3942337,
+            4004337
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 95625,
+          "checksum": "11069815797497791536",
+          "upstream_ns": [
+            2923527,
+            3363132,
+            2960528,
+            3254331,
+            2881127,
+            3506933,
+            3224331
+          ],
+          "scalar_adapter_ns": [
+            4784645,
+            4701744,
+            5335850,
+            4192039,
+            4161439,
+            6033957,
+            4275340
+          ],
+          "avx128_adapter_ns": [
+            3982037,
+            4154039,
+            4007037,
+            4009937,
+            5994956,
+            4232939,
+            4403541
+          ]
+        },
+        {
+          "width": 128,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 112320,
+          "checksum": "18193081943868306601",
+          "upstream_ns": [
+            3107229,
+            2975328,
+            3047929,
+            2960728,
+            3039529,
+            2936328,
+            2990128
+          ],
+          "scalar_adapter_ns": [
+            4786145,
+            4779344,
+            4845645,
+            4769344,
+            4780544,
+            4750245,
+            5172448
+          ],
+          "avx128_adapter_ns": [
+            4746645,
+            4868246,
+            5189549,
+            4730444,
+            4872446,
+            4742644,
+            4851245
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 92044,
+          "checksum": "15200025804563010050",
+          "upstream_ns": [
+            2608025,
+            2743425,
+            2428923,
+            2468923,
+            2688125,
+            2431323,
+            2453623
+          ],
+          "scalar_adapter_ns": [
+            4589243,
+            5353450,
+            4344341,
+            4863446,
+            4775445,
+            4358140,
+            4211440
+          ],
+          "avx128_adapter_ns": [
+            6377960,
+            5193449,
+            5167248,
+            4601643,
+            4479142,
+            4366941,
+            4107738
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 114625,
+          "checksum": "4675814007029168190",
+          "upstream_ns": [
+            3073629,
+            3072229,
+            2969928,
+            4821145,
+            2971328,
+            2987228,
+            3014328
+          ],
+          "scalar_adapter_ns": [
+            5612352,
+            5618553,
+            5507351,
+            7305669,
+            5484951,
+            5313250,
+            5263350
+          ],
+          "avx128_adapter_ns": [
+            5817155,
+            5692653,
+            5500452,
+            7943074,
+            5750954,
+            5200148,
+            5192949
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 117362,
+          "checksum": "14331971920176451973",
+          "upstream_ns": [
+            3338431,
+            3088328,
+            3080629,
+            3094929,
+            2974628,
+            3603634,
+            3045429
+          ],
+          "scalar_adapter_ns": [
+            5616653,
+            5864255,
+            5428250,
+            5991156,
+            5453551,
+            5708454,
+            5463251
+          ],
+          "avx128_adapter_ns": [
+            5609053,
+            5572853,
+            6243359,
+            5757354,
+            5918055,
+            5035747,
+            5916955
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 83363,
+          "checksum": "812068091671378867",
+          "upstream_ns": [
+            2803327,
+            2813726,
+            2937328,
+            2843227,
+            2768325,
+            4334340,
+            2714225
+          ],
+          "scalar_adapter_ns": [
+            4148338,
+            4326640,
+            3993537,
+            4140139,
+            4149039,
+            4035638,
+            4023038
+          ],
+          "avx128_adapter_ns": [
+            4123738,
+            3683235,
+            3643034,
+            3784835,
+            3595734,
+            3640134,
+            3636034
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 89431,
+          "checksum": "14099617945546954387",
+          "upstream_ns": [
+            2972128,
+            3151629,
+            2955528,
+            2939128,
+            2947027,
+            2998028,
+            3393532
+          ],
+          "scalar_adapter_ns": [
+            4521942,
+            4310441,
+            4444241,
+            4480342,
+            4320740,
+            4517642,
+            4313240
+          ],
+          "avx128_adapter_ns": [
+            3903637,
+            3880236,
+            3960337,
+            3895036,
+            3895037,
+            3986737,
+            3843336
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 80682,
+          "checksum": "7980676899702834802",
+          "upstream_ns": [
+            2861626,
+            2210820,
+            2186621,
+            2304421,
+            2207721,
+            2209821,
+            2196721
+          ],
+          "scalar_adapter_ns": [
+            3678735,
+            3669235,
+            4112939,
+            3848236,
+            3691434,
+            3802635,
+            3965237
+          ],
+          "avx128_adapter_ns": [
+            3459533,
+            3612633,
+            3469032,
+            3422432,
+            3576134,
+            3773235,
+            3458732
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 89758,
+          "checksum": "13512063351145854132",
+          "upstream_ns": [
+            3488232,
+            3022128,
+            3100329,
+            3269530,
+            3232831,
+            3046328,
+            3020929
+          ],
+          "scalar_adapter_ns": [
+            4362041,
+            4344241,
+            4422241,
+            4382741,
+            4832345,
+            4559143,
+            4515442
+          ],
+          "avx128_adapter_ns": [
+            3991038,
+            4174539,
+            4124739,
+            4110338,
+            4546842,
+            4196639,
+            4062038
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 84453,
+          "checksum": "7450480888388222482",
+          "upstream_ns": [
+            3185830,
+            3296031,
+            2988828,
+            3034328,
+            3035529,
+            2984628,
+            3016729
+          ],
+          "scalar_adapter_ns": [
+            4250240,
+            4377941,
+            4342140,
+            4284440,
+            4264639,
+            4187139,
+            4166339
+          ],
+          "avx128_adapter_ns": [
+            3751835,
+            4098638,
+            3878937,
+            3887836,
+            6818564,
+            3872836,
+            3767935
+          ]
+        },
+        {
+          "width": 256,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 96603,
+          "checksum": "10144909023424858176",
+          "upstream_ns": [
+            3060129,
+            5091947,
+            2956928,
+            3018429,
+            3016829,
+            2964228,
+            2994328
+          ],
+          "scalar_adapter_ns": [
+            6640562,
+            8910583,
+            7413670,
+            4474241,
+            4473841,
+            4499842,
+            4453541
+          ],
+          "avx128_adapter_ns": [
+            4325840,
+            8112776,
+            4270839,
+            4212639,
+            4315041,
+            4462741,
+            4270140
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 72968,
+          "checksum": "17849936614830570974",
+          "upstream_ns": [
+            3084829,
+            3006928,
+            3040128,
+            3022828,
+            2980928,
+            2961528,
+            3072229
+          ],
+          "scalar_adapter_ns": [
+            4432341,
+            4187939,
+            4166739,
+            4155939,
+            4119038,
+            4200839,
+            4224039
+          ],
+          "avx128_adapter_ns": [
+            4817445,
+            4528942,
+            4629444,
+            4592943,
+            4578043,
+            4574443,
+            5046947
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 71816,
+          "checksum": "8524141415717391226",
+          "upstream_ns": [
+            2951128,
+            3023628,
+            3035329,
+            3015028,
+            2972327,
+            3009428,
+            3012628
+          ],
+          "scalar_adapter_ns": [
+            4174639,
+            4147039,
+            4114838,
+            4119239,
+            4025738,
+            4349440,
+            4514142
+          ],
+          "avx128_adapter_ns": [
+            4521542,
+            4482342,
+            4849045,
+            4505342,
+            4369341,
+            4359541,
+            4792145
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 62725,
+          "checksum": "11965744984981951767",
+          "upstream_ns": [
+            2547024,
+            2637124,
+            2538923,
+            2606524,
+            2573224,
+            2641125,
+            2490023
+          ],
+          "scalar_adapter_ns": [
+            4685544,
+            4695444,
+            4491342,
+            4975946,
+            4867346,
+            4298540,
+            4373241
+          ],
+          "avx128_adapter_ns": [
+            3765235,
+            3525833,
+            3689635,
+            3664035,
+            3397432,
+            3437432,
+            3424732
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 42621,
+          "checksum": "9787074109967774116",
+          "upstream_ns": [
+            3024828,
+            3326631,
+            3084229,
+            3174130,
+            3466233,
+            2971528,
+            3053829
+          ],
+          "scalar_adapter_ns": [
+            3989237,
+            4007738,
+            4017837,
+            4009237,
+            4648043,
+            4019838,
+            4014237
+          ],
+          "avx128_adapter_ns": [
+            3141530,
+            3326831,
+            3109429,
+            3113329,
+            3093229,
+            3363731,
+            3152929
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 24924,
+          "checksum": "15306436584592834557",
+          "upstream_ns": [
+            1755816,
+            1758017,
+            1810417,
+            1765017,
+            1787417,
+            1816817,
+            1846317
+          ],
+          "scalar_adapter_ns": [
+            2557924,
+            2392722,
+            2321322,
+            2316621,
+            2315021,
+            2286822,
+            2442023
+          ],
+          "avx128_adapter_ns": [
+            1793817,
+            1863417,
+            1839317,
+            1951418,
+            1801617,
+            1801916,
+            1799117
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 52534,
+          "checksum": "2975119148252024246",
+          "upstream_ns": [
+            3085329,
+            3025928,
+            3156430,
+            3033029,
+            3106329,
+            3138829,
+            3096129
+          ],
+          "scalar_adapter_ns": [
+            4294340,
+            4445742,
+            4342840,
+            4337240,
+            4331540,
+            4382541,
+            4293640
+          ],
+          "avx128_adapter_ns": [
+            3842436,
+            3659834,
+            3645234,
+            3634333,
+            3596734,
+            4185339,
+            3685834
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 40209,
+          "checksum": "7173486639106861329",
+          "upstream_ns": [
+            2946927,
+            3197030,
+            3210630,
+            3895036,
+            3492333,
+            3255130,
+            3445732
+          ],
+          "scalar_adapter_ns": [
+            3995537,
+            3821136,
+            3612933,
+            3982437,
+            3889036,
+            3935337,
+            4313041
+          ],
+          "avx128_adapter_ns": [
+            3014428,
+            2980628,
+            3528033,
+            3838536,
+            3164829,
+            3160630,
+            3378631
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 35950,
+          "checksum": "12678296740816390162",
+          "upstream_ns": [
+            2937328,
+            3017728,
+            2845626,
+            2889327,
+            2850426,
+            2826926,
+            2837026
+          ],
+          "scalar_adapter_ns": [
+            3522433,
+            3456132,
+            3488632,
+            3415232,
+            3476233,
+            3439732,
+            3476733
+          ],
+          "avx128_adapter_ns": [
+            2748925,
+            2758026,
+            2744926,
+            2782426,
+            2745925,
+            2736726,
+            2756426
+          ]
+        },
+        {
+          "width": 1024,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 42814,
+          "checksum": "10289245790986836787",
+          "upstream_ns": [
+            2944128,
+            3014428,
+            2879427,
+            3109329,
+            2891226,
+            2863627,
+            2881127
+          ],
+          "scalar_adapter_ns": [
+            3566633,
+            3637634,
+            3411732,
+            3446733,
+            3507533,
+            3609833,
+            4871746
+          ],
+          "avx128_adapter_ns": [
+            3118529,
+            3271230,
+            2995128,
+            2985227,
+            3072829,
+            3013728,
+            3024928
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 25567,
+          "checksum": "17376656792322503343",
+          "upstream_ns": [
+            3308630,
+            3011428,
+            3465832,
+            3089829,
+            3270431,
+            3013628,
+            3001028
+          ],
+          "scalar_adapter_ns": [
+            3466233,
+            3721134,
+            3517333,
+            3637533,
+            3469732,
+            3464032,
+            3457033
+          ],
+          "avx128_adapter_ns": [
+            4003138,
+            4014338,
+            4291940,
+            4073938,
+            4016338,
+            4291740,
+            4018237
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 24793,
+          "checksum": "8867048425806717964",
+          "upstream_ns": [
+            2962828,
+            3014028,
+            2940928,
+            2924228,
+            3031628,
+            2910827,
+            3024528
+          ],
+          "scalar_adapter_ns": [
+            3440532,
+            3372331,
+            3415031,
+            3446532,
+            3349631,
+            3514633,
+            3570534
+          ],
+          "avx128_adapter_ns": [
+            3753135,
+            3812736,
+            3847936,
+            3951636,
+            3758535,
+            3831836,
+            3797935
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 24546,
+          "checksum": "10472438310423907352",
+          "upstream_ns": [
+            3221830,
+            3075829,
+            2897627,
+            3834136,
+            3117029,
+            3546533,
+            3242730
+          ],
+          "scalar_adapter_ns": [
+            5058947,
+            4700744,
+            4702343,
+            5018046,
+            5188949,
+            4875345,
+            5023147
+          ],
+          "avx128_adapter_ns": [
+            3279230,
+            3644534,
+            3289831,
+            3842036,
+            3636534,
+            3742535,
+            3745535
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 12853,
+          "checksum": "9613380625664664822",
+          "upstream_ns": [
+            3137629,
+            3058428,
+            3308130,
+            3130729,
+            3100028,
+            3147530,
+            3253030
+          ],
+          "scalar_adapter_ns": [
+            3699335,
+            4045138,
+            3904437,
+            4193140,
+            3820036,
+            4016638,
+            3982838
+          ],
+          "avx128_adapter_ns": [
+            3253430,
+            3563033,
+            2807026,
+            3306031,
+            2830726,
+            3395931,
+            2831926
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 10206,
+          "checksum": "4917338525551759302",
+          "upstream_ns": [
+            2604024,
+            2490123,
+            2527924,
+            2696525,
+            2633324,
+            2592124,
+            2457923
+          ],
+          "scalar_adapter_ns": [
+            3006128,
+            3073329,
+            3038628,
+            3597134,
+            3531833,
+            3061728,
+            3075828
+          ],
+          "avx128_adapter_ns": [
+            2153420,
+            2162220,
+            2141720,
+            2184720,
+            2177721,
+            2166920,
+            2194821
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 14740,
+          "checksum": "1726464891622708958",
+          "upstream_ns": [
+            2942528,
+            3196930,
+            3018529,
+            2941628,
+            3002628,
+            2887127,
+            2836327
+          ],
+          "scalar_adapter_ns": [
+            3528032,
+            3420932,
+            3458933,
+            3447932,
+            3417632,
+            3417132,
+            3415532
+          ],
+          "avx128_adapter_ns": [
+            2959627,
+            2936527,
+            2994727,
+            2884826,
+            2846726,
+            2896227,
+            2947027
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 10931,
+          "checksum": "6366775077266324408",
+          "upstream_ns": [
+            2957327,
+            3091729,
+            2860627,
+            2834126,
+            3047128,
+            2963827,
+            2826426
+          ],
+          "scalar_adapter_ns": [
+            3197030,
+            3593133,
+            3311531,
+            3234130,
+            3245730,
+            3162929,
+            3138930
+          ],
+          "avx128_adapter_ns": [
+            2583524,
+            2839826,
+            2416422,
+            2427123,
+            2408923,
+            2653925,
+            2557924
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "9612298599891074698",
+          "upstream_ns": [
+            2599625,
+            2577424,
+            2621325,
+            2571424,
+            2602925,
+            2997927,
+            2631224
+          ],
+          "scalar_adapter_ns": [
+            2944927,
+            2843926,
+            2877627,
+            3260230,
+            2823926,
+            2831526,
+            2888027
+          ],
+          "avx128_adapter_ns": [
+            2167820,
+            2348822,
+            2207620,
+            2331521,
+            2145120,
+            2208221,
+            2164121
+          ]
+        },
+        {
+          "width": 4096,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 12864,
+          "checksum": "11500563018392110535",
+          "upstream_ns": [
+            3432431,
+            2959827,
+            3046628,
+            3028829,
+            3060828,
+            3268331,
+            3145029
+          ],
+          "scalar_adapter_ns": [
+            2952828,
+            2929428,
+            2966827,
+            2901227,
+            2901727,
+            2917127,
+            2899127
+          ],
+          "avx128_adapter_ns": [
+            2738626,
+            2703625,
+            2890727,
+            2596724,
+            2574424,
+            3271730,
+            2608724
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "9180332514659059472",
+          "upstream_ns": [
+            4964247,
+            4964946,
+            4818945,
+            4901346,
+            4874946,
+            4999046,
+            4913146
+          ],
+          "scalar_adapter_ns": [
+            5603152,
+            5701953,
+            5653053,
+            5593251,
+            5640752,
+            5558252,
+            5792153
+          ],
+          "avx128_adapter_ns": [
+            6567561,
+            6289458,
+            6422959,
+            6672562,
+            6352359,
+            6247658,
+            6428560
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "13902240098235487479",
+          "upstream_ns": [
+            4830545,
+            4841545,
+            4842445,
+            4960846,
+            4999947,
+            4899246,
+            6997165
+          ],
+          "scalar_adapter_ns": [
+            5568552,
+            5560451,
+            5636653,
+            5613152,
+            5701353,
+            5496051,
+            6206058
+          ],
+          "avx128_adapter_ns": [
+            6394659,
+            6378959,
+            6521160,
+            6119957,
+            6131357,
+            6523860,
+            6394359
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "known",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "7987800271997584764",
+          "upstream_ns": [
+            5382750,
+            5033047,
+            4981446,
+            4944346,
+            5230248,
+            5196748,
+            5210949
+          ],
+          "scalar_adapter_ns": [
+            7862173,
+            7920674,
+            7705672,
+            7882173,
+            7771673,
+            7870073,
+            7752572
+          ],
+          "avx128_adapter_ns": [
+            5650652,
+            5331849,
+            5485451,
+            5454851,
+            5457450,
+            5458051,
+            5686553
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "15931386383711774584",
+          "upstream_ns": [
+            10064193,
+            10731300,
+            10272295,
+            9992493,
+            11812510,
+            10022993,
+            9983993
+          ],
+          "scalar_adapter_ns": [
+            13523126,
+            12709718,
+            12633318,
+            12533416,
+            14309633,
+            13007220,
+            12152612
+          ],
+          "avx128_adapter_ns": [
+            9762391,
+            9026283,
+            9553189,
+            9559489,
+            10137694,
+            8826182,
+            8918682
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "11318774237413794847",
+          "upstream_ns": [
+            9593189,
+            9792591,
+            9838991,
+            10164694,
+            9745490,
+            9883192,
+            10267695
+          ],
+          "scalar_adapter_ns": [
+            12092212,
+            11702708,
+            12109312,
+            12063012,
+            11928810,
+            12679518,
+            12370115
+          ],
+          "avx128_adapter_ns": [
+            8556179,
+            8391078,
+            8613880,
+            8578880,
+            9302586,
+            8803681,
+            8350977
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_left",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "8817313838762358370",
+          "upstream_ns": [
+            7845073,
+            7874273,
+            7942974,
+            7869273,
+            7872072,
+            8013475,
+            8267676
+          ],
+          "scalar_adapter_ns": [
+            9585089,
+            9553288,
+            9415187,
+            9439088,
+            9525689,
+            9447188,
+            9948193
+          ],
+          "avx128_adapter_ns": [
+            8089374,
+            8088975,
+            7861173,
+            7922273,
+            8485578,
+            8264876,
+            8016874
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "and",
+          "iterations": 10000,
+          "checksum": "1807168128447507053",
+          "upstream_ns": [
+            10774800,
+            10730999,
+            11049702,
+            11439806,
+            11806109,
+            11095803,
+            10751900
+          ],
+          "scalar_adapter_ns": [
+            11804410,
+            11903910,
+            11718408,
+            12035712,
+            11658608,
+            13205122,
+            11989211
+          ],
+          "avx128_adapter_ns": [
+            8805981,
+            9223886,
+            9564289,
+            9928792,
+            9786991,
+            8788381,
+            9418687
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "or",
+          "iterations": 10000,
+          "checksum": "14614897674280176439",
+          "upstream_ns": [
+            10693599,
+            11081502,
+            10394296,
+            10673099,
+            10962601,
+            10658499,
+            10830600
+          ],
+          "scalar_adapter_ns": [
+            11921810,
+            11546607,
+            11955110,
+            11389205,
+            12217813,
+            13338223,
+            11665307
+          ],
+          "avx128_adapter_ns": [
+            10089093,
+            8962683,
+            8963583,
+            8796981,
+            8893082,
+            9079284,
+            8681080
+          ]
+        },
+        {
+          "width": 16384,
+          "workload": "mixed_both",
+          "operation": "xor",
+          "iterations": 10000,
+          "checksum": "2187105155126654839",
+          "upstream_ns": [
+            12460715,
+            10038993,
+            9587489,
+            10402496,
+            10043293,
+            9476587,
+            9714290
+          ],
+          "scalar_adapter_ns": [
+            10937301,
+            9496387,
+            9547688,
+            9575888,
+            9389087,
+            9741190,
+            9265485
+          ],
+          "avx128_adapter_ns": [
+            8569979,
+            8362277,
+            8397677,
+            8863982,
+            9095384,
+            8330577,
+            8126775
+          ]
+        }
+      ],
+      "correctness_comparisons": 6912,
+      "current_runtime_comparisons": 1728,
+      "status": "pass"
+    }
+  ]
+}

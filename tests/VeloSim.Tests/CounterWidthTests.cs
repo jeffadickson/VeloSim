@@ -80,7 +80,9 @@ public class CounterWidthTests
         var directory = Temp();
         try
         {
-            var report = await new CounterDifferential(new WidthRunner()).RunAsync([Source(directory, 16)], "counter16", Path.Combine(directory, "results"), cycles: 3, engines: ["velosim", "icarus"]);
+            string fakeSurelog = Path.Combine(directory, "surelog"), fakeNorm = Path.Combine(directory, "velosim-uhdm-normalize"), fakeIverilog = Path.Combine(directory, "iverilog"), fakeVvp = Path.Combine(directory, "vvp");
+            File.WriteAllText(fakeSurelog, ""); File.WriteAllText(fakeNorm, ""); File.WriteAllText(fakeIverilog, ""); File.WriteAllText(fakeVvp, "");
+            var report = await new CounterDifferential(new WidthRunner()).RunAsync([Source(directory, 16)], "counter16", Path.Combine(directory, "results"), cycles: 3, engines: ["velosim", "icarus"], surelog: fakeSurelog, normalizer: fakeNorm, toolchainPaths: new Dictionary<string, string> { ["iverilog"] = fakeIverilog, ["vvp"] = fakeVvp });
             Assert.That(report.Status, Is.EqualTo("pass")); Assert.That(DifferentialReplay.Validate(report.ToJson()).Cycles, Is.EqualTo(3));
             var node = JsonNode.Parse(report.ToJson())!; node["observed_width"] = 64; Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate(node.ToJsonString()));
         }

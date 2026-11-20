@@ -20,7 +20,10 @@ public static class RtlExternalSdk
         Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(Path.Combine(directory, "V" + top + ".h"), header, token).ConfigureAwait(false);
         foreach (string file in new[] { "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
+        if (design.Timed) File.Copy(Path.Combine(runtime, "hdl_scheduler.h"), Path.Combine(directory, "hdl_scheduler.h"));
         await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory,"timing-diagnostics.txt"),
+            "Conservative timed-process analysis; warnings do not prove races, and absence does not prove race freedom.\n"+string.Join('\n',design.TimingDiagnostics)+"\n",token).ConfigureAwait(false);
         string cmake = """
             cmake_minimum_required(VERSION 3.20)
             project(VeloSimExternal LANGUAGES C CXX)
@@ -47,43 +50,55 @@ public static class RtlExternalSdk
             cmake -S /path/to/sdk -B /path/to/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVELOSIM_HOST_SOURCE=/absolute/path/to/host.cpp
             cmake --build /path/to/build --parallel 4
 
+            The C++ word ABI is version2; recompile hosts and keep matching headers/runtime together.
             Include the generated V<top>.h in your host. Drive input port proxies,
             call eval() explicitly for settle/clock transitions, and final() once.
             One eval samples input changes as one event batch. The designated
-            primary clock starts at zero; other logic inputs start X and bit inputs
-            start zero. Bit inputs and destinations convert X/Z bits to zero.
-            Use bits() for X/Z and up to 128-bit words; uint64 conversion rejects unknown or overflowing values.
+            primary clock, when present, starts at zero; other logic inputs start X and bit inputs
+            start zero. Clockless models have no synthetic clock: eval() settles their DAG on startup and input changes.
+            Bit inputs and destinations convert X/Z bits to zero.
+            Use bits() for X/Z and up to 256-bit words; uint64 conversion rejects unknown or overflowing values.
             loadVpi() accepts a native plugin with a null-terminated exported
             vlog_startup_routines table before the first eval().
             The VPI subset supports signal lookup, metadata, identity, immediate
             input deposits, radix/vector/scalar values, and start/end/value/read-only
-            callbacks. There is no HDL delay scheduler or Verilator/DPI ABI.
+            callbacks. There is no Verilator/DPI ABI.
+            Models whose manifest says explicit-time include hdl_scheduler.h.
+            Their timeInc()/eval() host sequence executes queued older events
+            before applying new input values at the host tick. Query eventsPending()
+            and nextTimeSlot() on that generated model; advance by nextTimeSlot()-time().
+            design.rtl.json time_precision, when present, is the decimal seconds
+            exponent of a host tick. The bounded scheduler supports active/inactive/NBA,
+            integer/runtime-integer and quantized decimal literal delays, signal waits
+            and explicit/implicit sensitivity. Other SV regions, named fork scopes,
+            timed calls, time-suffixed/runtime-real delays and general net resolution
+            still require separate implementation/qualification.
+            timing-diagnostics.txt records conservative process hazards. Warnings
+            do not prove races; absence does not prove race freedom.
             Models and handles belong to their creating thread.
             Concatenation NBA targets require distinct destination words and at
-            most 128 total assigned bits.
+            most 256 total assigned bits.
             Known bases for indexed reads and selected writes are limited to
             0..INT32_MAX; larger known bases throw before sequential updates commit.
 
-            Linux/WSL GCC/Clang builds with unsigned __int128 support are qualified. Keep the host and shared runtime together
+            Linux/WSL GCC/Clang builds with unsigned __int128 limb products are qualified. Keep the host and shared runtime together
             when relocating the Linux build; the build RPATH uses $ORIGIN.
             Other platforms require separate qualification.
             external-model.json input paths are relative to this SDK directory;
             SHA-256 hashes cover the generated/copied input files, excluding the
             manifest itself and any files you add later.
             """, token).ConfigureAwait(false);
-        var inputs = new[] { "V" + top + ".h", "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" }.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
+        var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "vpi_user.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
+        if (design.Timed) inputPaths.Add("hdl_scheduler.h");
+        inputPaths.Add("timing-diagnostics.txt");
+        var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
         string manifest = Path.Combine(directory, "external-model.json");
-        using var stream = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(stream, new() { Indented = true }))
-        {
-            writer.WriteStartObject(); writer.WriteString("schema", "velosim.external.model.v1"); writer.WriteString("top", top); writer.WriteString("model_class", "V" + top); writer.WriteString("execution_scope", "one known-clock posedge process; serial; explicit eval");
-            writer.WriteStartArray("ports"); var names = design.ExternalPortNames();
-            foreach (var signal in design.Signals.Where(s => s.Direction != "internal")) { writer.WriteStartObject(); writer.WriteString("name", signal.Name); writer.WriteNumber("width", signal.Width);writer.WriteBoolean("signed",signal.Signed);writer.WriteBoolean("two_state",signal.TwoState); writer.WriteString("direction", signal.Direction); writer.WriteString("member", names[signal.Name]); writer.WriteEndObject(); }
-            writer.WriteEndArray(); writer.WriteStartArray("inputs");
-            foreach (var input in inputs) { writer.WriteStartObject(); writer.WriteString("path", Path.GetFileName(input.Path)); writer.WriteString("sha256", input.Sha256); writer.WriteEndObject(); }
-            writer.WriteEndArray(); writer.WriteEndObject();
-        }
-        await File.WriteAllBytesAsync(manifest, stream.ToArray(), token).ConfigureAwait(false);
+        var names = design.ExternalPortNames();
+        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 256, top, "V" + top,
+            design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval",
+            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, s.TwoState, s.Direction, names[s.Name])).ToArray(),
+            inputs.Select(input => new ExternalInputContract(Path.GetFileName(input.Path), input.Sha256)).ToArray());
+        await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
         return manifest;
     }
 }

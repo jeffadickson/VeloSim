@@ -6,7 +6,13 @@ It is separate from HDL execution; importing it does not establish analog/HDL
 co-simulation. Maintained C# projects use released .NET SDK 11.0.100 and C# 15.
 See the [migration plan](docs/superpowers/plans/2026-11-12-schematic-net11.md).
 
-Current development: [100 open-item iterations and the execution contract](docs/open-items-100.md), building on [shared-clock processes, hierarchy and signed 1–128-bit words](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
+Current RTL development: [explicit-time SDK execution](docs/timed-execution.md), including wait-first `always @*`, resumable delays/waits, runtime identifier intra-assignment delays, internal clocks, sampled assignments, conservative race diagnostics and bounded fork/named-event behavior. Pure automatic subroutines also support whole-word local initializers, task early return and [input defaults with preserved positional/named slots](docs/procedural-types-arrays.md#input-defaults-and-frontend-compatibility). Constant-default width evaluation requires re-elaboration with frontend argument protocol v4. The six broad work packages remain open. [Experimental SVInt AVX128 checks](docs/svint-simd-review.md) preserve unchanged SVInt and current-runtime comparisons; production arithmetic is unchanged.
+
+Library planning: [reuse review for existing code and remaining features](docs/library-opportunities.md), mapped into the existing GitHub work packages. Recommendations require compatibility and behavioral qualification before adoption.
+
+Current planning: [detailed Verilator gap analysis](docs/verilator-gap-analysis.md), [20 work packages](docs/verilator-work-packages.md), and [live GitHub task epic](https://github.com/jeffadickson/VeloSim/issues/1). The audit separates current worktree support, historical evidence and open requirements; milestone descriptions below retain their historical scope.
+
+Earlier RTL milestones: [bounded HDL queues](docs/queues.md), [clockless models, function control flow and constant captures](docs/functions-100.md), [combinational and automatic-subroutine qualification](docs/combinational-subroutines-200.md), [200 requirement and coverage qualification cases](docs/requirements-200.md) with [stable StrictDoc requirements](requirements/velosim.sdoc), [100 open-item iterations](docs/open-items-100.md), and [process, hierarchy and signed-word bounds](docs/rtl-processes-hierarchy-signed.md).
 
 Open-source experimental Verilog/SystemVerilog simulation project.
 
@@ -14,7 +20,11 @@ Start with the illustrated [HTML introduction](docs/introduction.html) to see ho
 
 ## Status
 
-Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET 11 C# helpers validate IR, orchestrate frontends and run regressions. The real Surelog/UHDM structural path supports bounded edge-driven processes, instance hierarchy, signed 128-bit words, two-state bit signals and fixed word memories. See the current execution contract above for restrictions.
+The [dynamic-array HDL slice](docs/dynamic-arrays.md) adds bounded allocation, self-preserving resize, indexed access, size and delete. The [bounded HDL queue slice](docs/queues.md) adds ordered push/pop, indexing, size and deletion under focused qualification. Associative HDL lowering and suspended-process scheduling remain open. Native container and timed-event [runtime primitives](docs/container-events.md) and optional [LLVM fuzz campaigns](docs/runtime-fuzz.md) support continued development.
+
+VeloSim includes bounded untimed startup and runtime loops, integral enums and integer types, packed aggregates, fixed rank-one-to-four arrays, dynamic-array lifetimes and RTL words through 256 bits. See [the qualification milestone](docs/procedural-types-arrays.md) and the newer feature notes above. Associative arrays remain open; queues have the bounded subset described above. External C++ hosts must rebuild against word ABI 2; union models require the corrected frontend described there.
+
+Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET 11 C# helpers validate IR, orchestrate frontends and run regressions. The real Surelog/UHDM structural path supports bounded edge-driven processes, instance hierarchy, signed words through 256 bits, two-state storage and fixed word memories. See the current execution contract above for restrictions.
 
 ## Build and test
 
@@ -118,3 +128,11 @@ Assignments such as `{high, low} <= data` and nested groups of supported packed 
 ### External C++ hosts and VPI plugins
 
 `rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory>` exports a reusable `V<name>.h` model, four-state public ports, `eval()`/`final()` lifecycle, host time and a shared VPI subset runtime. External C plugins can look up signals, inspect/deposit four-state values and register callbacks against the same model state. See [external interfaces](docs/external-interfaces.md) for the complete build/run example, supported API and qualification scope. `examples/external_main.cpp` and `external_plugin.c` demonstrate both interfaces; this preserves the current bounded HDL subset.
+
+## Standalone Windows testing
+
+The [complete remote Windows guide](docs/remote-windows-campaign.md) includes
+prerequisites, PowerShell download commands, short qualification,12-hour runs,
+result locations and authorization recovery. The launcher commits small reports to
+a fresh results branch and attempts a normal push; publication can resume without
+rerunning tests. [PowerShell launcher source](tools/remote/Start-VeloSimCampaign.ps1).

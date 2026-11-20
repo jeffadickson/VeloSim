@@ -18,7 +18,7 @@ public class RtlConcatTargetTests
         {
             case 2: target = Concat(Ref("q"), Concat(Ref("r"),Ref("t"))); break;
             case 3: width = 32; break;
-            case 4: width = 65; error = "128 bits"; break;
+            case 4: width = 129; error = "256 bits"; break;
             case 5: target = Concat(Ref("q"),Ref("q")); error = "distinct destination"; break;
             case 6: target = Concat(Ref("q"),Fixed("a",3,0)); error = "writable declared"; break;
             case 7: target = Concat(Ref("q"),Ref("clk")); error = "writable declared"; break;
@@ -62,9 +62,9 @@ public class RtlConcatTargetTests
         switch(cycle)
         {
             case 52: target=Concat(bit,Indexed("r",63,true)); break;
-            case 53: target=Concat(Ref("q"),Indexed("r",128,false)); error="128 bits"; break;
-            case 54: target=Concat(bit,Indexed("r",0,false)); error="1..128"; break;
-            case 55: target=Concat(bit,Indexed("r",-1,true)); error="1..128"; break;
+            case 53: target=Concat(Ref("q"),Indexed("r",256,false)); error="256 bits"; break;
+            case 54: target=Concat(bit,Indexed("r",0,false)); error="1..256"; break;
+            case 55: target=Concat(bit,Indexed("r",-1,true)); error="1..256"; break;
             case 56: case 57: error=""; break;
             case 58: target=Concat(bit,new{kind="bitselect",value=Fixed("r",3,0),index=Ref("i")}); error="writable declared"; break;
             case 59: target=Concat(bit,new{kind="bitselect",value=Ref("clk"),index=Ref("i")}); error="writable declared"; break;
@@ -86,7 +86,7 @@ public class RtlConcatTargetTests
             case 72: target=Concat(Ref("q"),Concat(Ref("r"),Ref("t")));break;
             case 73: target=Concat(Fixed("q",7,4),Concat(new{kind="bitselect",value=Ref("r"),index=Ref("i")},Indexed("t",4,true)));break;
             case 74: width=21;target=Concat(Ref("q"),Concat(Ref("r"),Fixed("t",21,0)));break;
-            case 75: width=43;target=Concat(Ref("q"),Concat(Ref("r"),Fixed("t",42,0)));error="128 bits";break;
+            case 75: width=86;target=Concat(Ref("q"),Concat(Ref("r"),Fixed("t",85,0)));error="256 bits";break;
             case 76: target=Concat(Ref("q"),Concat(Ref("r"),Concat(Ref("t"),Ref("q"))));error="distinct destination";break;
             case 77: target=Concat(Ref("q"),Concat(Ref("r"),new{kind="const",bits="1"}));error="writable declared";break;
             case 78: target=Concat(Ref("q"),new{kind="cond",args=new[]{Ref("i"),Ref("r"),Ref("t")}});error="writable declared";break;

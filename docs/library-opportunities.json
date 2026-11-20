@@ -1,0 +1,787 @@
+{
+  "schema": "velosim.library-opportunities.v1",
+  "review_date": "2026-10-26",
+  "source_revision": "fa7cd2fbd962dde1f95ffb29e6b3e46a01a5cae1",
+  "includes_uncommitted_work": true,
+  "scope": "Source and primary-documentation evaluation; no new runtime/library execution",
+  "report": "docs/library-opportunities.md",
+  "tracker": "docs/verilator-work-packages.json",
+  "epic": "https://github.com/jeffadickson/VeloSim/issues/1",
+  "dependencies_added": [],
+  "opportunities": [
+    {
+      "id": "LIB-01",
+      "name": "UHDM generated visitors/listeners",
+      "disposition": "Prioritize reuse of an existing dependency",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-20",
+        "WP-06",
+        "WP-03",
+        "WP-05",
+        "WP-08",
+        "WP-14"
+      ],
+      "files": [
+        "native/uhdm/rtl.cpp",
+        "native/uhdm/rtl_flatten.h",
+        "native/uhdm/rtl_original_expr.h",
+        "native/uhdm/rtl_subroutines.h"
+      ],
+      "finding": "The exporter hand-enumerates VPI relations in several scans. The last audit confirmed that a retained UHDM assertion was omitted; method arguments in case items previously escaped a lexical-reference scan. Installed headers already provide VpiListener::listenDesign(s), UhdmListener::listenDesign and enterAny hooks.",
+      "recommendation": "Use the pinned UHDM generated traversal to inventory executable nodes and centralize exhaustive discovery; retain VeloSim's scoped identity binding, semantic validation and resource limits. Use hooks to classify handled/elaboration-only/rejected nodes, not to automatically execute everything visited.",
+      "tradeoffs": "No new parser is needed. Verify the pinned generated API, handle ownership, pre/post-elaboration traversal, graph cycles, visit budgets and callbacks for method path elements; an upstream walker is not itself a lowering implementation.",
+      "acceptance": "Replay assertion/final/primitive/clocking and case-method fixtures; compare exhaustive node counts with uhdm-dump, prove unsupported executable items fail closed, and preserve shadowing/instance-override tests.",
+      "sources": [
+        [
+          "UHDM upstream",
+          "https://github.com/chipsalliance/UHDM"
+        ]
+      ],
+      "verification": "Primary-source review plus local installed-header inspection only; no new visitor integration or library tests run."
+    },
+    {
+      "id": "LIB-02",
+      "name": "slang::SVInt for four-state arithmetic",
+      "disposition": "High-value prototype before replacing current arithmetic",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-07",
+        "WP-08",
+        "WP-10"
+      ],
+      "files": [
+        "native/rtl/runtime.h",
+        "src/VeloSim.Core/SlangFrontend.cs",
+        "native/uhdm/rtl_constants.h"
+      ],
+      "finding": "Bits manually implements four-limb add/multiply/divide/shift/compare using unsigned __int128. W layers X/Z masks over it. SlangFrontend currently invokes an external slang executable; it does not link SVInt into the runtime.",
+      "recommendation": "Prototype the native slang numeric library behind a narrow internal word adapter. SVInt supplies SystemVerilog-sized four-state values and operations; it is the closest semantic fit among the reviewed numeric candidates. Keep C# orchestration and the public word ABI separate.",
+      "tradeoffs": "SVInt's linked code, heap allocation for wide/unknown values, compiler/toolchain needs and exported-SDK packaging must be measured. It does not provide event scheduling. Never expose its C++ layout as the stable external ABI or use the same implementation as the sole independent oracle.",
+      "acceptance": "Compare current W and candidate behavior at widths 1/63/64/65/128/255/256/257/512/1024 for X/Z, sign extension, division, shifts and conditional merges; use independent BigInteger/bit-string/Icarus expectations, Native Windows/Linux builds and measured size/throughput/allocation.",
+      "sources": [
+        [
+          "SVInt API",
+          "https://sv-lang.com/classslang_1_1_s_v_int.html"
+        ],
+        [
+          "slang library guide",
+          "https://sv-lang.com/developer-guide.html"
+        ],
+        [
+          "slang upstream/license",
+          "https://github.com/MikePopoloski/slang"
+        ]
+      ],
+      "verification": "Documentation and existing-code inspection only; candidate not linked or benchmarked.",
+      "simd_review": "docs/svint-simd-review.md"
+    },
+    {
+      "id": "LIB-03",
+      "name": "Boost.Multiprecision or LLVM APInt as numeric alternatives",
+      "disposition": "Compare alternatives; select one backend, not all",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-07",
+        "WP-18",
+        "WP-19"
+      ],
+      "files": [
+        "native/rtl/runtime.h",
+        "native/rtl/external_model.h",
+        "CMakeLists.txt"
+      ],
+      "finding": "Custom limbs duplicate common unsigned arithmetic; explicit __int128 use is a portability concern to check on the intended native MSVC toolchain.",
+      "recommendation": "Benchmark Boost fixed-width unsigned unchecked types for the current 256-bit plane, cpp_int with explicit HDL masking for variable widths, and LLVM APInt only if its link/deployment cost is justified. Treat these as alternatives to LIB-02 or as independently isolated numeric references.",
+      "tradeoffs": "Boost/APInt do not supply X/Z semantics. Boost signed-magnitude types are not HDL two's-complement bit patterns; arbitrary precision is not automatically modulo a declared width. APInt requires matched widths and distinct signed/unsigned operations and adds LLVM Support linkage. Installed clang does not mean generated SDK users already have these libraries.",
+      "acceptance": "Prove modulo/sign/mask/divide/shift and little-endian limb conversions independently; preserve ABI 2 or version deliberately; compare native Windows/Linux, compile time, binary size and runtime before removing current Bits.",
+      "sources": [
+        [
+          "Boost cpp_int reference",
+          "https://www.boost.org/doc/libs/latest/libs/multiprecision/doc/html/boost_multiprecision/ref/cpp_int_ref.html"
+        ],
+        [
+          "Boost numeric caveats",
+          "https://www.boost.org/doc/libs/latest/libs/multiprecision/doc/html/boost_multiprecision/tut/map/faq.html"
+        ],
+        [
+          "LLVM APInt",
+          "https://llvm.org/doxygen/classllvm_1_1APInt.html"
+        ]
+      ],
+      "verification": "Source/doc review only; no replacement, speedup or native MSVC success claimed."
+    },
+    {
+      "id": "LIB-04",
+      "name": "Consolidate standard-library container adapters",
+      "disposition": "Reuse and consolidate existing vector/deque/map facilities",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-09",
+        "WP-08"
+      ],
+      "files": [
+        "native/rtl/containers.h",
+        "native/rtl/runtime.h",
+        "src/VeloSim.Core/RtlAssociative.cs",
+        "src/VeloSim.Core/RtlQueues.cs"
+      ],
+      "finding": "containers.h has DynamicArray/Queue/AssociativeArray wrappers, while runtime.h exposes separate generated-model allocation/queue/associative adapters. Both already use STL storage. The primitive Queue and AssociativeArray conversions allocate a one-element DynamicArray copy, while generated queues use vector front erase/insert.",
+      "recommendation": "Share typed defaults/conversion/capacity/ownership logic and remove redundant paths only after identifying their separate contracts. Keep std::map for ordered associative keys and std::vector for contiguous dynamic arrays; evaluate std::deque for queue ends under actual snapshot/index workloads.",
+      "tradeoffs": "Current 256-element bounds can make vector adequate; no presumed speedup. deque changes contiguity and iterator/reference behavior, and moving it into vector-based generated memory inventory is an integration change. Keep signed-key normalization, unknown-key policy, missing reads and rollback custom and tested.",
+      "acceptance": "Run the same semantic/overflow/rollback corpus through both old paths and the consolidated adapter; benchmark mixed push/pop/index/snapshot operations; preserve negative-key and missing-read independent tests.",
+      "sources": [
+        [
+          "C++ deque",
+          "https://learn.microsoft.com/en-us/cpp/standard-library/deque-class?view=msvc-170"
+        ],
+        [
+          "C++ map",
+          "https://learn.microsoft.com/en-us/cpp/standard-library/map-class?view=msvc-170"
+        ]
+      ],
+      "verification": "Existing source reviewed; prior focused container evidence remains historical, not new refactor qualification."
+    },
+    {
+      "id": "LIB-05",
+      "name": ".NET BigInteger and ordered collections as independent references",
+      "disposition": "Extend existing standard-library oracle reuse",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-01",
+        "WP-07",
+        "WP-09"
+      ],
+      "files": [
+        "tests/VeloSim.Tests/RtlAssociativeTests.cs",
+        "src/VeloSim.Core/FourStateWord.cs",
+        "src/VeloSim.Core/FourStateArithmetic.cs"
+      ],
+      "finding": "The associative tests already use SortedDictionary<BigInteger,byte>, independent of native biased-key ordering. The separate managed FourStateWord intentionally remains ulong/64-bit.",
+      "recommendation": "Use BigInteger plus explicit width/sign/mask rules for wider arithmetic expectations and SortedDictionary/List models for container expectations. Preserve independent bit-string truth tables for X/Z. Do not widen the legacy managed production IR merely to host an oracle or share the candidate native backend with the expected-result generator.",
+      "tradeoffs": "BigInteger supplies mathematical integers rather than HDL width, signedness or four-state semantics. Oracle code still needs explicit masks, shift rules and denominator/unknown handling.",
+      "acceptance": "Known analytical boundary cases and minimized cross-tool disagreements validate the oracle first; record seeds and counterexamples and ensure expected results do not call the production adapter.",
+      "sources": [
+        [
+          "BigInteger .NET 10",
+          "https://learn.microsoft.com/en-us/dotnet/api/system.numerics.biginteger?view=net-10.0"
+        ],
+        [
+          "SortedDictionary .NET 10",
+          "https://learn.microsoft.com/en-us/dotnet/api/system.collections.generic.sorteddictionary-2?view=net-10.0"
+        ]
+      ],
+      "verification": "Current use inspected; no new oracle execution in this review."
+    },
+    {
+      "id": "LIB-06",
+      "name": "Use established JSON serializers instead of structural string assembly",
+      "disposition": "Reuse .NET facilities; prototype one native serializer if justified",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-06",
+        "WP-20",
+        "WP-17",
+        "WP-19"
+      ],
+      "files": [
+        "native/uhdm/json_escape.h",
+        "native/uhdm/rtl.cpp",
+        "native/uhdm/rtl_flatten.h",
+        "src/VeloSim.Core/RtlDesign.cs",
+        "src/VeloSim.Core/ToolCli.cs"
+      ],
+      "finding": "Managed code already uses System.Text.Json, and ToolCli writes structured errors with Utf8JsonWriter. Several internal IR fragments and the native exporter are still built by manual string concatenation around a custom JSON escaper.",
+      "recommendation": "Reuse Utf8JsonWriter/JsonDocument and source-generated typed DTO serialization for managed reports/IR/checkpoints. Evaluate nlohmann/json for native structural output if it removes enough string/escaping code; compare its compile/memory cost with retaining the small already-tested escape helper. Do not add another .NET JSON stack.",
+      "tradeoffs": "Serializer adoption must preserve strict unknown/duplicate-field policy, node/depth/byte budgets, number precision, UTF-8 validation, determinism and source spans. JSON libraries do not perform HDL typing. Native DOM construction can amplify memory; an isolated writer may be preferable.",
+      "acceptance": "Golden normalized IR, control characters/Unicode/invalid UTF-8, deep/large/malformed input and budget tests; NativeAOT publish/run with reflection disabled for managed DTO paths; do not count serializer success as valid executable HDL.",
+      "sources": [
+        [
+          "System.Text.Json source generation",
+          "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation"
+        ],
+        [
+          "JSON for Modern C++",
+          "https://json.nlohmann.me/"
+        ]
+      ],
+      "verification": "Source/doc review; no new dependency, serializer migration or AOT certification."
+    },
+    {
+      "id": "LIB-07",
+      "name": "Standard event storage and explicit suspended-process state",
+      "disposition": "Use standard containers; retain HDL scheduling policy",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-02",
+        "WP-03",
+        "WP-04"
+      ],
+      "files": [
+        "native/rtl/timed_events.h",
+        "native/rtl/external_model.h",
+        "src/VeloSim.Core/RtlDesign.cs"
+      ],
+      "finding": "TimedEvents already uses std::map of timestamp/delta/region/serial keys. It transports opaque IDs and does not implement executable HDL regions or suspended process frames.",
+      "recommendation": "Reuse ordered maps and per-slot deques/standard RAII for event storage, and explicit copyable process frames for SDK rollback. Research SystemC only as a co-simulation adapter (LIB-17), not an automatic substitute for SystemVerilog active/inactive/NBA/reactivation semantics.",
+      "tradeoffs": "A generic priority queue or coroutine library supplies mechanics, not the required region fixpoint. Coroutine frames and callback captures must not silently make rollback impossible. Keep simulated tick precision/overflow distinct from wall-clock chrono measurements.",
+      "acceptance": "Independent #0/NBA/reactivation traces, concurrent startup, sampled RHS/address, host-time jumps, cancellation, overflow/budget rejection and snapshot replay must pass before any scheduler closure.",
+      "sources": [
+        [
+          "C++ map",
+          "https://learn.microsoft.com/en-us/cpp/standard-library/map-class?view=msvc-170"
+        ],
+        [
+          "C++ deque",
+          "https://learn.microsoft.com/en-us/cpp/standard-library/deque-class?view=msvc-170"
+        ],
+        [
+          "SystemC semantic scope",
+          "https://github.com/accellera-official/systemc"
+        ]
+      ],
+      "verification": "Architecture/source review; no executing timed scheduler or new queue implementation supplied."
+    },
+    {
+      "id": "LIB-08",
+      "name": "System.CommandLine for existing CLI parsing",
+      "disposition": "Good low-risk migration candidate, gated by compatibility tests",
+      "scope": "existing",
+      "packages": [
+        "WP-19",
+        "WP-18"
+      ],
+      "files": [
+        "src/VeloSim.Core/ToolCli.cs",
+        "src/VeloSim.Core/BenchmarkCli.cs"
+      ],
+      "finding": "ToolCli repeatedly parses positional option/value pairs and duplicate-option sets by hand, with custom usage text. Existing --json-errors and exit categories are intentional product behavior.",
+      "recommendation": "Evaluate a pinned System.CommandLine release with explicit handlers/validation to centralize help, command structure and option parsing; preserve the injected IProcessRunner boundary and machine-readable errors.",
+      "tradeoffs": "Avoid reflection-heavy binding. Parser defaults such as response files, option ordering, duplicate handling and culture differ from the current strict contract; do not change them accidentally. The package advertises trimming support, but this application's NativeAOT build still needs execution evidence.",
+      "acceptance": "Replay all existing valid/invalid/duplicate/unknown/cancellation/JSON-error CLI fixtures unchanged or document intentional versioned changes; publish and run NativeAOT on target platforms and measure startup/size.",
+      "sources": [
+        [
+          "System.CommandLine overview",
+          "https://learn.microsoft.com/en-us/dotnet/standard/commandline/"
+        ]
+      ],
+      "verification": "Current manual parser and official documentation reviewed; no package added."
+    },
+    {
+      "id": "LIB-09",
+      "name": "Process execution: retain BCL first, evaluate CliWrap narrowly",
+      "disposition": "Keep current safeguards unless a candidate proves equivalent",
+      "scope": "existing",
+      "packages": [
+        "WP-19",
+        "WP-01"
+      ],
+      "files": [
+        "src/VeloSim.Core/ProcessRunner.cs",
+        "src/VeloSim.Core/ArtifactMetadata.cs"
+      ],
+      "finding": "ProcessRunner already delegates launch/async IO to System.Diagnostics.Process but adds Linux setsid/group kill, bounded concurrent output drains, timeout/cancellation distinctions and preserved diagnostics.",
+      "recommendation": "Keep BCL Process and the tested wrapper as baseline. CliWrap can reduce argument/pipeline boilerplate, but evaluate it only behind IProcessRunner with the existing hardening suite; do not replace hard limits with unbounded buffered capture.",
+      "tradeoffs": "Process-tree termination, child-retained pipe handles, quoting, timeout output, platform isolation and NativeAOT are behavioral requirements, not solved by fluent syntax. Reuse the installed Git CLI for authentication/repo operations unless a specific LibGit2-style benefit is demonstrated.",
+      "acceptance": "Cross-platform child/grandchild timeout, cancellation, output flood, spaces/Unicode args, failure classification, missing-tool and no-leaked-process tests must match current behavior.",
+      "sources": [
+        [
+          "Process .NET 10",
+          "https://learn.microsoft.com/en-us/dotnet/api/system.diagnostics.process?view=net-10.0"
+        ],
+        [
+          "CliWrap upstream",
+          "https://github.com/Tyrrrz/CliWrap"
+        ]
+      ],
+      "verification": "Source/doc review only; replacing the hardened wrapper is not recommended yet."
+    },
+    {
+      "id": "LIB-10",
+      "name": "Native formatting and standard I/O facilities",
+      "disposition": "Reuse low-level facilities, keep HDL format semantics explicit",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-10",
+        "WP-17"
+      ],
+      "files": [
+        "native/rtl/runtime.h",
+        "native/uhdm/rtl.cpp",
+        "src/VeloSim.Core/RtlExternalSdk.cs"
+      ],
+      "finding": "HDL display/file/time system tasks remain open; generated host traces and text assembly currently supply only test/runtime diagnostics.",
+      "recommendation": "Evaluate std::format where supported by pinned compilers and {fmt} as a portable alternative for host diagnostics and output buffers. Use standard file streams/filesystem and C#/BCL decimal/BigInteger for reference calculations rather than hand-built number/file libraries.",
+      "tradeoffs": "Neither fmt's brace syntax nor host printf implements SystemVerilog %b/%h/%t/%m, X/Z rendering, $strobe/$monitor region timing, locale or SV real rounding. Keep a tested HDL-format translation layer; preserve the generated SDK's dependency manifest.",
+      "acceptance": "Hand-calculated width/padding/signed/X/Z/real/time format cases plus file failures, binary content, Unicode paths and region-sensitive printing; benchmark only after correct output.",
+      "sources": [
+        [
+          "fmt official documentation",
+          "https://fmt.dev/latest/"
+        ],
+        [
+          "BigInteger reference",
+          "https://learn.microsoft.com/en-us/dotnet/api/system.numerics.biginteger?view=net-10.0"
+        ]
+      ],
+      "verification": "Candidate review only; no HDL formatting behavior implemented."
+    },
+    {
+      "id": "LIB-11",
+      "name": "GTKWave libfst for waveform files",
+      "disposition": "Strong candidate for FST; avoid writing a compressor/format engine",
+      "scope": "remaining",
+      "packages": [
+        "WP-17"
+      ],
+      "files": [
+        "src/VeloSim.Core/RtlExternalSdk.cs",
+        "native/rtl/external_model.h"
+      ],
+      "finding": "Current VS_RTL strings are comparison traces, not a general hierarchical waveform writer. libfst is a separate GTKWave C library with writer/reader infrastructure.",
+      "recommendation": "Use a pinned libfst build for FST once source/hierarchy/time metadata exists; keep a simple VCD path if it meets initial needs. Include its bundled compression notices and build dependencies explicitly.",
+      "tradeoffs": "The upstream license includes component notices; audit the chosen revision rather than copying GTKWave viewer licensing assumptions. Thread ownership, timestamps, arrays/wide X/Z values, flushing and failure handling still require VeloSim integration.",
+      "acceptance": "Open produced waveforms with an independent reader/GTKWave; verify hierarchy, widths, X/Z and exact times against golden traces; test empty/large/interrupted outputs on native Windows/Linux.",
+      "sources": [
+        [
+          "libfst upstream",
+          "https://github.com/gtkwave/libfst"
+        ],
+        [
+          "GTKWave FST documentation",
+          "https://gtkwave.github.io/gtkwave/internals/fst-file-format.html"
+        ]
+      ],
+      "verification": "Official library/docs reviewed; no writer installed, linked or executed.",
+      "product_requirements": [
+        "VS-TRACE-COMPRESSED-001"
+      ]
+    },
+    {
+      "id": "LIB-12",
+      "name": "Versioned checkpoint serialization",
+      "disposition": "Prefer existing JSON facilities initially; evaluate Cap'n Proto only with measured need",
+      "scope": "remaining",
+      "packages": [
+        "WP-17",
+        "WP-02"
+      ],
+      "files": [
+        "native/rtl/external_model.h",
+        "native/rtl/timed_events.h",
+        "src/VeloSim.Core/RtlExternalSdk.cs"
+      ],
+      "finding": "SDK exception rollback is a copy of live in-memory state, not a stable checkpoint format. UHDM's serialization is a frontend interchange format, not a runtime model snapshot.",
+      "recommendation": "Define typed versioned state DTOs and stable process/event IDs first. Compare source-generated System.Text.Json for a managed control/manifest boundary with generated native Cap'n Proto serialization if checkpoint size/throughput justifies it; reuse an already-pinned frontend dependency only when exported hosts can package it independently.",
+      "tradeoffs": "Never serialize C++ object layout, pointers, iterators, std::function targets or raw coroutine frames. Checkpoint schema must include words/masks, container ordering, scheduler state, source hash and ABI version. Presence inside Surelog does not make Cap'n Proto free for standalone SDK consumers.",
+      "acceptance": "Restart reproduces future events/outputs; truncated/corrupt/wrong-source/wrong-ABI checkpoints reject atomically; measure file size/load/save time and cross-platform compatibility.",
+      "sources": [
+        [
+          "System.Text.Json source generation",
+          "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/source-generation"
+        ],
+        [
+          "Cap'n Proto C++ serialization",
+          "https://capnproto.org/cxx.html"
+        ],
+        [
+          "Cap'n Proto code generation",
+          "https://capnproto.org/capnp-tool.html"
+        ]
+      ],
+      "verification": "Design/candidate review; no checkpoint serializer implemented."
+    },
+    {
+      "id": "LIB-13",
+      "name": "Z3 for the later constrained-random milestone",
+      "disposition": "Use a maintained solver when the language subset is specified",
+      "scope": "remaining",
+      "packages": [
+        "WP-16"
+      ],
+      "files": [
+        "native/uhdm/rtl_types.h",
+        "src/VeloSim.Core/RtlDesign.cs"
+      ],
+      "finding": "VeloSim has no class constraint solver. Creating one would duplicate general SMT machinery, but using an SMT library does not implement class lifetimes, random stability or the SystemVerilog constraint language.",
+      "recommendation": "Evaluate Z3's native C/C++ API for runtime integration and .NET API for C#/F# qualification/orchestration. Keep constraint-to-SMT translation small and explicit; test SAT, UNSAT and timeout/unknown results without turning unknown into success.",
+      "tradeoffs": "Package native DLL/SO dependencies and verify .NET NativeAOT binding behavior. Random model selection is not automatically SV distribution/random stability. Solver build tooling may have mandatory upstream prerequisites; do not rewrite upstream tooling solely to avoid them.",
+      "acceptance": "Independently enumerable small constraint domains, signed-width conversions, distributions, deterministic replay, unsatisfied constraints and timeouts; do not call sampled solver results a proof of broader simulator correctness.",
+      "sources": [
+        [
+          "Z3 upstream and language bindings",
+          "https://github.com/Z3Prover/z3"
+        ]
+      ],
+      "verification": "Research only; no solver added or constraints executed.",
+      "requirements": [
+        "VS-RANDOM-CONSTRAINT-001"
+      ],
+      "detail": "docs/constrained-randomization.md"
+    },
+    {
+      "id": "LIB-14",
+      "name": "oneTBB / standard bounded parallelism",
+      "disposition": "Defer new runtime dependency until profiling justifies it",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-18",
+        "WP-04"
+      ],
+      "files": [
+        "native/scheduler.cpp",
+        "native/ir/engine.cpp",
+        "src/VeloSim.Core/RtlDesign.cs",
+        "CMakeLists.txt"
+      ],
+      "finding": "The small native schedulers create thread-based work partitions; the structural RTL backend has no established process-parallel speedup. Correct worker-count output is already tested in limited scopes.",
+      "recommendation": "Use existing bounded .NET/native facilities for independent jobs first. Evaluate oneTBB arenas/task groups for a persistent native worker pool or dependency graph only after profiling useful parallel regions. Keep all HDL dependency/commit/region policy outside the generic executor.",
+      "tradeoffs": "New binary/runtime deployment and nested parallel oversubscription costs may exceed gains for bounded designs. A task scheduler cannot infer race-free HDL partitions; exceptions and deterministic allowed ordering must survive.",
+      "acceptance": "Identical source/output and reference checks, worker budget/cancellation/failure propagation, repeat timing/memory measurements and TSAN or equivalent justified race checks; report no gain when none is measured.",
+      "sources": [
+        [
+          "oneTBB upstream",
+          "https://github.com/uxlfoundation/oneTBB"
+        ]
+      ],
+      "verification": "Source/doc review only; no parallel speedup claimed."
+    },
+    {
+      "id": "LIB-15",
+      "name": "Reuse the existing verification ecosystem",
+      "disposition": "Extend established tools; custom harnesses remain thin domain glue",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-01",
+        "WP-07",
+        "WP-09",
+        "WP-18"
+      ],
+      "files": [
+        "tests/VeloSim.Tests/VeloSim.Tests.csproj",
+        ".config/dotnet-tools.json",
+        "tools/ContainerEventMutationProbe.cs",
+        "tools/RuntimeFuzzCampaign.cs"
+      ],
+      "finding": "NUnit/FsCheck/Coverlet and pinned Stryker.NET/ReportGenerator are already present. Domain-specific C# mutation probes and native campaigns also exist.",
+      "recommendation": "Extend FsCheck generators/shrinkers and Stryker.NET rather than inventing new generic engines. Evaluate SharpFuzz with an appropriate managed instrumentation build and AFL++, and Google FuzzTest/AFL++ for native adapters. Evaluate Mull for native generic mutations if its LLVM requirements match the pinned toolchain; retain focused semantic mutations where generic tools cannot represent the fault.",
+      "tradeoffs": "Instrumented managed campaigns and NativeAOT release verification are distinct scopes. Tool setup is not a run result. Mutation survivors, excluded code and compiler/tool version mismatches must be reported; no replacement may silently reduce retained corpus or failure classification.",
+      "acceptance": "Record exact tool/source versions, seeds/corpus hashes, minimized failures, actual execution counts, mutation outcomes and coverage line/branch scopes; retain independent oracles rather than production-code mirrors.",
+      "sources": [
+        [
+          "FsCheck",
+          "https://fscheck.github.io/FsCheck/"
+        ],
+        [
+          "Stryker.NET",
+          "https://stryker-mutator.io/docs/stryker-net/introduction/"
+        ],
+        [
+          "Coverlet",
+          "https://github.com/coverlet-coverage/coverlet"
+        ],
+        [
+          "SharpFuzz",
+          "https://github.com/Metalnem/sharpfuzz"
+        ],
+        [
+          "AFL++",
+          "https://github.com/AFLplusplus/AFLplusplus"
+        ],
+        [
+          "Google FuzzTest",
+          "https://github.com/google/fuzztest"
+        ],
+        [
+          "Mull",
+          "https://mull.readthedocs.io/en/latest/"
+        ]
+      ],
+      "verification": "Configuration and documentation review only; no new campaign, mutation score or coverage result."
+    },
+    {
+      "id": "LIB-16",
+      "name": "DPI/VPI headers and real cocotb client integration",
+      "disposition": "Reuse standard interfaces and clients; implement missing runtime behavior",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-12",
+        "WP-13"
+      ],
+      "files": [
+        "native/rtl/vpi_user.h",
+        "native/rtl/vpi.cpp",
+        "src/VeloSim.Core/RtlExternalSdk.cs"
+      ],
+      "finding": "VeloSim maintains a deliberately small VPI header/runtime. Standard headers can supply consistent declarations but do not create callbacks, hierarchy or DPI implementations.",
+      "recommendation": "Evaluate a pinned standard svdpi.h/vpi_user.h source with documented redistribution terms, generated typed DPI-C stubs and layout tests. Use cocotb's existing GPI/VPI client as integration validation rather than writing a substitute testbench-client layer. Keep cocotb/Python an optional external product integration, not a new default helper language.",
+      "tradeoffs": "Header availability is not API support; full headers must not imply every symbol is implemented. Avoid libffi unless genuinely dynamic signatures justify it; ordinary generated DPI stubs can be typed. Client timing behavior depends on WP-02/03 and actual runtime callbacks.",
+      "acceptance": "C/C++ layout/calling-convention and symbol tests, same host/HDL imports/exports, wide/X/Z values, timed callbacks and a real pinned cocotb smoke suite on supported platforms.",
+      "sources": [
+        [
+          "Verilator DPI/VPI integration and header isolation",
+          "https://verilator.org/guide/latest/connecting.html"
+        ],
+        [
+          "cocotb simulator support",
+          "https://docs.cocotb.org/en/stable/simulator_support.html"
+        ]
+      ],
+      "verification": "Interface/source research; VeloSim is not claimed to be cocotb-compatible."
+    },
+    {
+      "id": "LIB-17",
+      "name": "SystemC as an optional adapter and selected independent reference",
+      "disposition": "Useful integration candidate; not an SV scheduler replacement",
+      "scope": "remaining",
+      "packages": [
+        "WP-19",
+        "WP-11",
+        "WP-02"
+      ],
+      "files": [
+        "src/VeloSim.Core/RtlExternalSdk.cs",
+        "native/rtl/external_model.h",
+        "native/rtl/runtime.h"
+      ],
+      "finding": "The official Accellera SystemC implementation is a separate C++ modeling library with its own standardized semantics. Current VeloSim exposes ordinary generated C++ models, not SC_MODULE integration.",
+      "recommendation": "Use the official SystemC library for an explicit SC_MODULE/TLM adapter when required; evaluate its digital logic value facilities as a secondary reference for a carefully matched resolution subset. Retain SV scheduling/strength semantics in VeloSim or explicitly scope unsupported differences.",
+      "tradeoffs": "Event/delta behavior and scheduling boundaries do not automatically match SystemVerilog. SystemC runtime/global context, time precision, ABI, host thread ownership and Apache/component notices require qualification.",
+      "acceptance": "A small bidirectional co-simulation example, clock/time handoff and lifecycle tests; compare matched four-state tables independently and reject any claim of full SV net/strength conformance from SystemC agreement.",
+      "sources": [
+        [
+          "Official SystemC implementation",
+          "https://github.com/accellera-official/systemc"
+        ]
+      ],
+      "verification": "Research only; no SystemC dependency or compatibility certification."
+    },
+    {
+      "id": "LIB-18",
+      "name": "DUT coverage reports and large-result analytics",
+      "disposition": "Reuse report/storage tooling; defer heavy analytics for small reports",
+      "scope": "remaining",
+      "packages": [
+        "WP-15",
+        "WP-18"
+      ],
+      "files": [
+        "src/VeloSim.Core/RtlDesign.cs",
+        "src/VeloSim.Core/RtlExternalSdk.cs",
+        "tools/"
+      ],
+      "finding": "Existing Coverlet/LLVM reports measure simulator source, not simulated HDL execution. Current small evidence manifests already use JSON.",
+      "recommendation": "Reuse established coverage interchange/report tooling for exported DUT counters where semantics match. For large campaigns, evaluate Apache Arrow .NET record batches and a documented DuckDB ingestion/query path; retain JSON for small manifests and do not add columnar/database dependencies just to store a few counters.",
+      "tradeoffs": "Arrow IPC is not Parquet, and Arrow .NET does not automatically provide a Parquet writer. If Parquet is required, research/pin that adapter separately. Verify chosen DuckDB client ownership/native packaging/AOT; source mapping, bins/crosses and sampling remain domain work.",
+      "acceptance": "Hand-counted HDL counter values survive export/merge/analytics exactly, schema/source hashes and uint64 counter overflow are explicit, invalid/truncated data rejects, and memory/size/query costs justify the added dependencies.",
+      "sources": [
+        [
+          "Apache Arrow .NET",
+          "https://arrow.apache.org/dotnet/current/index.html"
+        ],
+        [
+          "DuckDB upstream; client integration still to qualify",
+          "https://github.com/duckdb/duckdb"
+        ]
+      ],
+      "verification": "Candidate review only; no DUT coverage or analytics integration claimed."
+    },
+    {
+      "id": "LIB-19",
+      "name": "Typed frontend metadata for SVA, aggregates and procedural lowering",
+      "disposition": "Reuse Surelog/UHDM; evaluate slang APIs selectively",
+      "scope": "existing-and-remaining",
+      "packages": [
+        "WP-05",
+        "WP-06",
+        "WP-08",
+        "WP-11",
+        "WP-14",
+        "WP-16"
+      ],
+      "files": [
+        "native/uhdm/rtl_types.h",
+        "native/uhdm/rtl_subroutines.h",
+        "native/uhdm/rtl_flatten.h",
+        "src/VeloSim.Core/SlangFrontend.cs"
+      ],
+      "finding": "The project already benefits from external elaboration, but custom lowering still reconstructs some constant expressions, member layout, scope identity and statement traversal.",
+      "recommendation": "Reuse pinned UHDM typed nodes and elaborated identity first; evaluate slang constant-value/type/source-management APIs where they replace demonstrably duplicated compiler work or supply an independent diagnostic comparison. Avoid another regex/parser/type-layout implementation.",
+      "tradeoffs": "Neither frontend is a complete execution engine. Slang as a numeric component (LIB-02) is not a decision to migrate elaboration. Different frontend identities/folding rules must never be mixed by bare names. A regex/automaton library alone does not implement temporal SVA sampling; retain a typed monitor translator with explicit semantics.",
+      "acceptance": "Golden typed layout/constants/scopes, original-source spans and generated instance overrides; compare against independent expectations, and prove every accepted executable property or construct has observable behavior.",
+      "sources": [
+        [
+          "UHDM",
+          "https://github.com/chipsalliance/UHDM"
+        ],
+        [
+          "slang developer guide",
+          "https://sv-lang.com/developer-guide.html"
+        ]
+      ],
+      "verification": "Source/API research only; no frontend migration or SVA implementation."
+    }
+  ],
+  "package_links": {
+    "WP-01": "https://github.com/jeffadickson/VeloSim/issues/2",
+    "WP-02": "https://github.com/jeffadickson/VeloSim/issues/3",
+    "WP-03": "https://github.com/jeffadickson/VeloSim/issues/4",
+    "WP-04": "https://github.com/jeffadickson/VeloSim/issues/5",
+    "WP-05": "https://github.com/jeffadickson/VeloSim/issues/6",
+    "WP-06": "https://github.com/jeffadickson/VeloSim/issues/7",
+    "WP-07": "https://github.com/jeffadickson/VeloSim/issues/8",
+    "WP-08": "https://github.com/jeffadickson/VeloSim/issues/9",
+    "WP-09": "https://github.com/jeffadickson/VeloSim/issues/10",
+    "WP-10": "https://github.com/jeffadickson/VeloSim/issues/11",
+    "WP-11": "https://github.com/jeffadickson/VeloSim/issues/12",
+    "WP-12": "https://github.com/jeffadickson/VeloSim/issues/13",
+    "WP-13": "https://github.com/jeffadickson/VeloSim/issues/14",
+    "WP-14": "https://github.com/jeffadickson/VeloSim/issues/15",
+    "WP-15": "https://github.com/jeffadickson/VeloSim/issues/16",
+    "WP-16": "https://github.com/jeffadickson/VeloSim/issues/17",
+    "WP-17": "https://github.com/jeffadickson/VeloSim/issues/18",
+    "WP-18": "https://github.com/jeffadickson/VeloSim/issues/19",
+    "WP-19": "https://github.com/jeffadickson/VeloSim/issues/20",
+    "WP-20": "https://github.com/jeffadickson/VeloSim/issues/21"
+  },
+  "inspected_source_hashes": [
+    {
+      "path": ".config/dotnet-tools.json",
+      "sha256": "5062A0E613E9B994B84791AE5E57C5A89A464C8309283E4896F75F7D36D6D53B"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "D43C72E95366AA307AAAC2A4130F018A39AE21B0143C283B6068864B73CC6180"
+    },
+    {
+      "path": "native/ir/engine.cpp",
+      "sha256": "C3A9AFDE732968B7881005ED30DB9132F688BC0ABC5ED6726935103FEB5D9F82"
+    },
+    {
+      "path": "native/rtl/containers.h",
+      "sha256": "C9C312E65A5AEA9B91C4188CAA5AA910AFAC6300064AB9E0DE642F2A1792B662"
+    },
+    {
+      "path": "native/rtl/external_model.h",
+      "sha256": "06A358A120F86DE278B74934527F0AC08074A18DE8E2C0ED84F827EFAA340B5E"
+    },
+    {
+      "path": "native/rtl/runtime.h",
+      "sha256": "572B71E368FC347A9A1A7C5EC4EA4BCD72B8F0F70640071E38878F5B9F69FF43"
+    },
+    {
+      "path": "native/rtl/timed_events.h",
+      "sha256": "9B1D5D136C244169376DD4019CAC7D7006B03D790ACF0A5C02FF2F4F171A2057"
+    },
+    {
+      "path": "native/rtl/vpi_user.h",
+      "sha256": "CB8E732C8518E61204A5B00AA486FD1FB66856A2946E2C995476D903BC9B4748"
+    },
+    {
+      "path": "native/rtl/vpi.cpp",
+      "sha256": "252552949F615DD14514EB6417C674FBA1A09ABD04FE7168AF279F6FD4B558DA"
+    },
+    {
+      "path": "native/scheduler.cpp",
+      "sha256": "3B31314EE244585E833C567F80C8B3DA73028645BD9D0769EBC0B7C6FC73C0FB"
+    },
+    {
+      "path": "native/uhdm/json_escape.h",
+      "sha256": "6A7AFCAED1C7BC86F8C60D755837C03EACB71BED0FFD712FDEEAD98EA177B2E7"
+    },
+    {
+      "path": "native/uhdm/rtl_constants.h",
+      "sha256": "0346AA53DC2C3F4F28EE0414F1E42F7C3C1C0FB4C2ACAC4BFB81804A2F8179E5"
+    },
+    {
+      "path": "native/uhdm/rtl_flatten.h",
+      "sha256": "7CB83D220F639E94F185150A7614109645A0986287356EC589C6D425FCBD7085"
+    },
+    {
+      "path": "native/uhdm/rtl_original_expr.h",
+      "sha256": "5286DE414EC0F189F1527B0C71506C9243AC66F0D42181D29A540FC5EDF9E6FC"
+    },
+    {
+      "path": "native/uhdm/rtl_subroutines.h",
+      "sha256": "CF1F6E2A59264D7F04DCF7B118912E92E00B0591D67F54053141A42E2F641FFA"
+    },
+    {
+      "path": "native/uhdm/rtl_types.h",
+      "sha256": "67E928ABB8CFFF2B51E12C4C6783A26164ED04C17D056686AC36B11F8EDE8FFA"
+    },
+    {
+      "path": "native/uhdm/rtl.cpp",
+      "sha256": "55D42DD85D582DDCB738F7A0BCE09B134313ACF556648060098892362DCACB4E"
+    },
+    {
+      "path": "src/VeloSim.Core/ArtifactMetadata.cs",
+      "sha256": "745B67FFC1863F4F69F6F9DAB3F12FA64957C33A36D2A37A76224791CB4BFEA4"
+    },
+    {
+      "path": "src/VeloSim.Core/BenchmarkCli.cs",
+      "sha256": "E971FA824C1206A758C4FDDE49CC1B128D2791524F574AAAA2BE8F13E1CDF438"
+    },
+    {
+      "path": "src/VeloSim.Core/FourStateArithmetic.cs",
+      "sha256": "1D9B5A1DF4E5C1A76313A90B1F20ED9E530CF925E824E3988E9E9F1A884DC29F"
+    },
+    {
+      "path": "src/VeloSim.Core/FourStateWord.cs",
+      "sha256": "1FC1510468F98827686A7CC75236DA14F3E60AFCD419B75665E9E3D16AC146CF"
+    },
+    {
+      "path": "src/VeloSim.Core/ProcessRunner.cs",
+      "sha256": "AF5EA8689EE2149ECEF203329A26924F6A7B0B837BE46DDCC0DC27CB338A9A0C"
+    },
+    {
+      "path": "src/VeloSim.Core/RtlAssociative.cs",
+      "sha256": "23A2AE0BB76207A5B5E5A2B1993BDCF3A04655DF1A40E7EB46AE542F262717D3"
+    },
+    {
+      "path": "src/VeloSim.Core/RtlDesign.cs",
+      "sha256": "885E6D9025B04C3238B349E4A7C81AE9316589A12794F41EC40315B3AA5E5D0D"
+    },
+    {
+      "path": "src/VeloSim.Core/RtlExternalSdk.cs",
+      "sha256": "9DFA1CCDF30A62820C155B9B57959DC60EA954EA77161ABF10ED3B44A11C532F"
+    },
+    {
+      "path": "src/VeloSim.Core/RtlQueues.cs",
+      "sha256": "81ED9C4B2586658E71C19D9591151F54564E372855398F91ADF5D987A93B0B4B"
+    },
+    {
+      "path": "src/VeloSim.Core/SlangFrontend.cs",
+      "sha256": "37B616CDC76DBE67272AD052199EFD558A4E4D1D86954DA6470DD17C9686E33F"
+    },
+    {
+      "path": "src/VeloSim.Core/ToolCli.cs",
+      "sha256": "7764B67DB172DEDA5883B07331CE8EDCAECC7C21F895BFD32B641C1D1E17E8FA"
+    },
+    {
+      "path": "tests/VeloSim.Tests/RtlAssociativeTests.cs",
+      "sha256": "6E42C0CA8ED7109075C6877BF49F1B556F74F33483AA117EDC7724C06DED88DD"
+    },
+    {
+      "path": "tests/VeloSim.Tests/VeloSim.Tests.csproj",
+      "sha256": "8045A26EB5F466B72C44B24CFC5071E605EAE58F645ED574761DD6A128531B02"
+    },
+    {
+      "path": "tools/ContainerEventMutationProbe.cs",
+      "sha256": "AA3465E05DA1596DA994FE8D4ACBE2E2C381971F20532CC0206A65D78D1737F5"
+    },
+    {
+      "path": "tools/RuntimeFuzzCampaign.cs",
+      "sha256": "6F82767ACEC305418AB531C737C89735B5F9309C8B1C34CFD26D9C5C4EB737DC"
+    }
+  ],
+  "validation": {
+    "github_issue_readback": 20,
+    "opportunities": 19,
+    "packages": 20,
+    "mapping": "all resolved",
+    "strictdoc_version": "0.30.4",
+    "strictdoc_export": "passed",
+    "strictdoc_log": "~/.local/share/VeloSim/library-review-20261026/strictdoc.log",
+    "runtime_checks": "not run; source/documentation review only"
+  }
+}
