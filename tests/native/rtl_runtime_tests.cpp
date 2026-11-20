@@ -199,6 +199,78 @@ int main(){
   log64.commit(mems);
   check(mems[0][0].v==0xab&&mems[0][1].v==0x42&&mems[0][2].v==0xef&&mems[0][3].x==0xff);
  }
+ // Verify opt-in 64-bit two-state vsrtl::w2 matches 256-bit vsrtl::W on all known operands plus edge cases.
+ {
+  auto same2=[](uint64_t v,int w,const W& b){return exact(w2::from(v,w),b);};
+  const W samples[]={
+   parse("0"),parse("1"),parse("1011"),parse("0100"),
+   parse("1111111111111101"),parse("0000000000000111"),
+   parse(std::string(32,'1')),parse("1"+std::string(31,'0')),
+   parse(std::string(64,'1')),parse("1"+std::string(63,'0')),
+   parse("1"+std::string(62,'0')+"1"),parse(std::string(64,'0'))
+  };
+  for(const W& a:samples){
+   uint64_t a2=w2::to(a);
+   check(w2::yes(a2)==yes(a));
+   check(same2(w2::lnot(a2),1,logical_not(a)));
+   for(int rw:{1,4,16,32,64}){
+    check(same2(w2::resize(a2,rw),rw,resize(a,rw)));
+    check(same2(w2::sresize(a2,a.w,rw),rw,signed_resize(a,rw)));
+    check(same2(w2::bnot(a2,rw),rw,bit_not(a,rw)));
+   }
+   for(int op=0;op<6;++op)check(same2(w2::red(a2,a.w,op),1,reduce(a,op)));
+   for(const W& b:samples){
+    uint64_t b2=w2::to(b);
+    check(same2(w2::land(a2,b2),1,logical_and(a,b)));
+    check(same2(w2::lor(a2,b2),1,logical_or(a,b)));
+    check(same2(w2::eq(a2,b2),1,equal(a,b)));
+    if(a.w==b.w){
+     for(int op=0;op<4;++op){
+      check(same2(w2::cmp(a2,b2,op),1,compare(a,b,op)));
+      check(same2(w2::scmp(a2,b2,a.w,op),1,signed_compare(a,b,op)));
+     }
+    }
+    int mw=std::max(a.w,b.w);
+    uint64_t ae=w2::resize(a2,mw),be=w2::resize(b2,mw);
+    uint64_t sae=w2::sresize(a2,a.w,mw),sbe=w2::sresize(b2,b.w,mw);
+    for(int op=0;op<3;++op){
+     check(same2(w2::bbin(ae,be,mw,op),mw,bit_binary(a,b,mw,op)));
+     if(op==0||be!=0)check(same2(w2::product(ae,be,mw,op),mw,product(a,b,mw,op)));
+     if(op==0||sbe!=0)check(same2(w2::sproduct(sae,sbe,mw,op),mw,signed_product(resize(signed_resize(a,mw),mw),resize(signed_resize(b,mw),mw),mw,op)));
+    }
+    check(same2(w2::arith(ae,be,mw,false),mw,arithmetic(a,b,mw,false)));
+    check(same2(w2::arith(ae,be,mw,true),mw,arithmetic(a,b,mw,true)));
+    check(same2(w2::cond(1ULL,ae,be,mw),mw,conditional(parse("1"),a,b,mw)));
+    check(same2(w2::cond(0ULL,ae,be,mw),mw,conditional(parse("0"),a,b,mw)));
+    if(a.w+b.w<=64)check(same2(w2::concat(a2,b2,b.w),a.w+b.w,concat(a,b)));
+    if(a.w==1&&b.w==1){
+     check(w2::edge(a2,b2,true)==edge_event(a,b,true));
+     check(w2::edge(a2,b2,false)==edge_event(a,b,false));
+    }
+   }
+  }
+  // Div/mod by zero returns 0 in two-state mode; INT64_MIN / -1 does not trap.
+  check(w2::product(42ULL,0ULL,32,1)==0ULL&&w2::product(42ULL,0ULL,32,2)==0ULL);
+  check(w2::sproduct(42ULL,0ULL,32,1)==0ULL&&w2::sproduct(42ULL,0ULL,32,2)==0ULL);
+  check(w2::sproduct(uint64_t(INT64_MIN),~uint64_t(0),64,1)==uint64_t(INT64_MIN));
+  check(w2::sproduct(uint64_t(INT64_MIN),~uint64_t(0),64,2)==0ULL);
+  // Bit/part/indexed select and deposit.
+  check(w2::selbit(0b1010ULL,4,1)==1ULL&&w2::selbit(0b1010ULL,4,5)==0ULL);
+  check(w2::selpart(0xabcdULL,16,11,4)==0xbcULL);
+  check(w2::selidx(0xabcdULL,16,4,8,false)==0xbcULL);
+  check(w2::depidx(0x1234ULL,16,4,8,false,0xefULL)==0x1ef4ULL);
+  // Flat memory log with inline + overflow.
+  uint64_t m0[4]{};
+  uint64_t* ptrs[1]{m0};
+  w2::MemLog2<2> log2;
+  log2.push(0,4,0,0xab,8);
+  log2.push(0,4,1,0xcd,8);
+  log2.push(0,4,2,0xef,8);
+  log2.push(0,4,1,0x42,8);
+  log2.push(0,4,99,0xff,8);
+  log2.commit(ptrs);
+  check(w2::read_flat(m0,4,0)==0xab&&w2::read_flat(m0,4,1)==0x42&&w2::read_flat(m0,4,2)==0xef&&w2::read_flat(m0,4,3)==0&&w2::read_flat(m0,4,99)==0);
+ }
 }
 
 

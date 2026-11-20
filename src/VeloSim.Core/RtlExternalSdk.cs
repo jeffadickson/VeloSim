@@ -3,12 +3,12 @@ namespace VeloSim;
 
 public static class RtlExternalSdk
 {
-    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default)
+    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState)
     {
         if (new FileInfo(ir).Length > 4 * 1024 * 1024) throw new ArgumentException("RTL IR exceeds 4 MiB.");
         string json = await File.ReadAllTextAsync(ir, token).ConfigureAwait(false);
         var design = RtlDesign.Parse(json);
-        string header = design.EmitModelHeader(top);
+        string header = design.EmitModelHeader(top, stateMode);
         string? runtime = null;
         for (var parent = new DirectoryInfo(Environment.CurrentDirectory); parent is not null; parent = parent.Parent)
             if (File.Exists(Path.Combine(parent.FullName, "native/rtl/external_model.h"))) { runtime = Path.Combine(parent.FullName, "native/rtl"); break; }
@@ -55,7 +55,8 @@ public static class RtlExternalSdk
             call eval() explicitly for settle/clock transitions, and final() once.
             One eval samples input changes as one event batch. The designated
             primary clock, when present, starts at zero; other logic inputs start X and bit inputs
-            start zero. Clockless models have no synthetic clock: eval() settles their DAG on startup and input changes.
+            start zero (in --two-state mode, all signals start zero and X/Z inputs coerce to zero).
+            Clockless models have no synthetic clock: eval() settles their DAG on startup and input changes.
             Bit inputs and destinations convert X/Z bits to zero.
             Use bits() for X/Z and up to 256-bit words; uint64 conversion rejects unknown or overflowing values.
             loadVpi() accepts a native plugin with a null-terminated exported
@@ -94,9 +95,11 @@ public static class RtlExternalSdk
         var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
         string manifest = Path.Combine(directory, "external-model.json");
         var names = design.ExternalPortNames();
+        bool twoState = stateMode == RtlStateMode.TwoState;
+        string semantics = (twoState ? "two-state; " : "") + (design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
         var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 256, top, "V" + top,
-            design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval",
-            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, s.TwoState, s.Direction, names[s.Name])).ToArray(),
+            semantics,
+            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
             inputs.Select(input => new ExternalInputContract(Path.GetFileName(input.Path), input.Sha256)).ToArray());
         await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
         return manifest;

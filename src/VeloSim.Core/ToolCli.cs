@@ -25,8 +25,12 @@ public static class ToolCli
     {
         if (args.Length > 0 && args[0] == "rtl-export")
         {
-            if (args.Length != 6 || args[2] != "--top" || args[4] != "--output-dir") throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory>");
-            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], args[3], args[5], cancellationToken).ConfigureAwait(false)); return 0;
+            if (args.Length < 6) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--two-state]");
+            var options = CliOptions.Parse(args, 2);
+            string? top = options.String("--top"), directory = options.String("--output-dir");
+            if (top is null || directory is null) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--two-state]");
+            var stateMode = options.Flag("--two-state") ? RtlStateMode.TwoState : RtlStateMode.FourState;
+            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode).ConfigureAwait(false)); return 0;
         }
         if (args.Length > 0 && args[0] == "fifo-differential")
         {

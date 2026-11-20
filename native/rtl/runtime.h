@@ -944,3 +944,151 @@ struct MemLog64 {
  }
 };
 } // namespace vsrtl::w64
+
+// Register-resident 64-bit two-state runtime for opt-in --two-state models.
+// All values are masked uint64_t words (X/Z eliminated). Storage in Model::s
+// remains ABI v2 compatible with two_state=true on all signals (x=z=0).
+namespace vsrtl::w2 {
+inline constexpr int64_t sext(uint64_t a, int w) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ a &= m;
+ if (w < 64 && (a & (uint64_t(1) << (w - 1)))) a |= ~m;
+ return int64_t(a);
+}
+inline uint64_t to(const W& a) noexcept { return a.v.limb[0]; }
+inline W from(uint64_t v, int w) noexcept {
+ return W{Bits(v & mask64_unchecked(w)), Bits(), Bits(), w};
+}
+inline void store(W& dst, uint64_t v) noexcept { dst.v.limb[0] = v; }
+inline constexpr uint64_t lit(uint64_t v, int w) noexcept { return v & mask64_unchecked(w); }
+inline constexpr uint64_t resize(uint64_t a, int w) noexcept { return a & mask64_unchecked(w); }
+inline constexpr uint64_t sresize(uint64_t a, int aw, int w) noexcept {
+ return uint64_t(sext(a, aw)) & mask64_unchecked(w);
+}
+inline constexpr bool edge(uint64_t prev, uint64_t curr, bool pos) noexcept {
+ return pos ? (((prev & 1ULL) == 0) && ((curr & 1ULL) != 0))
+            : (((prev & 1ULL) != 0) && ((curr & 1ULL) == 0));
+}
+inline constexpr bool yes(uint64_t a) noexcept { return a != 0; }
+inline constexpr uint64_t lnot(uint64_t a) noexcept { return a == 0 ? 1ULL : 0ULL; }
+inline constexpr uint64_t land(uint64_t a, uint64_t b) noexcept { return (a != 0 && b != 0) ? 1ULL : 0ULL; }
+inline constexpr uint64_t lor(uint64_t a, uint64_t b) noexcept { return (a != 0 || b != 0) ? 1ULL : 0ULL; }
+inline constexpr uint64_t bnot(uint64_t a, int w) noexcept { return (~a) & mask64_unchecked(w); }
+inline constexpr uint64_t bbin(uint64_t a, uint64_t b, int w, int op) noexcept {
+ return (op == 0 ? (a & b) : op == 1 ? (a | b) : (a ^ b)) & mask64_unchecked(w);
+}
+inline constexpr uint64_t eq(uint64_t a, uint64_t b) noexcept { return a == b ? 1ULL : 0ULL; }
+inline constexpr uint64_t cmp(uint64_t a, uint64_t b, int op) noexcept {
+ return (op == 0 ? a < b : op == 1 ? a <= b : op == 2 ? a > b : a >= b) ? 1ULL : 0ULL;
+}
+inline constexpr uint64_t scmp(uint64_t a, uint64_t b, int w, int op) noexcept {
+ const int64_t sa = sext(a, w), sb = sext(b, w);
+ return (op == 0 ? sa < sb : op == 1 ? sa <= sb : op == 2 ? sa > sb : sa >= sb) ? 1ULL : 0ULL;
+}
+inline constexpr uint64_t arith(uint64_t a, uint64_t b, int w, bool sub) noexcept {
+ return (sub ? (a - b) : (a + b)) & mask64_unchecked(w);
+}
+inline constexpr uint64_t shift(uint64_t a, uint64_t b, int w, bool right) noexcept {
+ if (b >= 64) return 0ULL;
+ const uint64_t m = mask64_unchecked(w);
+ return (right ? ((a & m) >> b) : (a << b)) & m;
+}
+inline constexpr uint64_t sshift(uint64_t a, uint64_t b, int w) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const int64_t sa = sext(a, w);
+ if (b >= 64) return sa < 0 ? m : 0ULL;
+ return uint64_t(sa >> b) & m;
+}
+inline constexpr uint64_t red(uint64_t a, int w, int op) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t v = a & m;
+ if (op == 0 || op == 1) return ((v == m) ^ (op == 1)) ? 1ULL : 0ULL;
+ if (op == 2 || op == 3) return ((v != 0) ^ (op == 3)) ? 1ULL : 0ULL;
+ const bool odd = ((std::popcount(v) & 1) != 0);
+ return (odd ^ (op == 5)) ? 1ULL : 0ULL;
+}
+inline constexpr uint64_t product(uint64_t a, uint64_t b, int w, int op) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const uint64_t av = a & m, bv = b & m;
+ if (op == 0) return (av * bv) & m;
+ if (bv == 0) return 0ULL;
+ return (op == 1 ? (av / bv) : (av % bv)) & m;
+}
+inline constexpr uint64_t sproduct(uint64_t a, uint64_t b, int w, int op) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const int64_t sa = sext(a, w), sb = sext(b, w);
+ if (op == 0) return (uint64_t(sa) * uint64_t(sb)) & m;
+ if (sb == 0) return 0ULL;
+ if (sa == INT64_MIN && sb == -1)
+  return op == 1 ? (uint64_t(sa) & m) : 0ULL;
+ return uint64_t(op == 1 ? (sa / sb) : (sa % sb)) & m;
+}
+inline constexpr uint64_t cond(uint64_t c, uint64_t t, uint64_t f, int w) noexcept {
+ return (c != 0 ? t : f) & mask64_unchecked(w);
+}
+inline constexpr uint64_t concat(uint64_t a, uint64_t b, int bw) noexcept {
+ return (bw >= 64 ? 0ULL : (a << bw)) | (b & mask64_unchecked(bw));
+}
+inline constexpr uint64_t selbit(uint64_t a, int aw, uint64_t idx) noexcept {
+ return idx < uint64_t(aw) ? ((a >> idx) & 1ULL) : 0ULL;
+}
+inline constexpr uint64_t selpart(uint64_t a, int aw, int left, int right) noexcept {
+ const int n = left - right + 1;
+ if (right >= aw) return 0ULL;
+ return ((a & mask64_unchecked(aw)) >> right) & mask64_unchecked(n);
+}
+inline uint64_t selidx(uint64_t a, int aw, uint64_t base, int width, bool descending) {
+ if (base > 2147483647ULL) throw std::out_of_range("known indexed select base exceeds qualified range0..INT32_MAX");
+ const int64_t lo = descending ? int64_t(base) - (width - 1) : int64_t(base);
+ const int64_t src_lo = lo < 0 ? 0 : lo;
+ const int64_t src_hi = (lo + width) < aw ? (lo + width) : aw;
+ if (src_lo >= src_hi) return 0ULL;
+ const int count = int(src_hi - src_lo);
+ const int dst_lo = int(src_lo - lo);
+ const int s_lo = int(src_lo);
+ const uint64_t cm = mask64_unchecked(count);
+ return (((a & mask64_unchecked(aw)) >> s_lo) & cm) << dst_lo;
+}
+inline uint64_t depidx(uint64_t before, int tw, uint64_t base, int width, bool descending, uint64_t value) {
+ if (base > 2147483647ULL) throw std::out_of_range("known selected write base exceeds qualified range0..INT32_MAX");
+ value &= mask64_unchecked(width);
+ const int64_t lo = descending ? int64_t(base) - (width - 1) : int64_t(base);
+ const int64_t dst_lo = lo < 0 ? 0 : lo;
+ const int64_t dst_hi = (lo + width) < tw ? (lo + width) : tw;
+ if (dst_lo >= dst_hi) return before;
+ const int count = int(dst_hi - dst_lo);
+ const int src_lo = int(dst_lo - lo);
+ const int d_lo = int(dst_lo);
+ const uint64_t cm = mask64_unchecked(count);
+ const uint64_t dmask = cm << d_lo;
+ return (before & ~dmask) | (((value >> src_lo) & cm) << d_lo);
+}
+inline constexpr uint64_t memidx(uint64_t index, int lower) noexcept {
+ return index >= uint64_t(lower) ? (index - uint64_t(lower)) : ~uint64_t(0);
+}
+inline uint64_t read_flat(const uint64_t* m, size_t depth, uint64_t index) noexcept {
+ return index < depth ? m[index] : 0ULL;
+}
+struct MemWrite2 { uint16_t mem_id; uint32_t index; uint64_t value; };
+template <size_t InlineCap = 16>
+struct MemLog2 {
+ MemWrite2 inline_buf[InlineCap];
+ std::vector<MemWrite2> overflow;
+ size_t count = 0;
+ inline void push(uint16_t mem_id, size_t mem_size, uint64_t index, uint64_t value, int w) {
+  if (index >= mem_size) return;
+  const MemWrite2 entry{mem_id, uint32_t(index), value & mask64_unchecked(w)};
+  if (count < InlineCap) inline_buf[count++] = entry;
+  else overflow.push_back(entry);
+ }
+ inline void commit(uint64_t* const* mem_ptrs) noexcept {
+  for (size_t i = 0; i < count; ++i) {
+   const auto& e = inline_buf[i];
+   mem_ptrs[e.mem_id][e.index] = e.value;
+  }
+  for (const auto& e : overflow) mem_ptrs[e.mem_id][e.index] = e.value;
+  count = 0;
+  if (!overflow.empty()) overflow.clear();
+ }
+};
+} // namespace vsrtl::w2

@@ -462,10 +462,15 @@ public sealed partial class RtlDesign
         }
         return result;
     }
-    public string EmitModelHeader(string top)
+    public string EmitModelHeader(string top, RtlStateMode stateMode = RtlStateMode.FourState)
     {
         if (!Identifier(top) || ("V" + top).Contains("__", StringComparison.Ordinal)) throw new ArgumentException("Invalid external model top name.", nameof(top));
-        if (Timed) return EmitTimedModelHeader(top);
+        if (Timed)
+        {
+            if (stateMode == RtlStateMode.TwoState)
+                throw new IrValidationException("Two-state mode currently supports non-timed <=64-bit event-driven and combinational designs without dynamic, queue, associative, or multidimensional arrays.");
+            return EmitTimedModelHeader(top);
+        }
         var names = ExternalPortNames(); string className = "V" + top;
         // Avoid a legal HDL port hiding the generated C++ constructor's class name.
         if (names.Values.Contains(className)) throw new ArgumentException("Port conflicts with generated class name.", nameof(top));
@@ -479,6 +484,12 @@ public sealed partial class RtlDesign
                 .SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(t => SignalId(TargetOwner(t))).Distinct().Order().ToArray()
             : [];
         bool hasFixedMemWrites = useFastEvent && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index");
+        if (stateMode == RtlStateMode.TwoState)
+        {
+            if (!CanUseTwoState64(useFastEvent))
+                throw new IrValidationException("Two-state mode currently supports non-timed <=64-bit event-driven and combinational designs without dynamic, queue, associative, or multidimensional arrays.");
+            return EmitTwoState64ModelHeader(top, names, seqIds, hasFixedMemWrites, hasRuntimeLoops, canThrow);
+        }
         if (CanUseNarrow64(useFastEvent))
             return EmitNarrow64ModelHeader(top, names, seqIds, hasFixedMemWrites, hasRuntimeLoops, canThrow);
 
