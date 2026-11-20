@@ -15,11 +15,12 @@ public class CoverageEvidenceTests
             var dependencies = SourceEvidence.Digest(SourceEvidence.Capture(root)); File.WriteAllText(file, File.ReadAllText(file).Replace("{\"dependencies\":", "{\"version\":2,\"dependencies\":")); Assert.That(SourceEvidence.Digest(SourceEvidence.Capture(root)), Is.Not.EqualTo(dependencies));
         } finally { Directory.Delete(root, true); }
     }
-    [Test] public void SourceEvidenceIncludesDependencyBuildAndHdlInputs()
+    [Test] public void SourceEvidenceIncludesDependencyBuildHdlAndFileBasedToolInputs()
     {
         var root = Temp(); try
         {
-            foreach (var relative in new[] { "NuGet.config", "src/packages.lock.json", "native/uhdm/CMakeLists.txt", "native/config.cmake", "examples/header.svh" })
+            // A changed standalone C# tool must invalidate the same evidence gate as compiled simulator inputs.
+            foreach (var relative in new[] { "NuGet.config", "src/packages.lock.json", "native/uhdm/CMakeLists.txt", "native/config.cmake", "examples/header.svh", "tools/BlockingMutationProbe.cs" })
             {
                 var file = Path.Combine(root, relative); Directory.CreateDirectory(Path.GetDirectoryName(file)!); bool dependency = relative.EndsWith("packages.lock.json", StringComparison.Ordinal);
                 File.WriteAllText(file, dependency ? "{\"dependencies\":{\"net10.0\":{\"Example\":{\"resolved\":\"1\"}}}}" : "before");

@@ -35,7 +35,8 @@ protected:
  std::vector<std::vector<W>> mem;
  virtual void evaluate() = 0;
 public:
- Model(std::string name, std::vector<Signal> signals, int clock);
+ // clock is a scalar input index, or -1 for a clockless model. Initial evaluation is explicit.
+ Model(std::string name, std::vector<Signal> signals, int clock,int word_abi=2);
  virtual ~Model();
  Model(const Model&) = delete; Model& operator=(const Model&) = delete;
  Model(Model&&) = delete; Model& operator=(Model&&) = delete;
@@ -78,8 +79,16 @@ public:
  Port(const Port&) = delete; Port& operator=(const Port&) = delete;
  Port& operator=(uint64_t value) {
   if (model->canFastPortWrite() && is_input && width > 0) [[likely]] {
-   const uint64_t m = width >= 64 ? ~uint64_t(0) : ((uint64_t(1) << width) - 1);
-   model->s[id] = W{Bits(value & m), 0, 0, width};
+   if (width <= 64) [[likely]] {
+    const uint64_t m = width == 64 ? ~uint64_t(0) : ((uint64_t(1) << width) - 1);
+    W& dst = model->s[id];
+    dst.v.limb[0] = value & m;
+    dst.x.limb[0] = 0;
+    dst.z.limb[0] = 0;
+    model->markDirty();
+    return *this;
+   }
+   model->s[id] = W{Bits(value), Bits(), Bits(), width};
    model->markDirty();
    return *this;
   }
@@ -94,10 +103,24 @@ public:
  std::string bits() const { return text(model->fastGet(id)); }
  W value() const { return model->fastGet(id); }
  explicit operator uint64_t() const {
-  const W v = model->fastGet(id);
-  if (v.x | v.z) throw std::runtime_error("integer conversion of X/Z port");
-  if (v.v > UINT64_MAX) throw std::overflow_error("port exceeds uint64_t");
-  return uint64_t(v.v);
+  if (model->owner_thread == std::this_thread::get_id() && id < model->s.size()) [[likely]] {
+   const W& v = model->s[id];
+   if (v.w <= 64) [[likely]] {
+    if ((v.x.limb[0] | v.z.limb[0]) != 0) throw std::runtime_error("integer conversion of X/Z port");
+    return v.v.limb[0];
+   }
+   if ((v.x.limb[0] | v.x.limb[1] | v.x.limb[2] | v.x.limb[3] | v.z.limb[0] | v.z.limb[1] | v.z.limb[2] | v.z.limb[3]) != 0)
+    throw std::runtime_error("integer conversion of X/Z port");
+   if ((v.v.limb[1] | v.v.limb[2] | v.v.limb[3]) != 0)
+    throw std::overflow_error("port exceeds uint64_t");
+   return v.v.limb[0];
+  }
+  const W v = model->get(id);
+  if ((v.x.limb[0] | v.x.limb[1] | v.x.limb[2] | v.x.limb[3] | v.z.limb[0] | v.z.limb[1] | v.z.limb[2] | v.z.limb[3]) != 0)
+   throw std::runtime_error("integer conversion of X/Z port");
+  if ((v.v.limb[1] | v.v.limb[2] | v.v.limb[3]) != 0)
+   throw std::overflow_error("port exceeds uint64_t");
+  return v.v.limb[0];
  }
 };
 }

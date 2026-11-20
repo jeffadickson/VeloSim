@@ -8,15 +8,10 @@ public static class BenchmarkCli
         try
         {
             int processes = 4, cycles = 100, width = 64, repetitions = 3, warmups = 1; int[] workers = [1, 2, 4]; string? reportPath = null;
-            for (int i = 0; i < args.Length; i++)
-            {
-                var option = args[i]; if (++i == args.Length) throw new ArgumentException("Incomplete benchmark option.");
-                if (option == "--report") { reportPath = Path.GetFullPath(args[i]); continue; }
-                if (option == "--workers") { workers = args[i].Split(',').Select(s => int.Parse(s, NumberStyles.None, CultureInfo.InvariantCulture)).ToArray(); continue; }
-                if (option is not ("--processes" or "--cycles" or "--width" or "--repeat" or "--warmup")) throw new ArgumentException("Unknown benchmark option: " + option);
-                int value = int.Parse(args[i], NumberStyles.None, CultureInfo.InvariantCulture);
-                switch (option) { case "--processes": processes = value; break; case "--cycles": cycles = value; break; case "--width": width = value; break; case "--repeat": repetitions = value; break; case "--warmup": warmups = value; break; }
-            }
+            var options = CliOptions.Benchmark(args);
+            processes = options.Int("--processes", processes); cycles = options.Int("--cycles", cycles); width = options.Int("--width", width);
+            repetitions = options.Int("--repeat", repetitions); warmups = options.Int("--warmup", warmups); workers = options.Workers(workers);
+            if (options.String("--report") is { } reportFile) reportPath = Path.GetFullPath(reportFile);
             if (reportPath is not null && (File.Exists(reportPath) || Directory.Exists(reportPath) || !Directory.Exists(Path.GetDirectoryName(reportPath)))) throw new IOException("Benchmark report must be a new file in an existing directory.");
             var report = NativeBenchmark.Run(new(processes, cycles, width, repetitions, warmups, workers), cancellationToken);
             if (reportPath is null) output.Write(report.ToJson());

@@ -1,0 +1,445 @@
+[DOCUMENT]
+TITLE: VeloSim Verilator gap work packages
+UID: VS-VERILATOR-PLAN
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-01
+STATUS: Draft
+TITLE: Pin the comparison baseline and qualify existing capabilities
+STATEMENT: >>>
+A reproducible baseline report names every tested source hash, distinct pass/fail/skip counts, line/branch scope and known oracle differences. No broad requirement is closed from focused passes.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-01, P0, relative scope M. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: none. Existing product IDs: VS-QUAL-001, VS-RTL-ASSOCIATIVE-001, VS-RTL-QUEUE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/2. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-05, LIB-09, LIB-15. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-02
+STATUS: Draft
+TITLE: Implement the timed scheduler and region semantics
+STATEMENT: >>>
+Directed traces cover #0 before NBA, NBA reactivation, simultaneous clocks, sampled delayed addresses, overflow, exhausted budgets and rollback. Host input changes at a future tick cannot leak into earlier queued events.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-02, P0, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01, WP-20. Existing product IDs: VS-RTL-TIME-001, VS-RTL-EVENT-TRANSPORT-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/3. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-07, LIB-12, LIB-17. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-03
+STATUS: Draft
+TITLE: Lower suspended HDL processes, delays, waits and fork control
+STATEMENT: >>>
+Same-original-file comparisons exercise producer/consumer handshakes, internal oscillators, delay quantization, wait rearming, nested suspension and fork cancellation; minimized ordering cases have independent expected traces.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-03, P0, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02. Existing product IDs: VS-RTL-TIME-001, VS-RTL-PROC-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/4. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-01, LIB-07. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-04
+STATUS: Draft
+TITLE: Support interacting processes, combinational settling and latches
+STATEMENT: >>>
+Interacting RTL examples match independent expectations and applicable references; nonconverging/racy examples are diagnosed without claiming a unique IEEE-required ordering.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-04, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02. Existing product IDs: VS-RTL-EVENT-001, VS-RTL-BLOCK-004, VS-RTL-COMB-001, VS-RTL-INIT-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/5. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-07, LIB-14. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-05
+STATUS: Draft
+TITLE: Expand functions and tasks beyond pure zero-time inlining
+STATEMENT: >>>
+Tests distinguish pass-by-value from ref aliasing, automatic from static lifetime, early return and recursive limits; timed calls resume correctly and existing pure-call cases stay compatible.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-05, P1, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-03, WP-04. Existing product IDs: VS-RTL-FUNC-001, VS-RTL-TASK-001, VS-RTL-FLOW-001, VS-RTL-PARAM-001, VS-RTL-PROC-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/6. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-01, LIB-19. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-06
+STATUS: Draft
+TITLE: Complete elaboration namespaces, hierarchy and interface connections
+STATEMENT: >>>
+Multi-file same-source designs preserve shadowing, distinct parameter overrides, generated scope names and port conversion; supported parsing alone never counts as executable capability.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-06, P1, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01, WP-20. Existing product IDs: VS-RTL-HIER-001, VS-RTL-PARAM-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/7. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-01, LIB-06, LIB-19. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-07
+STATUS: Draft
+TITLE: Broaden expressions, numeric types and packed word sizes
+STATEMENT: >>>
+Independent BigInteger/bit-string oracles and multiple frontends cover widths255/256/257/512/1024, X/Z, signed overflow and casts; ABI changes are versioned and old hosts fail clearly.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-07, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01. Existing product IDs: VS-RTL-WORD-256-001, VS-RTL-INTEGER-001, VS-RTL-TYPE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/8. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-02, LIB-03, LIB-05, LIB-15. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-08
+STATUS: Draft
+TITLE: Expand aggregates, array shapes and whole-array operations
+STATEMENT: >>>
+Tests verify member layout independently, array direction/bounds, deep-copy behavior and malformed shape rejection; resource limits become explicit configurable contracts.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-08, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-06, WP-07. Existing product IDs: VS-RTL-PACKED-001, VS-RTL-ARRAY-SHAPE-001, VS-RTL-ARRAY-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/9. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-01, LIB-02, LIB-04, LIB-19. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-09
+STATUS: Draft
+TITLE: Finish dynamic, associative and queue language semantics
+STATEMENT: >>>
+Each method has typed same-source positive/negative cases, independent container expectations, overflow atomicity and rollback; no test exclusion is mislabeled as Verilator agreement.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-09, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01, WP-08. Existing product IDs: VS-RTL-ASSOCIATIVE-001, VS-RTL-QUEUE-001, VS-RTL-DYNAMIC-ARRAY-001, VS-RTL-ARRAY-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/10. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-04, LIB-05, LIB-15. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-10
+STATUS: Draft
+TITLE: Implement HDL system tasks, strings, real values and file I/O
+STATEMENT: >>>
+Self-checking HDL programs execute and fail with exact status/source diagnostics; file malformed/missing/error cases and time-format rounding are tested independently.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-10, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-03, WP-07. Existing product IDs: VS-RTL-PROC-001, VS-RTL-TYPE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/11. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-02, LIB-10. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-11
+STATUS: Draft
+TITLE: Add resolved nets, inouts, primitives and force/release
+STATEMENT: >>>
+Independent resolution tables exercise Z, conflicting drivers, force/release and hierarchy; do not use mostly-two-state Verilator as the sole resolution oracle.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-11, P1, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02, WP-04, WP-06. Existing product IDs: VS-RTL-HIER-001, VS-RTL-TIME-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/12. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-17, LIB-19. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-12
+STATUS: Draft
+TITLE: Provide SystemVerilog DPI-C import and export
+STATEMENT: >>>
+The same small C host and HDL DPI fixtures compile against both tools for the declared subset, exercise imports and exports, and reject unsupported signatures clearly.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-12, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-05, WP-06, WP-07. Existing product IDs: new feature requirements to be drafted before implementation. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/13. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-16. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-13
+STATUS: Draft
+TITLE: Expand VPI scheduling, hierarchy and cocotb integration
+STATEMENT: >>>
+A documented API capability table links each supported operation to tests, including callback ordering, reentrancy, removed handles, multiple models and actual cocotb smoke/regressions.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-13, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02, WP-06, WP-08. Existing product IDs: new feature requirements to be drafted before implementation. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/14. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-16. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-14
+STATUS: Draft
+TITLE: Implement assertions, properties and sampled-value semantics
+STATEMENT: >>>
+Intentionally failing properties demonstrably fail at the expected cycle; no successful build may silently erase verification statements. SVA support remains a declared subset.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-14, P1, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02, WP-03, WP-20. Existing product IDs: new feature requirements to be drafted before implementation. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/15. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-01, LIB-19. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-15
+STATUS: Draft
+TITLE: Collect coverage of simulated HDL designs
+STATEMENT: >>>
+A tiny DUT produces independently predicted counts across merged runs; reports identify excluded constructs, reset semantics and source hashes. Simulator C# coverage is never reported as DUT coverage.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-15, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-14. Existing product IDs: VS-QUAL-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/16. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-18. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-16
+STATUS: Draft
+TITLE: Plan staged classes, constrained randomization and UVM support
+STATEMENT: >>>
+Each staged subset has reproducible tests and a compatibility manifest. Do not label parse acceptance or a toy class example as UVM support.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-16, P3, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-03, WP-05, WP-06, WP-07, WP-12, WP-14, WP-15. Existing product IDs: VS-RTL-TYPE-001, VS-RANDOM-CONSTRAINT-001. Z3 is an informational candidate; see docs/constrained-randomization.md. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/17. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-13, LIB-19. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-17
+STATUS: Draft
+TITLE: Add HDL tracing, source debugging and model checkpoints
+STATEMENT: >>>
+Losslessly compressed waveforms satisfying VS-TRACE-COMPRESSED-001 and parsed by an independent reader match known traces; checkpoint restart reproduces future outputs/events exactly and rejects mismatched source/runtime versions.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-17, P1, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-02, WP-06. Existing product IDs: VS-TRACE-COMPRESSED-001 (Draft). GitHub issue: https://github.com/jeffadickson/VeloSim/issues/18. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-06, LIB-10, LIB-11, LIB-12. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+- TYPE: File
+  VALUE: docs/compressed-waveforms.md
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-18
+STATUS: Draft
+TITLE: Scale simulation, resource limits and measured parallel execution
+STATEMENT: >>>
+Published benchmarks include source/tool/configuration hashes, baseline timings, repeat distributions and correctness checks; demonstrate actual worker scaling or explicitly report no gain.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-18, P2, relative scope XL. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01, WP-04, WP-07. Existing product IDs: VS-QUAL-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/19. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-03, LIB-08, LIB-14, LIB-15, LIB-18. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-19
+STATUS: Draft
+TITLE: Qualify Windows/Linux distribution and native host integrations
+STATEMENT: >>>
+A disconnected Windows machine can follow the documented flow and reproduce a short verified run before long campaigns; native-vs-WSL coverage and unsupported toolchains are explicit.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-19, P2, relative scope L. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01, WP-12, WP-13, WP-17. Existing product IDs: VS-VERIFY-REMOTE-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/20. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-03, LIB-06, LIB-08, LIB-09, LIB-17. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json
+
+[REQUIREMENT]
+UID: VS-PLAN-WP-20
+STATUS: Draft
+TITLE: Reject executable constructs that lowering would silently omit
+STATEMENT: >>>
+Unsupported executable constructs fail explicitly; supported assertions and final blocks have demonstrable effects. A positive parser/exporter exit alone never satisfies acceptance.
+<<<
+COMMENT: >>>
+Inferred planning acceptance for WP-20, P0, relative scope M. This is a work package, not evidence of implemented support or approved product requirement closure. Dependencies: WP-01. Existing product IDs: VS-QUAL-001. GitHub issue: https://github.com/jeffadickson/VeloSim/issues/21. Detailed scope, tasks, evidence limits and status index are in the linked planning documents. Library evaluation: LIB-01, LIB-06. Source/API research is complete; dependency selection, compatibility and behavioral qualification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/verilator-gap-analysis.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/library-opportunities.json

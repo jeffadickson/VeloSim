@@ -8,32 +8,39 @@ public class RtlIndexedConformanceTests
     private static string Root() { for (var d = new DirectoryInfo(TestRepository.Root); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "native/rtl/runtime.h"))) return d.FullName; throw new IOException("Checkout missing."); }
     private static string Bits(ulong n, int width) => string.Concat(Enumerable.Range(0, width).Reverse().Select(i => ((n >> i) & 1) == 0 ? '0' : '1'));
     private static List<Dictionary<string, string>> ReadVectors() => new[] { "0", "1", "60", "63", "64", "70", "2147483647", "x", "z", "7" }.Select((basis, row) => new Dictionary<string, string> { ["a"] = row == 9 ? string.Concat(Enumerable.Range(0, 64).Select(i => "01xz"[i % 4])) : Bits(0x8000000180000001UL, 64), ["i"] = basis == "max" ? new('1', 64) : basis is "x" or "z" ? new(basis[0], 64) : Bits(ulong.Parse(basis), 64) }).ToList();
-    internal static async Task Qualify(string tag, string sourceText, RtlSignal[] expected, List<Dictionary<string, string>> vectors, int firstRowCycle = 0, bool sdk = false, bool selectedProbe = true)
+    internal static async Task Qualify(string tag, string sourceText, RtlSignal[] expected, List<Dictionary<string, string>> vectors, int firstRowCycle = 0, bool sdk = false, bool selectedProbe = true, string? sdkProbe = null, IReadOnlyDictionary<string,string>? extraSources = null, IReadOnlyList<Dictionary<string,string>>? expectedOutputs = null, IReadOnlyList<RtlMemory>? expectedMemories = null, bool useVerilator = false)
     {
         if (Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO") != "1") Assert.Ignore("Requires pinned Surelog/UHDM and Icarus.");
-        string root = Root(), path = Path.Combine(root, "artifacts", "rtl-indexed-" + tag + "-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path);
-        string source = Path.Combine(path, "design.sv"); File.WriteAllText(source, sourceText); var sources = ArtifactMetadata.SourceClosure([source]);
+        string root = Root();
+        // Linux-side evidence avoids mounted-filesystem compiler-probe stalls under WSL.
+        // Unique directories retain the same HDL, tool fingerprints, commands and complete traces.
+        string evidenceRoot = Path.GetFullPath(Environment.GetEnvironmentVariable("VELOSIM_RTL_EVIDENCE_ROOT") ?? Path.Combine(root, "artifacts"));
+        string path = Path.Combine(evidenceRoot, "rtl-indexed-" + tag + "-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path);
+        string source = Path.Combine(path, "design.sv"); File.WriteAllText(source, sourceText);var sourceFiles=new List<string>{source};
+        if(extraSources is not null)foreach(var pair in extraSources){if(Path.GetFileName(pair.Key)!=pair.Key||!pair.Key.EndsWith(".sv",StringComparison.Ordinal)||pair.Key is "design.sv" or "tb.sv")throw new ArgumentException("Extra HDL requires distinct basename .sv files");string extra=Path.Combine(path,pair.Key);File.WriteAllText(extra,pair.Value);sourceFiles.Add(extra);}
+        var sources = ArtifactMetadata.SourceClosure(sourceFiles);
         var runner = new RecordingProcessRunner(new ProcessRunner()); var tools = new Dictionary<string, FileFingerprint>(StringComparer.Ordinal);
         string Tool(string executable) { string resolved = ArtifactMetadata.ResolveExecutable(executable, path) ?? throw new IOException("Missing tool " + executable); tools.TryAdd(resolved, ArtifactMetadata.Fingerprint(resolved)); return resolved; }
-        async Task<ProcessResult> Run(string executable, params string[] args) { var result = await runner.RunAsync(Tool(executable), args, path, TimeSpan.FromMinutes(3)); Assert.That(result.ExitCode, Is.Zero, result.StandardOutput + result.StandardError); return result; }
-        string surelog = Tool(Environment.GetEnvironmentVariable("VELOSIM_SURELOG") ?? "surelog"), iverilog = Tool(Environment.GetEnvironmentVariable("VELOSIM_INDEXED_IVERILOG") ?? "iverilog"), vvp = Tool(Environment.GetEnvironmentVariable("VELOSIM_INDEXED_VVP") ?? "vvp");
-        var referenceVersion = await Run(iverilog, "-V");
-        var elaboration = await new SurelogFrontend(runner).ElaborateAsync([source], Path.Combine(path, "surelog"), "dut", executable: surelog, workers: 4);
+        async Task<ProcessResult> Run(string executable, params string[] args) { var result = await runner.RunAsync(Tool(executable), args, path, TimeSpan.FromMinutes(3)); File.WriteAllText(Path.Combine(path,"commands.json"),JsonSerializer.Serialize(runner.Commands));Assert.That(result.ExitCode, Is.Zero, result.StandardOutput + result.StandardError); return result; }
+        string surelog = Tool(Environment.GetEnvironmentVariable("VELOSIM_SURELOG") ?? "surelog"), iverilog = useVerilator?"":Tool(Environment.GetEnvironmentVariable("VELOSIM_INDEXED_IVERILOG") ?? "iverilog"), vvp = useVerilator?"":Tool(Environment.GetEnvironmentVariable("VELOSIM_INDEXED_VVP") ?? "vvp");
+        var referenceVersion = useVerilator?await Run("verilator","--version"):await Run(iverilog, "-V");
+        var elaboration = await new SurelogFrontend(runner).ElaborateAsync(sourceFiles, Path.Combine(path, "surelog"), "dut", executable: surelog, workers: 4);
         await Run(Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL") ?? Path.Combine(root, "artifacts/with-uhdm/bin/velosim-uhdm-rtl"), elaboration.UhdmPath, Path.Combine(path, "design.json"), "dut");
         var design = RtlDesign.Parse(File.ReadAllText(Path.Combine(path, "design.json"))); Assert.That(design.Signals.Select(s=>s with {Name=s.SourcePath??s.Name,SourcePath=null}).OrderBy(s => s.Name), Is.EqualTo(expected.OrderBy(s => s.Name)), "Independently specified complete source interface");
-        var inputs = design.Signals.Where(s => s.Direction == "input" && s.Name != "clk").ToArray(); var outputs = design.Signals.Where(s => s.Direction == "output").ToArray();
+        if(expectedMemories is not null)Assert.That(design.Memories.OrderBy(m=>m.Name).Select(m=>JsonSerializer.Serialize(m)),Is.EqualTo(expectedMemories.OrderBy(m=>m.Name).Select(m=>JsonSerializer.Serialize(m))),"Independently specified array shape and state");
+        var inputs = design.Signals.Where(s => s.Direction == "input" && s.Name != design.Clock).ToArray(); var outputs = design.Signals.Where(s => s.Direction == "output").ToArray();
         File.WriteAllText(Path.Combine(path, "design.cpp"), design.EmitCpp()); File.Copy(Path.Combine(root, "native/rtl/runtime.h"), Path.Combine(path, "runtime.h"));
         File.WriteAllText(Path.Combine(path, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\nproject(indexed LANGUAGES CXX)\nset(CMAKE_CXX_STANDARD 20)\nadd_executable(indexed design.cpp)\n");
         File.WriteAllLines(Path.Combine(path, "stimulus.txt"), vectors.Select(v => string.Join(' ', inputs.Select(s => v[s.Name]))));
-        var tb = new StringBuilder("module tb; logic clk=0;\n"); foreach (var s in design.Signals.Where(s => s.Name != "clk"&&s.Direction!="internal")) tb.AppendLine($"{(s.Direction == "input" ? "logic" : "wire")} [{s.Width - 1}:0] {s.Name};"); tb.AppendLine("dut dut_instance(.*); initial begin");
-        for (int row = 0; row < vectors.Count; row++) { tb.Append("clk=0;"); foreach (var input in inputs) tb.Append($"{input.Name}={input.Width}'b{vectors[row][input.Name]};"); tb.AppendLine($"#1;clk=1;#1;$display(\"VS_RTL {row + 1}{string.Concat(outputs.Select(_ => " %b"))}\",{string.Join(',', outputs.Select(s => s.Name))});"); }
+        var tb = new StringBuilder(design.CombinationalOnly ? "module tb;\n" : "module tb; logic clk=0;\n"); foreach (var s in design.Signals.Where(s => s.Name != design.Clock&&s.Direction!="internal")) tb.AppendLine($"{(s.Direction == "input" ? "logic" : "wire")} [{s.Width - 1}:0] {s.Name};"); tb.AppendLine("dut dut_instance(.*); initial begin");
+        for (int row = 0; row < vectors.Count; row++) { if(!design.CombinationalOnly)tb.Append("clk=0;"); foreach (var input in inputs) tb.Append($"{input.Name}={input.Width}'b{vectors[row][input.Name]};"); tb.AppendLine($"{(design.CombinationalOnly?"#2;":"#1;clk=1;#1;")}$display(\"VS_RTL {row + 1}{string.Concat(outputs.Select(_ => " %b"))}\",{string.Join(',', outputs.Select(s => s.Name))});"); }
         File.WriteAllText(Path.Combine(path, "tb.sv"), tb.AppendLine("$finish;end endmodule").ToString());
         if (sdk)
         {
             await RtlExternalSdk.ExportAsync(Path.Combine(path, "design.json"), "dut", Path.Combine(path, "sdk")); var names = design.ExternalPortNames();
             var host = new StringBuilder("#include \"Vdut.h\"\n#include <fstream>\n#include <iostream>\n#include <sstream>\nint main(int argc,char**argv){if(argc!=2)return 2;Vdut top;std::ifstream input(argv[1]);std::string line,bits;int cycle=0;while(std::getline(input,line)){std::istringstream row(line);\n");
             foreach (var s in inputs) host.AppendLine($"if(!(row>>bits))return 3;top.{names[s.Name]}.bits(bits);");
-            host.AppendLine("top.clk=0;top.eval();top.timeInc(1);top.clk=1;top.eval();top.eval();std::cout<<\"VS_RTL \"<<++cycle;"); foreach (var s in outputs) host.AppendLine($"std::cout<<' '<<top.{names[s.Name]}.bits();"); host.AppendLine("std::cout<<'\\n';}top.final();Vdut probe;");
+            host.AppendLine((design.CombinationalOnly?"top.eval();top.timeInc(1);top.eval();":"top.clk=0;top.eval();top.timeInc(1);top.clk=1;top.eval();top.eval();")+"std::cout<<\"VS_RTL \"<<++cycle;"); foreach (var s in outputs) host.AppendLine($"std::cout<<' '<<top.{names[s.Name]}.bits();"); host.AppendLine("std::cout<<'\\n';}top.final();Vdut probe;");
             if(selectedProbe){
             foreach (var s in inputs) host.AppendLine($"probe.{names[s.Name]}.bits(\"{new string(s.Name == "i" ? '0' : '1', s.Width)}\");");
             host.AppendLine("probe.rst_n=0;probe.enable=1;probe.clk=0;probe.eval();probe.clk=1;probe.eval();");
@@ -44,22 +51,40 @@ public class RtlIndexedConformanceTests
             foreach(var s in inputs)host.AppendLine($"control.{names[s.Name]}.bits(\"{new string(s.Name=="i"?'0':'1',s.Width)}\");");
             host.AppendLine("control.rst_n=0;control.enable=1;control.clk=0;control.eval();control.clk=1;control.eval();control.rst_n=1;control.clk=0;control.eval();control.clk=1;control.eval();");
             foreach(var s in outputs)host.AppendLine($"if(probe.{names[s.Name]}.bits()!=control.{names[s.Name]}.bits())return 7;");
-            host.AppendLine("probe.final();control.final();return 0;}"); }else host.AppendLine("probe.final();return 0;}"); File.WriteAllText(Path.Combine(path, "sdk/host.cpp"), host.ToString());
+            host.AppendLine("probe.final();control.final();return 0;}"); }else { if(sdkProbe is not null)host.AppendLine(sdkProbe);host.AppendLine("probe.final();return 0;}"); } File.WriteAllText(Path.Combine(path, "sdk/host.cpp"), host.ToString());
         }
-        var compileInputs = Directory.GetFiles(path).Concat(sdk ? Directory.GetFiles(Path.Combine(path, "sdk")) : []).Append(elaboration.UhdmPath).Select(ArtifactMetadata.Fingerprint).ToArray();
+        // Fingerprint declared inputs, not every file a tool happened to emit.
+        // Instrumented subprocesses can update default.profraw between runs;
+        // treating it as immutable source produces false provenance failures.
+        var generatedInputs = new[] { "design.cpp", "runtime.h", "CMakeLists.txt", "stimulus.txt", "tb.sv", "design.json" }.Select(file => Path.Combine(path,file));
+        var sdkInputs = sdk ? Directory.GetFiles(Path.Combine(path,"sdk")).Where(file => Path.GetExtension(file) is ".h" or ".cpp" or ".json" or ".md" || Path.GetFileName(file)=="CMakeLists.txt") : [];
+        var compileInputs = sourceFiles.Concat(generatedInputs).Concat(sdkInputs).Append(elaboration.UhdmPath).Distinct(StringComparer.Ordinal).Select(ArtifactMetadata.Fingerprint).ToArray();
         await Run("cmake", "-S", path, "-B", Path.Combine(path, "build"), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release");
         string Cache(string name) => File.ReadLines(Path.Combine(path, "build/CMakeCache.txt")).Single(l => l.StartsWith(name + ":FILEPATH=", StringComparison.Ordinal)).Split('=', 2)[1];
         var compilerVersion = await Run(Cache("CMAKE_CXX_COMPILER"), "--version"); var ninjaVersion = await Run(Cache("CMAKE_MAKE_PROGRAM"), "--version");
-        await Run("cmake", "--build", Path.Combine(path, "build"), "--parallel", "4"); await Run(iverilog, "-g2012", "-s", "tb", "-o", Path.Combine(path, "reference.vvp"), source, Path.Combine(path, "tb.sv"));
-        var reference = await Run(vvp, Path.Combine(path, "reference.vvp")); _ = FifoDifferential.ParseTrace(reference.StandardOutput, design, vectors.Count);
+        await Run("cmake", "--build", Path.Combine(path, "build"), "--parallel", "4");
+        string referenceArtifact=useVerilator?"verilator/obj_dir/reference":"reference.vvp";
+        ProcessResult reference;
+        if(useVerilator){
+            string referenceDirectory=Path.Combine(path,"verilator");if(!Directory.Exists(referenceDirectory))Directory.CreateDirectory(referenceDirectory);
+            File.WriteAllText(Path.Combine(referenceDirectory,"CMakeLists.txt"),VerilatorReference.GenerateCMake("tb",sourceFiles.Append(Path.Combine(path,"tb.sv")).ToArray()));
+            await Run("cmake","-S",referenceDirectory,"-B",Path.Combine(referenceDirectory,"obj_dir"),"-G","Ninja","-DCMAKE_BUILD_TYPE=Release");
+            await Run("cmake","--build",Path.Combine(referenceDirectory,"obj_dir"),"--parallel","4");
+            reference=await Run(Path.Combine(path,referenceArtifact));
+        }else{
+            await Run(iverilog,new[]{"-g2012","-s","tb","-o",Path.Combine(path,referenceArtifact)}.Concat(sourceFiles).Append(Path.Combine(path,"tb.sv")).ToArray());
+            reference=await Run(vvp,Path.Combine(path,referenceArtifact));
+        }
+        _ = FifoDifferential.ParseTrace(reference.StandardOutput, design, vectors.Count);
         string Trace(string value) => string.Join('\n', value.Split('\n').Where(l => l.StartsWith("VS_RTL ", StringComparison.Ordinal))) + "\n";
         string expectedTrace = Trace(reference.StandardOutput); File.WriteAllText(Path.Combine(path, "reference.txt"), expectedTrace);
-        foreach (string workers in new[] { "1", "4", "8" }) { var native = await Run(Path.Combine(path, "build/indexed"), Path.Combine(path, "stimulus.txt"), workers); _ = FifoDifferential.ParseTrace(native.StandardOutput, design, vectors.Count); Assert.That(native.StandardOutput, Is.EqualTo(expectedTrace), path); File.WriteAllText(Path.Combine(path, "native-" + workers + ".txt"), native.StandardOutput); }
+        if(expectedOutputs is not null){Assert.That(expectedOutputs.Count,Is.EqualTo(vectors.Count));string oracle=string.Concat(expectedOutputs.Select((row,index)=>$"VS_RTL {index+1} "+string.Join(' ',outputs.Select(s=>row[s.Name]))+"\n"));File.WriteAllText(Path.Combine(path,"independent-expected.txt"),oracle);Assert.That(expectedTrace,Is.EqualTo(oracle),"Independent expected values disagree with HDL reference");}
+        foreach (string workers in new[] { "1", "4", "8" }) { var native = await Run(Path.Combine(path, "build/indexed"), Path.Combine(path, "stimulus.txt"), workers); _ = FifoDifferential.ParseTrace(native.StandardOutput, design, vectors.Count); Assert.That(native.StandardOutput, Is.EqualTo(expectedTrace), "RTL_TRACE_MISMATCH "+path); File.WriteAllText(Path.Combine(path, "native-" + workers + ".txt"), native.StandardOutput); }
         if (sdk) { await Run("cmake", "-S", Path.Combine(path, "sdk"), "-B", Path.Combine(path, "sdk-build"), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DVELOSIM_HOST_SOURCE=" + Path.Combine(path, "sdk/host.cpp")); await Run("cmake", "--build", Path.Combine(path, "sdk-build"), "--parallel", "4"); var host = await Run(Path.Combine(path, "sdk-build/velosim_host"), Path.Combine(path, "stimulus.txt")); _ = FifoDifferential.ParseTrace(host.StandardOutput, design, vectors.Count); Assert.That(host.StandardOutput, Is.EqualTo(expectedTrace)); File.WriteAllText(Path.Combine(path, "sdk.txt"), host.StandardOutput); }
-        Assert.That(ArtifactMetadata.SourceClosure([source]), Is.EqualTo(sources)); foreach (var input in compileInputs.Concat(tools.Values)) Assert.That(ArtifactMetadata.Fingerprint(input.Path), Is.EqualTo(input));
-        var commands = runner.Commands; Assert.That(commands.Single(c => c.Executable == surelog).Arguments, Does.Contain(source)); Assert.That(commands.Single(c => c.Executable == iverilog && c.Arguments.Contains("-g2012")).Arguments, Does.Contain(source));
-        var artifacts = new[] { "design.json", "build/indexed", "reference.vvp", "reference.txt", "native-1.txt", "native-4.txt", "native-8.txt" }.Concat(sdk ? ["sdk-build/velosim_host", "sdk-build/libvelosim_vpi.so", "sdk.txt"] : []).Select(p => ArtifactMetadata.Fingerprint(Path.Combine(path, p))).ToArray();
-        File.WriteAllText(Path.Combine(path, "report.json"), JsonSerializer.Serialize(new { schema = "velosim.rtl.indexed.v1", status = "pass", tag, cycles = vectors.Count, firstRowCycle, sdk, workers = new[] { 1, 4, 8 }, execution_scope = "single_process_serial", build_jobs = 4, sources, compileInputs, tools = tools.Values, artifacts, reference_version = referenceVersion.StandardOutput, compiler_version = compilerVersion.StandardOutput, ninja_version = ninjaVersion.StandardOutput, commands }, new JsonSerializerOptions { WriteIndented = true }));
+        Assert.That(ArtifactMetadata.SourceClosure(sourceFiles), Is.EqualTo(sources)); foreach (var input in compileInputs.Concat(tools.Values)) Assert.That(ArtifactMetadata.Fingerprint(input.Path), Is.EqualTo(input));
+        var commands = runner.Commands; foreach(string file in sourceFiles){Assert.That(commands.Single(c => c.Executable == surelog).Arguments, Does.Contain(file)); if(useVerilator)Assert.That(File.ReadAllText(Path.Combine(path,"verilator/CMakeLists.txt")),Does.Contain(file));else Assert.That(commands.Single(c => c.Executable == iverilog && c.Arguments.Contains("-g2012")).Arguments, Does.Contain(file));}
+        var artifacts = new[] { "design.json", "build/indexed", referenceArtifact, "reference.txt", "native-1.txt", "native-4.txt", "native-8.txt" }.Concat(sdk ? ["sdk-build/velosim_host", "sdk-build/libvelosim_vpi.so", "sdk.txt"] : []).Concat(expectedOutputs is not null ? ["independent-expected.txt"] : []).Select(p => ArtifactMetadata.Fingerprint(Path.Combine(path, p))).ToArray();
+        File.WriteAllText(Path.Combine(path, "report.json"), JsonSerializer.Serialize(new { schema = "velosim.rtl.indexed.v1", status = "pass", tag, cycles = vectors.Count, firstRowCycle, sdk, workers = new[] { 1, 4, 8 }, execution_scope = "serial_rtl_evaluation", reference_engine=useVerilator?"verilator_binary_not_four_state":"icarus", build_jobs = 4, sources, compileInputs, tools = tools.Values, artifacts, reference_version = referenceVersion.StandardOutput, compiler_version = compilerVersion.StandardOutput, ninja_version = ninjaVersion.StandardOutput, commands }, new JsonSerializerOptions { WriteIndented = true }));
         if (firstRowCycle > 0) for (int row = 0; row < vectors.Count; ++row) TestContext.Progress.WriteLine($"RTL_CYCLE {firstRowCycle + row} PASS {tag} source vector {row}");
     }
     [Test, Category("RealFifo")]

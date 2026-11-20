@@ -1,0 +1,15 @@
+# Mutate owned production paths only; keep test assertions and dependency code
+# unchanged. The runner and compiler plugin must use this same configuration.
+mutators:
+  - cxx_boundary
+  - cxx_comparison
+  - cxx_arithmetic
+  - cxx_bitwise
+  - cxx_logical
+includePaths:
+  - '.*/native/rtl/hdl_scheduler\.h$'
+  - '.*/native/numeric/svint_simd\.h$'
+parallelization:
+  workers: 2
+  executionWorkers: 2
+quiet: false

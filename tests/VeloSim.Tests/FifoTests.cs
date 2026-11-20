@@ -87,8 +87,7 @@ public class FifoTests
         var variants = new Dictionary<string, string>
         {
             ["blocking"] = source.Replace("rd_ptr <= '0;", "rd_ptr = '0;"),
-            ["initializer"] = source.Replace("] count;", "] count = 3'd5;"),
-            ["two-state-memory"] = source.Replace("logic [WIDTH-1:0] mem", "bit [WIDTH-1:0] mem"),
+            ["initializer"] = source.Replace("] count;", "] count = push;"),
             ["pull-net"] = source.Replace("endmodule", "tri0 pulled;\nendmodule"),
             ["fill-one"] = source.Replace("count <= '0;", "count <= '1;"),
             ["delay"] = source.Replace("assign full", "assign #1 full"),

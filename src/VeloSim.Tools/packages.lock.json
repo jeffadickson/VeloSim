@@ -8,8 +8,16 @@
         "resolved": "11.0.0",
         "contentHash": "gK2aq4XvChj5kvozpPHrkfKkr7zc5Z4xoTrJb4GPZzDEPMlCk0TX632bwY3LsWcX2UVcVRQBBGzsBGC2lq6YhA=="
       },
+      "System.CommandLine": {
+        "type": "Transitive",
+        "resolved": "2.0.14",
+        "contentHash": "15fyVO4aG6poR6IKmhM74zf7PUzaU6FZAGm2d3SQSO9yIyGAeo44e6t9qeKjjaqyMEqYdqcb2G1B0gpLoDU2cA=="
+      },
       "velosim": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "System.CommandLine": "[2.0.14, )"
+        }
       }
     }
   }

@@ -1,0 +1,896 @@
+[DOCUMENT]
+TITLE: VeloSim bounded RTL requirements
+UID: VS-SRS
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-001
+STATUS: Active
+TITLE: Selected blocking word assignment
+STATEMENT: >>>
+The simulator shall apply supported bit, fixed-part and indexed-part blocking writes to writable 1..128-bit words, preserving untouched bits and making the result visible to later statements in the same process. Unknown indices shall suppress writes; partially out-of-range selections shall modify only in-range bits. Known selected-write bases above INT32_MAX shall raise the existing qualified-range error.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.Statement, WordWrite and ProcessStatement; runtime deposit_indexed; UHDM expr lowering of logic_var declarations behind selections. Verification: RequirementIteration001..080 and 161..168, the minimized UhdmLogicVariableBlockingSelectionMatchesIcarus regression, plus seeded robustness tests. Evidence: ``artifacts/requirements-200/test-*.log`` and per-case manifest.json/commands.log. Acceptance status and final regression/coverage gates are recorded in docs/requirements-200.md.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-002
+STATUS: Active
+TITLE: Concatenated blocking destinations
+STATEMENT: >>>
+The simulator shall support concatenated blocking assignments to distinct writable signal words or supported selections with a combined width of at most 128 bits. It shall sample the RHS and all target index expressions before publishing any destination's local blocking result.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.Statement and TargetLeaves. Verification: RequirementIteration081..100 and 169..172. Case 100 independently checks that a destination used as another destination's index retains its pre-assignment value for that index. Evidence: artifacts/requirements-200/ and docs/requirements-200.md.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-003
+STATUS: Active
+TITLE: Fixed-memory blocking assignment
+STATEMENT: >>>
+The simulator shall support blocking writes to whole elements of supported fixed one-dimensional four-state memories. Later statements in the same process shall read the updated element. Invalid or unknown memory indices shall retain the existing unknown-read/ignored-write policy and other elements shall persist.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.Statement, MemoryIndex, ProcessStatement and runtime read/write. Verification: RequirementIteration101..120 and 173..176, with nonzero bounds, persistence and unknown/out-of-range indices. Selected memory-element writes, two-state memories and memory elements inside concatenation targets are outside this contract. Evidence: artifacts/requirements-200/.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-004
+STATUS: Active
+TITLE: Blocking ownership and race rejection
+STATEMENT: >>>
+The validator shall reject mixed blocking/nonblocking writes to the same parent word or whole memory and shall reject blocking storage read by another process or continuous logic. Ownership and isolation shall hold independently of declaration order and target selection shape. Memory dependencies shall include the memory identity and its index expressions.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.References, TargetOwner and ValidateBlockingIsolation. Verification: RequirementIteration121..160 and reproducible malformed-input/property tests. Mutation probes shall remove relevant guards and establish that focused tests detect the changed behavior. Evidence and limitations: docs/requirements-200.md and artifacts/requirements-200/.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-BLOCK-005
+STATUS: Active
+TITLE: Two-state blocking storage
+STATEMENT: >>>
+The simulator shall coerce X/Z bits to zero at writes to two-state signal storage, including selected blocking writes. Later same-process reads shall observe the coerced result; untouched bits shall preserve their two-state value.
+<<<
+COMMENT: >>>
+Implementation: RtlDesign.StoreWord, WordWrite and Statement. Verification: RequirementIteration181..200, existing signed two-state integration tests and final coverage. Evidence: artifacts/requirements-200/ and docs/requirements-200.md.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+
+[REQUIREMENT]
+UID: VS-QUAL-001
+STATUS: Active
+TITLE: Reproducible qualification evidence
+STATEMENT: >>>
+Qualification shall retain stable case IDs, implementation/input/executable fingerprints, command results, reproducible randomized seeds, mutation outcomes and malformed-input results. Mutation acceptance shall require a passing control and distinguish semantic assertion failures from build, timeout and infrastructure failures. Coverage reports shall distinguish line and branch measurements, measured object scope and tooling limitations. Coverage shall not substitute for behavioral comparisons.
+<<<
+COMMENT: >>>
+Verification ledger: docs/requirements-200.md; native execution evidence: ``artifacts/requirements-200/native/<run>/NNN/manifest.json``, status.json and commands.log. Same-source HDL evidence uses unique ``rtl-indexed-requirements-NNN-*`` directories under checkout artifacts or the configured VELOSIM_RTL_EVIDENCE_ROOT. Final coverage, mirror and source/binary evidence paths are recorded in the ledger after completion. AI reviews occur at 15-case boundaries and before the final commit. The full suite has a bounded 240-minute budget; individual fixture tool deadlines remain shorter. CI allows packaging headroom and measures the Linux test run once through coverage.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRequirements200Tests.cs
+- TYPE: File
+  VALUE: tools/VeloSim.Build/Program.cs
+- TYPE: File
+  VALUE: tools/BlockingMutationProbe.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlBlockingRobustnessTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlIndexedConformanceTests.cs
+- TYPE: File
+  VALUE: tools/VeloSim.Build/SourceEvidence.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/CoverageEvidenceTests.cs
+- TYPE: File
+  VALUE: .github/workflows/ci.yml
+
+[REQUIREMENT]
+UID: VS-RTL-EVENT-001
+STATUS: Active
+TITLE: Bounded independent input-edge processes
+STATEMENT: >>>
+The simulator shall support up to 256 independently triggered processes, each with 1..16 distinct scalar top-input rising/falling edge controls. Each triggered process shall start from pre-commit state while observing its own isolated blocking updates in later statements. Nonblocking updates from the sampled input batch shall commit together. Auxiliary four-state inputs shall retain the scalar 0/1/X/Z edge table; the primary clock shall start known zero.
+<<<
+COMMENT: >>>
+Baseline implementation and evidence: RtlDesign.EventEvaluation; runtime edge_event; docs/open-items-100.md, numbered cases 001..040 and primary-negedge startup regression. This requirement excludes generated clocks, arbitrary event expressions and general timed scheduling. Final regression rechecks baseline behavior after this batch.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlOpenItems100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-HIER-001
+STATUS: Active
+TITLE: Bounded elaborated hierarchy
+STATEMENT: The frontend shall normalize supported module instances and elaborated generate scopes, preserving source paths and sizing whole-word input/output connections with source expression signedness.
+COMMENT: Baseline evidence: docs/open-items-100.md, cases 071..080 and hierarchical falling-clock alias integration. Inout, open and selected output connections remain outside this contract.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlHierarchyTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-WORD-001
+STATUS: Active
+TITLE: Bounded signed and two-state words
+STATEMENT: The simulator shall support its normalized signed/unsigned logic and bit word operators for widths 1..128, preserving four-state masks and coercing two-state storage at assignment boundaries.
+COMMENT: Baseline qualification: docs/open-items-100.md; RtlSignedWideTests, RtlOperatorTests and two-state cases 061..070. This requirement covers the operator subset accepted by validation, not every SystemVerilog expression or type.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlSignedWideTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-REPEAT-001
+STATUS: Active
+TITLE: Constant bounded repetition
+STATEMENT: The simulator shall support literal repeat counts 0..256 and reject expanded nested execution above its 20000-statement budget.
+COMMENT: Baseline evidence: docs/open-items-100.md, cases 041..050 and nested-repeat budget regression. Runtime-controlled for/while loops remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlOpenItems100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-MEM-001
+STATUS: Active
+TITLE: Fixed one-dimensional four-state memories
+STATEMENT: The simulator shall support 1..256-word fixed four-state memories with nonnegative declared bounds through INT32_MAX, in either direction, with unknown reads and ignored writes for invalid or X/Z indices.
+COMMENT: Baseline evidence: docs/open-items-100.md, cases 081..090 and runtime memory_index guards. VS-RTL-BLOCK-003 extends the assignment kinds supported by this storage contract.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlOpenItems100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-TIME-001
+STATUS: Draft
+TITLE: General event and delay scheduling
+STATEMENT: The simulator shall support a general timed event queue, arbitrary event expressions and delay scheduling.
+COMMENT: Open backlog; this batch does not implement or verify this general requirement. Existing scalar top-input edge processing remains a bounded subset.
+
+[REQUIREMENT]
+UID: VS-RTL-COMB-001
+STATUS: Draft
+TITLE: General combinational processes
+STATEMENT: The simulator shall support always_comb processes with language-defined sensitivity and scheduling.
+COMMENT: Open backlog; the existing continuous-assignment DAG is a separate bounded contract.
+
+[REQUIREMENT]
+UID: VS-RTL-PROC-001
+STATUS: Draft
+TITLE: General procedural constructs
+STATEMENT: The simulator shall support initialization, runtime-controlled loops, functions and tasks.
+COMMENT: Open backlog; constant repeat and supported sequential statements do not close this requirement.
+
+[REQUIREMENT]
+UID: VS-RTL-TYPE-001
+STATUS: Draft
+TITLE: Composite and broader scalar types
+STATEMENT: The simulator shall support structures, unions, enums and additional scalar integer types.
+COMMENT: Open backlog; supported signed/unsigned logic/bit words remain bounded to 128 bits.
+
+[REQUIREMENT]
+UID: VS-RTL-ARRAY-001
+STATUS: Draft
+TITLE: General array and container operations
+STATEMENT: The simulator shall support multidimensional, queue, dynamic and associative array operations.
+COMMENT: Open backlog; this batch only extends blocking writes to whole elements of existing fixed one-dimensional memories.
+
+[REQUIREMENT]
+UID: VS-RTL-COMB-002
+STATUS: Active
+TITLE: Acyclic fully assigned combinational blocks
+STATEMENT: >>>
+The simulator shall settle bounded always_comb blocks together with continuous assignments in dependency order before sequential sampling and after the nonblocking commit. Within each block it shall preserve blocking statement order and procedural four-state conditions. Assignments may concatenate distinct whole-word parents up to 128 combined bits. Every whole-word destination shall have one owner and be assigned on every path before it is read. Feedback, read-before-write, latches, combinational memory writes, selected combinational writes and event-input-dependent combinational logic shall be rejected.
+<<<
+COMMENT: >>>
+Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: RtlCombinational200Tests cases 001..040 and CombinationalRepeatSettlesBeforeEdge; external SDK first evaluation, no-edge input changes, repeated eval, pre-edge sampling and post-commit settling; RtlCombinationalRobustnessTests including aggregate budget rejection. The clockless extension is specified by VS-RTL-CLOCKLESS-001. VS-RTL-COMB-001 remains the broader backlog.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCombinational.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCombinational200Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCombinationalRobustnessTests.cs
+- TYPE: File
+  VALUE: tools/CombinationalQualification.cs
+- TYPE: File
+  VALUE: tools/CombinationalMutationProbe.cs
+
+[REQUIREMENT]
+UID: VS-RTL-FUNC-001
+STATUS: Active
+TITLE: Pure bounded automatic functions
+STATEMENT: >>>
+The frontend shall inline nonrecursive automatic packed-word functions with positional input formals, whole-local blocking assignments, block and if statements, and function-name return assignment on every path. Every argument, local assignment and result shall retain its declared width, signedness and two-state conversion. Captured mutable globals, global writes, timing, selected local writes and persistent-state reads shall be rejected. Extensions for constant captures and explicit returns are specified by VS-RTL-PARAM-001 and VS-RTL-FLOW-001. Calls shall have bounded depth, argument/local counts and symbolic expansion.
+<<<
+COMMENT: Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: cases 041..080 and 161..180, same original source through Surelog/UHDM and Icarus, standalone and SDK. General functions remain part of VS-RTL-PROC-001.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlConversion.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCombinational200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-TASK-001
+STATUS: Active
+TITLE: Pure zero-time automatic tasks
+STATEMENT: >>>
+The frontend shall inline automatic zero-time tasks with positional input and whole-word output arguments, pure local blocking computation and definite assignment of every output. Output copy-out shall sample all results before changing destination words. Inout/ref, aliased output parents, selected output actuals, timing, captured globals and nested task calls shall be rejected. Combined outputs shall be bounded to 128 bits.
+<<<
+COMMENT: Qualified by batch combinational-subroutines-200, 831 executed full-regression passes and coverage gate 20261025-042139-8795316: cases 081..120 and negative cases 181..200. Blocking-isolation rules continue to apply to calls in sequential processes. General tasks remain part of VS-RTL-PROC-001.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCombinational200Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-CLOCKLESS-001
+STATUS: Active
+TITLE: Combinational-only structural models
+STATEMENT: >>>
+The frontend and both generated interfaces shall support acyclic, fully assigned combinational-only modules without inventing a clock port. The IR shall represent the absent clock explicitly as null and require a canonical empty sequential body. Initial eval and subsequent input changes shall settle the graph; every actual input, including one named clk, shall retain its declared width and four-state value.
+<<<
+COMMENT: Qualified by functions-100, 959 executed full-regression passes and coverage gate 20261025-063443-6553218: RtlFunctions100Tests cases001..020, ConstantOnlyFirstEval and native clocklessInterfaceTests. Existing ownership, definite-assignment, feedback and resource bounds remain applicable.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: tests/native/external_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlFunctions100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-FLOW-001
+STATUS: Active
+TITLE: Explicit pure-function returns and bounded loops
+STATEMENT: >>>
+Pure automatic functions shall support explicit return expressions with declared conversion and path termination. Supported repeat loops shall sample a known nonnegative count once, bounded to256. Supported for loops shall use a known local counter up to32bits, typed arithmetic and comparisons, a single initializer and increment, and a statically proven trip count up to256. Conditions and increments may read only the counter and immutable constants. The body, including every nested loop initializer and increment, shall not mutate the enclosing counter. Early returns shall skip later statements and enclosing loop increments. Shared node, expression, depth and expansion budgets shall reject unsupported or excessive control flow.
+<<<
+COMMENT: Qualified by functions-100, 959 executed full-regression passes and coverage gate 20261025-063443-6553218: RtlFunctions100Tests cases021..060 and091..100, TypedLoopControl, ExplicitReturnKeepsAssignedValue, BoundedParityReadsFormalBits and RtlNestedLoopSafetyTests. General while/do loops, break/continue and runtime-dependent trip counts remain outside this bounded contract.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlFunctions100Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlNestedLoopSafetyTests.cs
+- TYPE: File
+  VALUE: tools/FunctionMutationProbe.cs
+
+[REQUIREMENT]
+UID: VS-RTL-PARAM-001
+STATUS: Active
+TITLE: Immutable parameter captures by elaborated declaration
+STATEMENT: >>>
+Pure automatic calls shall resolve known literal or unary-literal int and packed logic/bit parameter or localparam values by canonical typed declaration and visible elaborated instance identity. Exact source coordinates and original lexical scope binding may repair malformed elaborated references only when unambiguous, honoring variable/formal shadowing. Captures shall preserve declared width and signedness, local shadowing and distinct instance overrides. Caller spelling shall never substitute for declaration binding. Parameter selections and compound constant expressions shall be rejected rather than trusting lossy elaboration folding. Conflicting duplicate values, unknown or unmaterialized values, unsupported types and unresolved or ambiguous bindings shall be rejected.
+<<<
+COMMENT: Qualified by functions-100, 959 executed full-regression passes and coverage gate 20261025-063443-6553218: RtlFunctions100Tests cases061..080, SignedWideParameter and SubroutineLocalParameterCaptureResolvesOwnDeclaration. Mutable globals, hierarchical function calls and general constant-expression evaluation remain outside this contract.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlFunctions100Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-INIT-001
+STATUS: Active
+TITLE: Ordered startup
+STATEMENT: >>>
+The simulator shall execute bounded, untimed blocking initialization once before event evaluation, with constant declaration initializers preceding at most one procedural initial block. Input-dependent or combinational-destination startup, concurrent initial blocks and timed startup shall fail explicitly.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlInitialization.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlProceduralEvolutionTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-RUNTIME-LOOP-001
+STATUS: Active
+TITLE: Runtime-controlled procedural loops
+STATEMENT: >>>
+The simulator shall execute supported while, do, repeat and for loops using runtime conditions and snapshotted repeat counts under a shared 20000-step evaluation budget. Failure shall restore model storage and edge history. Pure-function general runtime loops and event/delay suspension remain outside this contract.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlProceduralEvolutionTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-INTEGER-001
+STATUS: Active
+TITLE: Additional integral types
+STATEMENT: >>>
+The simulator shall preserve declared widths, signedness and two-state versus four-state storage for supported byte, shortint, int, longint, integer, time and integral enum declarations. Unsupported enum forms shall fail explicitly.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTypeArrayEvolutionTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-PACKED-001
+STATUS: Active
+TITLE: Bounded packed aggregates
+STATEMENT: >>>
+The simulator shall lower uniformly two-state or four-state packed structures and equal-width untagged unions up to 256 bits using typed UHDM member layout. Tagged, unpacked and mixed-state aggregate forms shall fail explicitly. Union acceptance requires corrected frontend tag provenance. Each packed-type query shall bound recursive entries and member-edge traversal to 20000 work steps, including shared aliases, and reset safely after rejection.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_types.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTypeArrayEvolutionTests.cs
+- TYPE: File
+  VALUE: tests/native/uhdm_type_budget_tests.cpp
+
+[REQUIREMENT]
+UID: VS-RTL-WORD-256-001
+STATUS: Active
+TITLE: Four-limb RTL words
+STATEMENT: >>>
+The RTL runtime and external model interface shall support one through 256 bits, preserving four-state values and modular arithmetic. Word ABI version 2 shall prevent binding incompatible previously compiled hosts. The independent IR scheduler word type remains limited to 64 bits.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlWide256Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-ARRAY-SHAPE-001
+STATUS: Active
+TITLE: Fixed multidimensional arrays
+STATEMENT: >>>
+The simulator shall support rank one through four fixed arrays with nonnegative bounds and at most 256 elements, checking every coordinate before linearization. Address expressions shall satisfy the existing unsigned-index contract, with explicit casts for signed values. Unknown or invalid coordinates yield unknown reads and ignored writes. Dynamic arrays, associative arrays and queues require separate lifetime support.
+<<<
+COMMENT: Qualified by full run 20261025-151434-5000821 (1024 executed passes), native and sanitizer suites, same-input HDL comparisons, properties/fuzzing and selected mutations. Current source/binary and retained-file checks passed. See docs/procedural-types-arrays.md for scopes, uncovered branches and the qualified LLVM mapping warning. Broad procedural, type and container requirements remain open.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlArrays.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTypeArrayEvolutionTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlArrayMutationRegressionTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-CONTAINER-STORAGE-001
+STATUS: Active
+TITLE: Bounded native container storage primitives
+STATEMENT: >>>
+Internal native storage shall provide owned copyable dynamic arrays, double-ended queues and unsigned integral-key associative arrays with 1 through 256-bit elements and at most 256 cells. Allocation shall optionally preserve the existing prefix. Invalid reads shall return the element default and invalid writes shall be ignored. Two-state storage shall coerce X/Z to zero. Resource rejection shall preserve existing contents. HDL lowering, bounded-queue truncation and associative traversal remain outside this contract.
+<<<
+COMMENT: Focused native verification and limitations are recorded in docs/container-events.md. Broad array requirements remain Draft; this requirement does not establish HDL acceptance.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/containers.h
+- TYPE: File
+  VALUE: tests/native/container_event_tests.cpp
+- TYPE: File
+  VALUE: tools/ContainerEventMutationProbe.cs
+
+[REQUIREMENT]
+UID: VS-RTL-EVENT-TRANSPORT-001
+STATUS: Active
+TITLE: Bounded native timed-event transport
+STATEMENT: >>>
+An internal timed-event queue shall order opaque process IDs by unsigned tick, delta, active/inactive/NBA region and insertion order. Zero-delay scheduling into an earlier region shall advance the delta. Future ticks shall start at delta zero. Time overflow, pending-capacity overflow and a lifetime execution budget shall be checked before modifying queue state. This primitive does not implement suspended HDL processes or the complete SystemVerilog scheduling algorithm.
+<<<
+COMMENT: Focused native verification and limitations are recorded in docs/container-events.md. General timed HDL scheduling remains open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/timed_events.h
+- TYPE: File
+  VALUE: tests/native/container_event_tests.cpp
+- TYPE: File
+  VALUE: tools/ContainerEventMutationProbe.cs
+
+[REQUIREMENT]
+UID: VS-RTL-DYNAMIC-ARRAY-001
+STATUS: Active
+TITLE: Bounded dynamic array allocation through HDL
+STATEMENT: >>>
+The simulator shall lower typed module-scope one-dimensional dynamic arrays into owning native storage and execute blocking new[count], self-preserving new[count](same_array), indexed reads/writes, zero-argument size and delete. Elements shall preserve supported word width, signedness and two/four-state defaults. Counts shall be sampled once and known, nonnegative and at most 256. Dynamic storage shall start empty, preserve the common prefix only for self-preserving allocation, initialize new cells and reject conflicting process ownership. SDK evaluation failure shall restore storage and edge history. Queue/associative methods, cross-array copies and general timed scheduling remain outside this bounded contract.
+<<<
+COMMENT: User-requested bounded slice:21 focused tests pass against original HDL/Icarus, independent traces, standalone and SDK models, including failure recovery after a truncating allocation. Selected regression, malformed-input properties, native semantic mutations, Stryker.NET and coverage evidence are documented in docs/dynamic-arrays.md. The Icarus two-state invalid-read limitation is recorded separately from native default-value checks.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlArrays.cs
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlDynamicArrayTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlArrayMutationRegressionTests.cs
+- TYPE: File
+  VALUE: examples/dynamic_array.sv
+
+[REQUIREMENT]
+UID: VS-RTL-QUEUE-001
+STATUS: Draft
+TITLE: Bounded HDL queue lifetimes
+STATEMENT: >>>
+The simulator shall lower module-scope one-dimensional integral queues into initially empty owning storage and support push_front, push_back, pop_front, pop_back, size, whole or indexed delete, and blocking indexed access. A write at the current size shall append. Empty pops and invalid reads shall return the declared element default. Unknown or invalid deletion indices and farther out-of-range writes shall leave storage unchanged. A 256-cell resource limit shall reject overflow before the failing operation changes storage. Pops shall be explicit ordered statements with discarded results or blocking whole-word destinations. Mutating queues shall be isolated from other processes and combinational readers. SDK evaluation failure shall restore queue contents, outputs and edge history. Bounded queue declarations, nested/aggregate queues, queue ports, nested side-effect expressions and general timed scheduling are outside this slice.
+<<<
+COMMENT: Implemented bounded slice under focused qualification only, as requested by the user. Broad regression acceptance has not been rerun; retain Draft. See docs/queues.md and the current handoff for actual scoped verification evidence.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlArrays.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlQueues.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlQueueTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/VerilatorQueueConformanceTests.cs
+- TYPE: File
+  VALUE: tests/native/rtl_queue_tests.cpp
+- TYPE: File
+  VALUE: examples/queue_demo.sv
+
+[REQUIREMENT]
+UID: VS-VERIFY-NATIVE-FUZZ-001
+STATUS: Active
+TITLE: Reproducible bounded native fuzz campaigns
+STATEMENT: >>>
+The optional native fuzz controller shall compile frozen source snapshots with four isolated LLVM libFuzzer domains, bounded execution time, sanitizer checking, independent reference checks and retained corpora, crash inputs, seeds, commands and source/binary fingerprints. Successful corpora shall support separate line/branch coverage replay. Scheduled launch, completed execution and passing results shall be reported distinctly.
+<<<
+COMMENT: Short campaign evidence and scope limitations are documented in docs/runtime-fuzz.md. Scheduling an overnight run is not completed execution evidence. The controller's NativeAOT instructions and error-path coverage remain unmeasured.
+RELATIONS:
+- TYPE: File
+  VALUE: tools/RuntimeFuzzCampaign.cs
+- TYPE: File
+  VALUE: tools/fuzz/runtime_fuzz.cpp
+- TYPE: File
+  VALUE: tools/fuzz/CMakeLists.txt
+
+[REQUIREMENT]
+UID: VS-VERIFY-REMOTE-001
+STATUS: Draft
+TITLE: Standalone Windows test campaigns and resumable results publication
+STATEMENT: >>>
+A standalone PowerShell workflow shall check directories and tools, reuse compatible installed dependencies, obtain a frozen Git source revision, run bounded native and managed mutation campaigns in WSL with isolated outputs, retain actual results and provenance, and prepare a small results commit on a new branch. Commit or authentication failure shall preserve results and local commits, pause for user action, and permit publication-only resume without rerunning tests. Unknown work shall not be discarded or pushed. Successful publication shall verify the remote SHA.
+<<<
+COMMENT: Implemented with local PowerShell/Git recovery tests and Linux worker smoke verification. Clean-machine installation, a live expired GitHub credential and12-hour completion remain unmeasured; broad acceptance remains Draft. See docs/remote-windows-campaign.md.
+RELATIONS:
+- TYPE: File
+  VALUE: tools/remote/Start-VeloSimCampaign.ps1
+- TYPE: File
+  VALUE: tools/remote/Remote.Common.ps1
+- TYPE: File
+  VALUE: tools/remote/Run-LinuxCampaign.ps1
+- TYPE: File
+  VALUE: tools/remote/Publish-RemoteResults.ps1
+- TYPE: File
+  VALUE: tests/remote/RemoteCampaign.Tests.ps1
+
+[REQUIREMENT]
+UID: VS-RTL-ASSOCIATIVE-001
+STATUS: Draft
+TITLE: Bounded integral associative arrays
+STATEMENT: >>>
+The simulator shall lower module-scope associative arrays with integral keys and packed elements of 1 through 256 bits into owning ordered native storage. At most 256 populated entries shall be supported, while updates to existing entries remain permitted at capacity. Missing reads shall return the element default without inserting cells. Unknown keys shall not create or delete entries. The simulator shall support num, exists, keyed/all deletion and first/last/next/prev traversal in numeric key order, preserving the index on failed traversal. SDK evaluation failure shall restore associative state.
+<<<
+COMMENT: Inferred bounded acceptance contract for the user-requested associative-array work. Implementation and qualification remain in progress; no verified closure. String/wildcard keys, nested associative arrays and aggregate elements remain outside this slice. docs/associative-arrays.md records current evidence and observed Verilator 5.020 limitations. General array support remains Draft under VS-RTL-ARRAY-001.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlAssociative.cs
+- TYPE: File
+  VALUE: tests/native/rtl_associative_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlAssociativeTests.cs
+- TYPE: File
+  VALUE: docs/associative-arrays.md
+
+[REQUIREMENT]
+UID: VS-TRACE-COMPRESSED-001
+STATUS: Draft
+TITLE: Losslessly compressed digital waveform output
+STATEMENT: >>>
+The simulator shall provide losslessly compressed digital waveform output in a documented format readable by an independent waveform reader. The trace shall preserve the declared widths, hierarchical signal identities, supported four-state values and simulation timestamps/time precision for the selected traced signals. Trace selection and output failures shall be reported explicitly; an uncompressed text comparison trace alone shall not satisfy this requirement.
+<<<
+COMMENT: >>>
+User explicitly requested compressed waveform output. Detailed acceptance criteria for hierarchy, values, time and failures are inferred/draft and require implementation evidence. Tracked by WP-17, https://github.com/jeffadickson/VeloSim/issues/18. FST is the initial format candidate. GTKWave libfst is implementation information to evaluate (LIB-11), not a mandated dependency or evidence of current support: https://github.com/gtkwave/libfst. The chosen revision, component notices, exported-SDK packaging and native Windows/Linux compatibility must be recorded before adoption. No compression ratio or performance improvement is promised. Implementation and verification remain open.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/compressed-waveforms.md
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+
+[REQUIREMENT]
+UID: VS-VERIFY-SIMD-001
+STATUS: Draft
+TITLE: Differential qualification of an experimental SVInt SIMD path
+STATEMENT: >>>
+An opt-in SVInt adapter shall provide a CPU/OS-gated 128-bit SIMD path and a portable scalar fallback for equal-width, equally signed bitwise operands. Both paths shall preserve four-state results, declared width and signedness, partial-word masks and bounded plane access. Qualification shall compare against unchanged pinned SVInt, independent per-bit truth tables and the current VeloSim runtime within its supported width. Performance evidence shall include complete adapter costs and shall not imply production adoption or a speedup without measured comparable results.
+<<<
+COMMENT: User-requested AVX128 prototype and comparison. The current adapter remains experimental; no production arithmetic replacement or Windows qualification is claimed.
+RELATIONS:
+- TYPE: File
+  VALUE: native/numeric/svint_simd.h
+- TYPE: File
+  VALUE: tests/native/svint_simd_tests.cpp
+- TYPE: File
+  VALUE: tests/native/svint_simd_fuzz.cpp
+- TYPE: File
+  VALUE: cmake/SVIntQualification.cmake
+- TYPE: File
+  VALUE: docs/svint-simd-review.md
+
+[REQUIREMENT]
+UID: VS-RTL-SCHEDULER-001
+STATUS: Draft
+TITLE: Executing bounded active inactive and NBA kernel
+STATEMENT: >>>
+The explicit-time kernel shall execute active work, zero-delay inactive work and sampled NBA batches to quiescence, including reactivation from changed values. Positive delays shall preserve future work and checked time arithmetic. Public advances shall preserve signal, fixed-memory, process and event state on execution, capacity, address or budget failures. Future host input deposits shall not affect earlier scheduled events. Pending-event queries shall describe runnable and queued work. Unsupported regions and storage semantics shall remain explicit limitations.
+<<<
+COMMENT: Bounded implementation acceptance for WP-02, distinct from opaque event-ID transport. Broad timing requirements and full IEEE region conformance are not closed by this slice.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/hdl_scheduler.h
+- TYPE: File
+  VALUE: tests/native/hdl_scheduler_tests.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTimed.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTimedTests.cs
+- TYPE: File
+  VALUE: docs/timed-execution.md
+
+[REQUIREMENT]
+UID: VS-RTL-SUSPEND-001
+STATUS: Draft
+TITLE: Resumable timed SDK processes
+STATEMENT: >>>
+Supported timed UHDM statements shall lower to explicit typed IR and resumable generated process PCs. Integer procedural and intra-assignment delays, signal waits and events, blocking named-event occurrences and supported fork join families shall preserve their suspension and lifetime behavior. Blocking and NBA intra-assignment delays shall sample values and addresses before suspension/commit. Join-none children shall begin only after parent suspension or termination; wait-fork shall wait for direct children and disable-fork shall terminate descendants without removing already sampled NBA updates. Timed SDK queries shall enforce the owning-thread contract. Unsupported timed forms shall be rejected explicitly.
+<<<
+COMMENT: Inferred bounded acceptance for the user-requested WP-03 work. Timed calls, broader local lifetimes, general named scopes and runtime/fractional delays remain separate open acceptance items.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: native/rtl/hdl_scheduler.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTimed.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTimedTests.cs
+- TYPE: File
+  VALUE: examples/timed_counter.sv
+- TYPE: File
+  VALUE: examples/timed_main.cpp
+
+[REQUIREMENT]
+UID: VS-RTL-TIME-METADATA-001
+STATUS: Draft
+TITLE: Preserve elaborated time scale provenance
+STATEMENT: >>>
+The qualified frontend overlay shall preserve parsed module time-unit and precision metadata with explicit provenance on serialized UHDM instances. Timed lowering shall reject absent provenance, unsupported scales and checked conversion overflow rather than substituting unknown metadata with zero. Host-tick precision and supported integer conversion behavior shall be documented in the emitted IR/SDK contract. Overlay source revision, input hashes and compatible compiler/SDK requirements shall be retained.
+<<<
+COMMENT: Inferred acceptance for the discovered pinned Surelog serialization gap. The overlay is qualified only with the matching GNU compiler and SDK; other combinations require separate compatibility evidence.
+RELATIONS:
+- TYPE: File
+  VALUE: tools/surelog-tagfix/CMakeLists.txt
+- TYPE: File
+  VALUE: tools/surelog-tagfix/time_scales.inc
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTimedTests.cs
+- TYPE: File
+  VALUE: docs/timed-execution.md
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+
+[REQUIREMENT]
+UID: VS-RTL-AUDIT-001
+STATUS: Draft
+TITLE: Generated UHDM executable discovery and explicit rejection
+STATEMENT: >>>
+The structural exporter shall use the pinned UHDM generated listener to inspect the selected elaborated design before generating RTL. Known unsupported assertion, final-process, clocking, program, interface and primitive families shall fail explicitly with source coordinates. Shared nodes shall not be expanded repeatedly, and traversal node/depth budgets shall bound discovery. Inactive generate items absent from the executable design shall not cause false rejection. Existing typed/scoped semantic validation shall remain in force.
+<<<
+COMMENT: Inferred bounded acceptance contract for the user-requested UHDM library integration, LIB-01 and WP-20. Implementation and qualification are in progress; this is not assertion execution or verified completeness for every future UHDM schema. Evidence and limitations: docs/library-implementation.md.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_audit.h
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: tests/native/uhdm_audit_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlAuditTests.cs
+- TYPE: File
+  VALUE: docs/library-implementation.md
+
+[REQUIREMENT]
+UID: VS-RUNTIME-ELEMENT-001
+STATUS: Draft
+TITLE: Shared container element policy and standard storage
+STATEMENT: >>>
+Generated HDL container adapters and internal owning containers shall share declared element conversion/default behavior and the bounded capacity policy while retaining their stated indexing/lifetime contracts. Storage shall use standard-library vector, deque and ordered-map facilities. Conversion shall not require a temporary allocated one-element array. Consolidation shall preserve four-state defaults, two-state coercion, ordering, overflow atomicity and snapshot rollback.
+<<<
+COMMENT: Inferred refactoring acceptance for LIB-04/WP-09; broad container language support remains separate. Native and HDL qualification is in progress.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: native/rtl/containers.h
+- TYPE: File
+  VALUE: tests/native/container_event_tests.cpp
+- TYPE: File
+  VALUE: tests/native/rtl_queue_tests.cpp
+- TYPE: File
+  VALUE: tests/native/rtl_associative_tests.cpp
+- TYPE: File
+  VALUE: docs/library-implementation.md
+
+[REQUIREMENT]
+UID: VS-VERIFY-SVINT-001
+STATUS: Draft
+TITLE: Independent optional SVInt numeric qualification
+STATEMENT: >>>
+An opt-in native qualification target shall compare a pinned slang SVInt implementation and the current bounded runtime with independent .NET BigInteger and explicit four-state truth-table expectations. Corpus source, seed, library/tool versions, width scopes and measured benchmark limits shall be retained. The reference generator shall build incrementally as a NativeAOT C# tool. Qualification shall not silently change the production word ABI, widen supported runtime values or add slang to ordinary exported SDK dependencies.
+<<<
+COMMENT: Inferred acceptance for the requested LIB-02 prototype and adoption decision. The current narrow benchmark supports retaining production arithmetic; final source/evidence validation is pending. Finite cases and core timings do not establish full HDL conformance or model performance.
+RELATIONS:
+- TYPE: File
+  VALUE: cmake/SVIntQualification.cmake
+- TYPE: File
+  VALUE: tools/GenerateNumericCorpus.cs
+- TYPE: File
+  VALUE: tests/native/svint_qualification.cpp
+- TYPE: File
+  VALUE: docs/library-implementation.md
+
+[REQUIREMENT]
+UID: VS-TOOLS-CLI-001
+STATUS: Draft
+TITLE: Library-based CLI parsing and AOT-safe JSON contracts
+STATEMENT: >>>
+Tool workflows shall use pinned System.CommandLine option parsing while preserving their documented numeric, positional-source, duplicate-option, error and cancellation contracts. Response-file expansion and POSIX bundling shall be disabled. CLI errors and external SDK manifests shall use closed source-generated System.Text.Json contracts that preserve existing schemas, field meanings and word ABI metadata. Generated help and native-AOT execution shall be verified without reflection-based serialization discovery.
+<<<
+COMMENT: Inferred acceptance for the user-requested C# tooling improvements, LIB-06/LIB-08. Workflow validation remains domain code. Focused checks pass; broader coverage/mutation/AOT/platform verification is in progress.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/CliOptions.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/JsonContracts.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/ToolCli.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/CliLibraryTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/ExternalInterfaceTests.cs
+- TYPE: File
+  VALUE: docs/library-implementation.md
+
+[REQUIREMENT]
+UID: VS-RANDOM-CONSTRAINT-001
+STATUS: Draft
+TITLE: SystemVerilog constrained randomization
+STATEMENT: >>>
+VeloSim shall support SystemVerilog constrained randomization through explicitly documented language subsets. Successful randomization shall satisfy all active supported constraints using declared width and signedness semantics. The supported rand/randc, inline constraints, enablement, ordering and distribution behavior, seed/state replay scope and failure update behavior shall be specified and verified. Unsupported constructs shall be diagnosed without silently dropping constraints. Unsatisfiable constraints, solver unknown/timeouts and infrastructure failures shall be distinguished and shall not be reported as successful randomization.
+<<<
+COMMENT: User-requested feature; detailed acceptance is inferred/Draft. WP-16 owns staged implementation and qualification. Z3 (LIB-13) is informational, not a mandated dependency. No constraint execution or UVM compatibility is claimed.
+RELATIONS:
+- TYPE: File
+  VALUE: docs/constrained-randomization.md
+- TYPE: File
+  VALUE: docs/library-opportunities.md
+- TYPE: File
+  VALUE: docs/verilator-work-packages.json
+
+[REQUIREMENT]
+UID: VS-RTL-RUNTIME-DELAY-001
+STATUS: Draft
+TITLE: Sampled runtime integer delays
+STATEMENT: >>>
+Explicit-time execution shall sample typed integer delay expressions once at suspension, preserve declared signedness, and convert module time units to host ticks with checked integer arithmetic. Unknown, negative and overflowing delays shall be rejected without changing committed model state or pending events. Positive host time advances shall request evaluation through the base model interface without changing the word ABI. Zero advances shall not create a new evaluation request.
+<<<
+COMMENT: Inferred bounded acceptance under WP-02/WP-03. Fractional and suffixed delays remain separate. Qualification is in progress; no broad timing requirement closure.
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/hdl_scheduler.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTimed.cs
+- TYPE: File
+  VALUE: tests/native/hdl_scheduler_tests.cpp
+- TYPE: File
+  VALUE: tests/native/external_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTimedTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-SOURCE-001
+STATUS: Draft
+TITLE: Typed timed-statement source attribution
+STATEMENT: >>>
+Timed statement IR shall retain available typed frontend file, line and column coordinates. Validated source annotations shall be diagnostic data only and shall not authorize filesystem access. Process-execution failures shall include an available last-source prefix while preserving transactional simulation state. Missing upstream coordinates shall be omitted rather than invented. Diagnostic behavior shall be verified together with failure rollback and recovery.
+<<<
+COMMENT: Inferred bounded acceptance for WP-03/WP-04. This does not qualify general debug databases, source stepping or an exact call stack. Current-source verification is in progress.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl.cpp
+- TYPE: File
+  VALUE: native/rtl/hdl_scheduler.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTimed.cs
+- TYPE: File
+  VALUE: tests/native/hdl_scheduler_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTimedTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-IMPLICIT-EVENT-001
+STATUS: Draft
+TITLE: Wait-first implicit process sensitivity
+STATEMENT: >>>
+The explicit-time slice shall infer always @* sensitivities from read operands and destination-address expressions, preserving reads of variables also assigned. It shall wait before the first execution, rearm after the body, and never execute an empty sensitivity. Inputs deposited before process startup shall not create a remembered event. always_comb shall retain its separate startup execution behavior.
+<<<
+COMMENT: Inferred WP-04 slice. General implicit event expressions and all subroutine side effects are not qualified by this requirement.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTimed.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTimedTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-RACE-DIAGNOSTICS-001
+STATUS: Draft
+TITLE: Conservative timed process hazard diagnostics
+STATEMENT: >>>
+Timed IR analysis shall report potential multiple-process writes and blocking-write/read interactions, including fork children. Diagnostics shall state that timing and path exclusion are not proven. SDK export shall retain the diagnostics with hashed input evidence. Analysis shall be bounded and explicitly report truncation. Absence of warnings shall not be presented as race freedom.
+<<<
+COMMENT: Inferred WP-04 diagnostic slice. This is not dynamic race detection or formal race proof.
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTimed.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTimedTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-AUTO-LOCAL-001
+STATUS: Draft
+TITLE: Automatic subroutine local initialization
+STATEMENT: >>>
+Supported automatic functions and tasks shall evaluate whole-word local declaration initializers on each invocation after binding value inputs, in declaration order, with declared width and state conversions. References to unsupported or unassigned locals shall fail closed.
+<<<
+COMMENT: Inferred WP-05 vertical slice. Static lifetime, reference arguments, recursion and suspended task bodies remain separate.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTaskValueResultTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-TASK-RETURN-001
+STATUS: Draft
+TITLE: Automatic task early return
+STATEMENT: >>>
+A supported zero-time automatic task return shall skip the remaining statement continuation while preserving assigned value-result outputs. Outputs shall be assigned on every returning path. A task return with a value shall be rejected.
+<<<
+COMMENT: Inferred WP-05 slice; suspended tasks and ref semantics remain separate.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTaskValueResultTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-INPUT-DEFAULT-001
+STATUS: Draft
+TITLE: Automatic input default arguments and slot preservation
+STATEMENT: >>>
+Supported automatic functions and zero-time tasks shall preserve positional and named argument slots, including leading and interior omissions. An omitted input shall require an explicit default and evaluate it only when used in its declaration scope. Missing required inputs, duplicate or unknown names and omitted output targets shall fail closed. Constant-function calls used in elaborated widths shall apply supported constant input defaults before folding. Unsupported constant-default expressions shall be rejected instead of becoming zero. Import shall require matching frontend provenance even when constant calls have folded away.
+<<<
+COMMENT: Inferred WP-05 slice. Only input defaults are included; output/inout/ref defaults, static storage, recursion and suspended task bodies remain open. Focused qualification is recorded in verification/wp05-arguments-20261028.json; historical checkpoint coverage does not qualify this slice. Broader WP-05 acceptance remains open.
+RELATIONS:
+- TYPE: File
+  VALUE: native/uhdm/rtl_subroutines.h
+- TYPE: File
+  VALUE: native/uhdm/rtl_flatten.h
+- TYPE: File
+  VALUE: tools/surelog-tagfix/call_arguments.inc
+- TYPE: File
+  VALUE: tools/surelog-tagfix/constant_arguments.inc
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTaskValueResultTests.cs

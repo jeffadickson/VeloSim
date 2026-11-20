@@ -1,0 +1,54 @@
+{
+  "schema": "velosim.verilator.queue-equivalence.v1",
+  "baseCommit": "c51c789fbbd388c875f9c24def9f810c4fbfdaac",
+  "requirement": "VS-RTL-QUEUE-001",
+  "requirementStatus": "Draft",
+  "sourceHashEncoding": "SHA256 hex, UTF8 normalized to LF",
+  "sourceHashes": {
+    "tests/VeloSim.Tests/VerilatorQueueConformanceTests.cs": "5d336df024f57467a4553152aaae2afd06d5ef7e175643af529d817cf8b593f9",
+    "src/VeloSim.Core/VerilatorReference.cs": "05c3f7ad5b7761273a2cf5b0c3dbd79c67cbc4114f0d2af7a2fe1f2790b1afdd",
+    "src/VeloSim.Core/RtlDesign.cs": "2a02fdcc6f4b681185982d339cb04d76a0758da51655d6fdb4726fa86172cc4a",
+    "src/VeloSim.Core/RtlArrays.cs": "28ee5a5de85265b7d6408ea676f732cdcb4b9d53e9d2493f46f5f755cda2ec33",
+    "src/VeloSim.Core/RtlQueues.cs": "81ed9c4b2586658e71c19d9591151f54564e372855398f91adf5d987a93b0b4b",
+    "native/rtl/runtime.h": "7f0474a54af34edea7cff0dba96655d67518b33d64bf9d346ebcb3917bdb29da"
+  },
+  "productionCodeChanged": false,
+  "passedTests": 1,
+  "failedTests": 0,
+  "skippedTests": 0,
+  "directedRows": 9,
+  "verilatorVersion": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+  "sourceMode": "Same unchanged HDL design for Surelog/VeloSim and Verilator; no empty-pop guards",
+  "scope": "Binary bit[7:0] queue equivalence, not four-state conformance",
+  "checks": [
+    "empty pop_front returns zero",
+    "empty pop_back returns zero",
+    "nonempty push/pop preserves payload",
+    "empty pop after delete overwrites previous nonzero output",
+    "both engines match independent fixed expected history"
+  ],
+  "buildJobs": 4,
+  "coverage": {
+    "coveredBranches": 36,
+    "totalBranches": 60,
+    "scope": "Existing reference adapter under the new test; test assembly excluded by collector",
+    "file": "src/VeloSim.Core/VerilatorReference.cs",
+    "coveredLines": 26,
+    "totalLines": 26
+  },
+  "reportSha256": "013697723159048786f431555256df0c1222743862dae3f225f1dbda4b773239",
+  "trxSha256": "ec6c6cd88a4491559e583df67b4a8d73f8182137be923e43d932cc395d9923bb",
+  "command": "dotnet test tests/VeloSim.Tests -c Release --no-restore --filter 'FullyQualifiedName~VerilatorQueueConformanceTests' --collect:'XPlat Code Coverage' --settings coverage.runsettings --results-directory <evidence>/verilator-managed --logger 'trx;LogFileName=verilator-queue.trx'",
+  "optIn": "VELOSIM_REAL_VERILATOR=1",
+  "limitations": [
+    "Only the new integration case ran; full suite, mutation and long campaigns not run",
+    "Only installed Verilator 5.020 tested; no claim for every version",
+    "Test harness instruction coverage unmeasured",
+    "Queue requirement remains Draft; existing 256-cell limit unchanged"
+  ],
+  "strictdoc": {
+    "logSha256": "08A55D7AC68FB59462BF497D1FAA02286B75F7A0DBFFE68F959135D255215526",
+    "passed": true,
+    "version": "0.30.4"
+  }
+}

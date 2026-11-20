@@ -1,0 +1,96 @@
+{
+  "schema": "velosim.array-mutation-review.v1",
+  "baseCommit": "05754310991fc17a3ae58fcca02159c19b86569e",
+  "sourceHashEncoding": "SHA256 hex, UTF8 text normalized to LF",
+  "sourceHashes": {
+    "src/VeloSim.Core/RtlArrays.cs": "3139261420a20b3b1874077dcbd45c4d4e3893c9c83fde2fefd7d20cdf51c156",
+    "src/VeloSim.Core/RtlDesign.cs": "658cd9e451c647e0cec0786e6f62fc5a0d5583cf35ff6b000ab4b7b932cf295b",
+    "tests/VeloSim.Tests/RtlArrayMutationRegressionTests.cs": "596a217c03f4ddd97b5cef29594e2b45b187e6d801af92b564289e5c112fa640",
+    "tests/VeloSim.Tests/RtlDynamicArrayTests.cs": "8aa4098dc94b988a6b65e7f57f8cf04b9f7fe19d538555f51ecdce38952a67bb",
+    "tests/VeloSim.Tests/RtlEvolutionRobustnessTests.cs": "123bf48d07d4e37adb6155978c4ae994740c9ab8b38a04bff377d563f7e654e1",
+    "verification/stryker-dynamic.json": "4e081375b78fa4f8bcd20dcfcdbfc98d9d801554b919b39cde328af388b8790b",
+    "verification/stryker-remote.json": "e9086ee19d53441116a5d78bac2bee3311c6d37e5c059ca91262981e38bfa474",
+    "tools/remote/Run-LinuxCampaign.ps1": "c6cf356f04a0603617b0dfc050b33a1e300c8bda1470024e5671634a1da617e8"
+  },
+  "productionChanges": false,
+  "tests": {
+    "remoteBaselinePassed": 72,
+    "focusedPassed": 31,
+    "newCases": 12,
+    "failures": 0,
+    "overlappingSelections": true,
+    "pesterPassed": 17
+  },
+  "coverage": {
+    "totalLines": 22,
+    "scope": "RtlArrays.cs only, focused 31-test run",
+    "coveredBranches": 61,
+    "coveredLines": 22,
+    "totalBranches": 62
+  },
+  "mutation": {
+    "noCoverage": 0,
+    "tool": "Stryker.NET 5.0.0",
+    "compileErrorExcluded": 1540,
+    "mutationReportSha256": "78bd0100489af1946a87e8f0e75a4e0e551482f6344c05c976181a840866facf",
+    "survivor": {
+      "disposition": "Parser limit masks this validation-depth argument change; contextual assessment, not formal proof. Retained in score.",
+      "id": "5286",
+      "replacement": "depth-1",
+      "line": 36
+    },
+    "ignored": 10829,
+    "survived": 1,
+    "reportedSourceMatchesCurrent": true,
+    "scorePercent": 98.36,
+    "killed": 60
+  },
+  "properties": {
+    "dynamicDepth": {
+      "seed": [
+        20261101,
+        864013
+      ],
+      "cases": 500
+    },
+    "malformedShape": {
+      "seed": [
+        20261028,
+        864013
+      ],
+      "cases": 500
+    }
+  },
+  "commands": {
+    "remoteBaseline": "dotnet test tests/VeloSim.Tests -c Release --no-build --filter <verification/stryker-remote.json test-case-filter> --collect:'XPlat Code Coverage' --settings coverage.runsettings --results-directory artifacts/array-mutation-followup/remote-baseline --logger 'trx;LogFileName=baseline.trx'",
+    "pester": "pwsh -NoProfile -File tools/remote/Test-RemoteScripts.ps1",
+    "baseline": "dotnet test tests/VeloSim.Tests -c Release --filter <verification/stryker-dynamic.json test-case-filter> --collect:'XPlat Code Coverage' --results-directory artifacts/array-mutation-followup --logger 'trx;LogFileName=baseline.trx'",
+    "mutation": "dotnet-stryker --config-file <source>/verification/stryker-dynamic.json --output <native-home>/array-mutation-followup-stryker (cwd tests/VeloSim.Tests)"
+  },
+  "limitations": [
+    "No reproduced production simulator bug; test/configuration changes only",
+    "Full managed/native/HDL suites and remote launcher not rerun",
+    "No additional input-fuzz campaign",
+    "No external expert participated; source and evidence self-review",
+    "Mutation compiler errors are excluded, including some shape-validator mutations",
+    "Coverage and mutation figures are not whole-simulator metrics"
+  ],
+  "reportHashes": {
+    "baseline.log": "cc94b49996bf4836c9270c77fb850993720bd931bca02db32116b7dda7de8454",
+    "baseline.trx": "ad8a2ef6e477f8aaf43c8af363db7c6de320b2452a600699029b897ec3424589",
+    "mutation-report.json": "78bd0100489af1946a87e8f0e75a4e0e551482f6344c05c976181a840866facf",
+    "remote-baseline/baseline.log": "e7d4ea46f87eada2469b7c68f1124def26be7e92d1c0a861bd4b1a3e9d4125ed",
+    "remote-baseline/baseline.trx": "239cfc99ea8bd559078803ad46abb1001adefed0ef563b1ee15711368fee4935",
+    "focused-coverage.cobertura.xml": "7ed54511add956ff8217dc9166c7bfbd3088d030acd419028ae95816fa500941"
+  },
+  "selectedTestFilters": {
+    "focused": "(FullyQualifiedName~RtlDynamicArrayTests&FullyQualifiedName!~AllocationResizeAccessAndDeleteMatchOriginalHdl)|FullyQualifiedName~MalformedShapeProperty|FullyQualifiedName~RtlArrayMutationRegressionTests",
+    "remoteBaseline": "(FullyQualifiedName~RtlDynamicArrayTests&FullyQualifiedName!~AllocationResizeAccessAndDeleteMatchOriginalHdl)|FullyQualifiedName~RtlIndexedTests|FullyQualifiedName~RtlProcessesTests.SharedClockProcessesEmitOneSnapshotAndCommit|FullyQualifiedName~RtlEvolutionRobustnessTests.MalformedShapeProperty|FullyQualifiedName~RtlArrayMutationRegressionTests"
+  },
+  "strictdoc": {
+    "logSha256": "d6e38500b5dc9bf8702ae3a8289287212c253225ee5bbd48a6bbff526c111fce",
+    "passed": true,
+    "command": "uv tool run --from strictdoc==0.30.4 strictdoc export requirements --config strictdoc_config.py --output-dir artifacts/array-mutation-followup/strictdoc-final --no-parallelization",
+    "version": "0.30.4"
+  }
+}
