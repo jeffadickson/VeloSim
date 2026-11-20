@@ -14,6 +14,7 @@ class VS_VPI_API Model {
  friend class Port;
  struct State;
  std::unique_ptr<State> state;
+protected:
  std::thread::id owner_thread;
  bool fast_eligible = false;
  bool fast_eval_ok = false;
@@ -30,7 +31,6 @@ class VS_VPI_API Model {
   if (owner_thread == std::this_thread::get_id() && id < s.size()) [[likely]] return s[id];
   return get(id);
  }
-protected:
  std::vector<W> s;
  std::vector<std::vector<W>> mem;
  virtual void evaluate() = 0;
