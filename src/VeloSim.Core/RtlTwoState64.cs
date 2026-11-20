@@ -66,6 +66,14 @@ public sealed partial class RtlDesign
             var valEl = e.GetProperty("value");
             return $"vsrtl::w2::selidx({Expression2(valEl)},{ExpressionWidth(valEl)},{Expression2(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
         }
+        if (kind == "test_plusargs") return Extend($"uint64_t(testPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}))");
+        if (kind == "urandom") return Extend("uint64_t(nextUrandom())");
+        if (kind == "urandom_range")
+        {
+            string maxExpr = $"uint32_t({Expression2(e.GetProperty("max"))})";
+            string minExpr = e.TryGetProperty("min", out var minEl) ? $"uint32_t({Expression2(minEl)})" : "0u";
+            return Extend($"uint64_t(nextUrandomRange({maxExpr},{minExpr}))");
+        }
         if (kind == "dpi_call")
         {
             string callArgs = string.Join(",", e.GetProperty("args").EnumerateArray().Select(a => Expression2(a)));
@@ -76,6 +84,11 @@ public sealed partial class RtlDesign
         return kind switch
         {
             "castsigned" or "castunsigned" => Extend(Expression2(args[0])),
+            "countones" => Extend($"vsrtl::w2::countones({Expression2(args[0])},{ExpressionWidth(args[0])})"),
+            "onehot" => $"vsrtl::w2::onehot({Expression2(args[0])},{ExpressionWidth(args[0])})",
+            "onehot0" => $"vsrtl::w2::onehot0({Expression2(args[0])},{ExpressionWidth(args[0])})",
+            "isunknown" => "0ULL",
+            "clog2" => Extend($"vsrtl::w2::clog2({Expression2(args[0])},{ExpressionWidth(args[0])})"),
             "add" or "sub" => $"vsrtl::w2::arith({Expression2(args[0], width, signed)},{Expression2(args[1], width, signed)},{width},{(kind == "sub" ? "true" : "false")})",
             "bitnot" => $"vsrtl::w2::bnot({Expression2(args[0], width, signed)},{width})",
             "neg" => $"vsrtl::w2::arith(0ULL,{Expression2(args[0], width, signed)},{width},true)",
@@ -214,6 +227,31 @@ public sealed partial class RtlDesign
                 code.AppendLine($"emitDisplay(vsrtl::format_display({fmt},{{{argList}}},{(nl ? "true" : "false")}));");
                 break;
             }
+            case "value_plusargs":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                code.AppendLine($"{{W _vs_vp=vsrtl::w2::from(_vs_next[{tid}],{Signals[tid].Width});uint32_t _vs_vpm=valuePlusargs({fmt},_vs_vp);if(_vs_vpm)_vs_next[{tid}]={StoreWord2("vsrtl::w2::to(_vs_vp)", Signals[tid])};");
+                if (e.TryGetProperty("matched", out var vpMatched) && vpMatched.ValueKind != JsonValueKind.Null)
+                {
+                    int mid = SignalId(vpMatched.GetString()!);
+                    code.AppendLine($"_vs_next[{mid}]={StoreWord2("uint64_t(_vs_vpm)", Signals[mid])};");
+                }
+                code.AppendLine("}");
+                break;
+            }
+            case "force":
+            {
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                code.AppendLine($"forceSignal({tid},vsrtl::w2::from({StoreWord2(Expression2(e.GetProperty("value")), Signals[tid])},{Signals[tid].Width}));");
+                break;
+            }
+            case "release":
+            {
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                code.AppendLine($"releaseSignal({tid});");
+                break;
+            }
             case "case":
             {
                 int caseId = unique++;
@@ -343,6 +381,19 @@ public sealed partial class RtlDesign
             for (int i = 0; i < Memories.Count; ++i)
                 bodyCode.AppendLine($"case {i}: loaded=vsrtl::load_mem_file_flat(_vs_m{i},{Memories[i].Depth},{Memories[i].Width},path,hex,start_addr,end_addr);return true;");
             bodyCode.AppendLine("default: return false;}}");
+            bodyCode.AppendLine($"size_t memoryCount() const override {{ return {Memories.Count}; }}");
+            bodyCode.AppendLine("size_t memoryDepth(size_t mem_id) const override { switch(mem_id){");
+            for (int i = 0; i < Memories.Count; ++i) bodyCode.AppendLine($"case {i}: return {Memories[i].Depth};");
+            bodyCode.AppendLine("default: return 0; }}");
+            bodyCode.AppendLine("int memoryWidth(size_t mem_id) const override { switch(mem_id){");
+            for (int i = 0; i < Memories.Count; ++i) bodyCode.AppendLine($"case {i}: return {Memories[i].Width};");
+            bodyCode.AppendLine("default: return 0; }}");
+            bodyCode.AppendLine("W readMemoryWord(size_t mem_id,size_t addr) const override { checkThread(); switch(mem_id){");
+            for (int i = 0; i < Memories.Count; ++i) bodyCode.AppendLine($"case {i}: if(addr>={Memories[i].Depth})throw std::out_of_range(\"memory word address out of range\");return vsrtl::w2::from(_vs_m{i}[addr],{Memories[i].Width});");
+            bodyCode.AppendLine("default: throw std::out_of_range(\"memory word address out of range\"); }}");
+            bodyCode.AppendLine("void writeMemoryWord(size_t mem_id,size_t addr,W value) override { checkThread(); switch(mem_id){");
+            for (int i = 0; i < Memories.Count; ++i) bodyCode.AppendLine($"case {i}: if(addr>={Memories[i].Depth})throw std::out_of_range(\"memory word address out of range\");_vs_m{i}[addr]=vsrtl::w2::resize(value.v.limb[0],{Memories[i].Width});markDirty();return;");
+            bodyCode.AppendLine("default: throw std::out_of_range(\"memory word address out of range\"); }}");
         }
         bodyCode.AppendLine("public:");
         EmitCoveragePointsOverride(bodyCode, coverage);
@@ -354,7 +405,7 @@ public sealed partial class RtlDesign
             bodyCode.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_evaluating=false;fast_dirty=true;fast_eval_ok=fast_eligible;throw;}}");
         else
             bodyCode.AppendLine($"this->{className}::evaluate();");
-        bodyCode.AppendLine("fast_evaluating=false;fast_eval_ok=fast_eligible;return;}");
+        bodyCode.AppendLine("fast_evaluating=false;if(!fast_eligible)[[unlikely]]applyForces();fast_eval_ok=fast_eligible;return;}");
         bodyCode.AppendLine("evalSlow();}");
         foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.AppendLine($"vsrtl::Port {names[signal.Name]};");
         bodyCode.Append($"{className}():vsrtl::Model(\"{top}\",{{");
@@ -379,6 +430,7 @@ public sealed partial class RtlDesign
                 bodyCode.AppendLine($"for(int j=0;j<{Memories[i].Depth};++j)_vs_m{i}[j]=mem[{i}][j].v.limb[0];");
             bodyCode.AppendLine("mem.clear();");
         }
+        if (enableCoverage) bodyCode.AppendLine("enableToggleCoverage(true);");
         bodyCode.AppendLine("}\n};");
 
         var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");

@@ -1187,6 +1187,22 @@ struct MemLog2 {
 inline void check_assert(uint64_t cond, const char* msg) {
  if (!cond) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
 }
+inline constexpr uint64_t countones(uint64_t a, int w) noexcept {
+ uint64_t x = a & mask64_unchecked(w);
+ uint64_t c = 0;
+ while (x) { x &= (x - 1); ++c; }
+ return c;
+}
+inline constexpr uint64_t onehot(uint64_t a, int w) noexcept { return countones(a, w) == 1 ? 1ULL : 0ULL; }
+inline constexpr uint64_t onehot0(uint64_t a, int w) noexcept { return countones(a, w) <= 1 ? 1ULL : 0ULL; }
+inline constexpr uint64_t isunknown(uint64_t, int) noexcept { return 0ULL; }
+inline constexpr uint64_t clog2(uint64_t a, int w) noexcept {
+ uint64_t x = a & mask64_unchecked(w);
+ if (x <= 1) return 0ULL;
+ uint64_t v = x - 1, c = 0;
+ while (v) { v >>= 1; ++c; }
+ return c;
+}
 } // namespace vsrtl::w2
 
 namespace vsrtl {
@@ -1194,10 +1210,62 @@ namespace vsrtl {
 inline void check_assert(const W& cond, const char* msg) {
  if (!yes(cond)) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
 }
+inline W countones(const W& a) noexcept {
+ const Bits m = mask_unchecked(a.w);
+ const Bits ones = a.v & ~a.x & ~a.z & m;
+ uint64_t c = 0;
+ for (int i = 0; i < Bits::kLimbs; ++i) {
+  uint64_t x = ones.limb[i];
+  while (x) { x &= (x - 1); ++c; }
+ }
+ return W{Bits(c), Bits(), Bits(), 32};
+}
+inline W onehot(const W& a) noexcept {
+ return W{Bits(countones(a).v.limb[0] == 1 ? 1ULL : 0ULL), Bits(), Bits(), 1};
+}
+inline W onehot0(const W& a) noexcept {
+ return W{Bits(countones(a).v.limb[0] <= 1 ? 1ULL : 0ULL), Bits(), Bits(), 1};
+}
+inline W isunknown(const W& a) noexcept {
+ return W{Bits(has_xz(a) ? 1ULL : 0ULL), Bits(), Bits(), 1};
+}
+inline W clog2(const W& a) noexcept {
+ if (has_xz(a)) return W{Bits(0), Bits(), Bits(), 32};
+ Bits x = a.v & mask_unchecked(a.w);
+ if (x <= Bits(1)) return W{Bits(0), Bits(), Bits(), 32};
+ Bits v = x - Bits(1);
+ uint64_t c = 0;
+ while (bool(v)) { v >>= 1; ++c; }
+ return W{Bits(c), Bits(), Bits(), 32};
+}
 
 namespace w64 {
 inline void check_assert(W64 cond, const char* msg) {
  if (!yes(cond)) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
+}
+inline constexpr W64 countones(W64 a) noexcept {
+ uint64_t x = a.v & ~a.x & ~a.z & mask64_unchecked(a.w);
+ uint64_t c = 0;
+ while (x) { x &= (x - 1); ++c; }
+ return W64{c, 0, 0, 32};
+}
+inline constexpr W64 onehot(W64 a) noexcept {
+ return W64{countones(a).v == 1 ? 1ULL : 0ULL, 0, 0, 1};
+}
+inline constexpr W64 onehot0(W64 a) noexcept {
+ return W64{countones(a).v <= 1 ? 1ULL : 0ULL, 0, 0, 1};
+}
+inline constexpr W64 isunknown(W64 a) noexcept {
+ return W64{((a.x | a.z) & mask64_unchecked(a.w)) ? 1ULL : 0ULL, 0, 0, 1};
+}
+inline constexpr W64 clog2(W64 a) noexcept {
+ const uint64_t m = mask64_unchecked(a.w);
+ if ((a.x | a.z) & m) return W64{0, 0, 0, 32};
+ const uint64_t x = a.v & m;
+ if (x <= 1) return W64{0, 0, 0, 32};
+ uint64_t v = x - 1, c = 0;
+ while (v) { v >>= 1; ++c; }
+ return W64{c, 0, 0, 32};
 }
 } // namespace w64
 

@@ -41,6 +41,12 @@ public static class ToolCli
             bool enableCoverage = options.Flag("--coverage");
             output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage).ConfigureAwait(false)); return 0;
         }
+        if (args.Length > 0 && args[0] == "coverage-merge")
+        {
+            if (args.Length < 3) throw new ArgumentException("Usage: coverage-merge <output.json> <input1.json> [<input2.json> ...]");
+            output.WriteLine(RtlCoverageMerge.MergeFiles(args[1], args[2..]));
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "fifo-differential")
         {
             if (args.Length < 2) throw new ArgumentException("FIFO source required.");

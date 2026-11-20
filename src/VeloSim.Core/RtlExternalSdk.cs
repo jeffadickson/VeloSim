@@ -26,7 +26,7 @@ public static class RtlExternalSdk
         if (runtime is null) throw new IOException("Run rtl-export from a VeloSim checkout containing native/rtl/external_model.h.");
         Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(Path.Combine(directory, "V" + top + ".h"), header, token).ConfigureAwait(false);
-        foreach (string file in new[] { "runtime.h", "external_model.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "svdpi.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
+        foreach (string file in new[] { "runtime.h", "external_model.h", "gzip_stream.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "svdpi.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
         if (design.Timed) File.Copy(Path.Combine(runtime, "hdl_scheduler.h"), Path.Combine(directory, "hdl_scheduler.h"));
         await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory,"timing-diagnostics.txt"),
@@ -102,7 +102,7 @@ public static class RtlExternalSdk
             SHA-256 hashes cover the generated/copied input files, excluding the
             manifest itself and any files you add later.
             """, token).ConfigureAwait(false);
-        var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "svdpi.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
+        var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "gzip_stream.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "svdpi.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
         if (design.Timed) inputPaths.Add("hdl_scheduler.h");
         inputPaths.Add("timing-diagnostics.txt");
         var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();

@@ -31,6 +31,8 @@ typedef struct t_cb_data { PLI_INT32 reason; PLI_INT32 (*cb_rtn)(struct t_cb_dat
 typedef struct t_vpi_error_info { PLI_INT32 state, level; PLI_BYTE8 *message, *product, *code, *file; PLI_INT32 line; } s_vpi_error_info, *p_vpi_error_info;
 typedef struct t_vpi_vlog_info { PLI_INT32 argc; PLI_BYTE8 **argv, *product, *version; } s_vpi_vlog_info, *p_vpi_vlog_info;
 #define vpiIterator 27
+#define vpiMemory 29
+#define vpiMemoryWord 30
 #define vpiModule 32
 #define vpiPort 44
 #define vpiReg 48
@@ -59,6 +61,9 @@ typedef struct t_vpi_vlog_info { PLI_INT32 argc; PLI_BYTE8 **argv, *product, *ve
 #define vpiVectorVal 9
 #define vpiSuppressVal 13
 #define vpiNoDelay 1
+#define vpiInertialDelay 2
+#define vpiForceFlag 5
+#define vpiReleaseFlag 6
 #define vpi0 0
 #define vpi1 1
 #define vpiZ 2
@@ -69,7 +74,9 @@ typedef struct t_vpi_vlog_info { PLI_INT32 argc; PLI_BYTE8 **argv, *product, *ve
 #define vpiError 3
 #define vpiFinish 67
 #define cbValueChange 1
+#define cbReadWriteSynch 6
 #define cbReadOnlySynch 7
+#define cbAfterDelay 9
 #define cbStartOfSimulation 11
 #define cbEndOfSimulation 12
 VS_VPI_API vpiHandle vpi_handle_by_name(PLI_BYTE8*, vpiHandle);

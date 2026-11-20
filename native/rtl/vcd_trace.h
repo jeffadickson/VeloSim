@@ -1,15 +1,18 @@
 #pragma once
 #include "runtime.h"
+#include "gzip_stream.h"
 #include <fstream>
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace vsrtl {
 
-// IEEE 1364 hierarchical 4-state VCD waveform writer with delta compression.
-// Supports arbitrary dotted signal hierarchies and 1..256-bit 4-state words.
+// IEEE 1364 hierarchical 4-state VCD waveform writer with delta compression,
+// optional signal selection filtering, and optional RFC 1952 gzip compression (.vcd.gz).
+// Supports arbitrary dotted signal hierarchies and 1..VSRTL_MAX_WORD_BITS 4-state words.
 class VcdWriter {
  struct Entry {
   size_t sig_id;
@@ -18,6 +21,8 @@ class VcdWriter {
   W last;
  };
  std::ofstream out_;
+ GzipWriter gz_;
+ bool use_gzip_ = false;
  std::vector<Entry> entries_;
  bool opened_ = false;
  bool dumped_initial_ = false;
@@ -28,6 +33,15 @@ class VcdWriter {
   std::vector<std::tuple<std::string, int, std::string>> vars;
  };
 
+ void write_str(const std::string& text) {
+  if (use_gzip_) {
+   gz_.write(text);
+  } else {
+   out_.write(text.data(), std::streamsize(text.size()));
+   if (!out_) throw std::runtime_error("failed writing VCD output stream");
+  }
+ }
+
  static std::string make_code(size_t index) {
   std::string code;
   do {
@@ -37,22 +51,26 @@ class VcdWriter {
   return code;
  }
 
- static void emit_scope(std::ofstream& out, const std::string& name, const ScopeNode& node) {
-  out << "$scope module " << name << " $end\n";
+ void emit_scope(const std::string& name, const ScopeNode& node) {
+  std::string buf;
+  buf += "$scope module " + name + " $end\n";
   for (const auto& [leaf, width, code] : node.vars) {
-   out << "$var wire " << width << ' ' << code << ' ' << leaf;
-   if (width > 1) out << " [" << (width - 1) << ":0]";
-   out << " $end\n";
+   buf += "$var wire " + std::to_string(width) + ' ' + code + ' ' + leaf;
+   if (width > 1) buf += " [" + std::to_string(width - 1) + ":0]";
+   buf += " $end\n";
   }
+  write_str(buf);
   for (const auto& [child_name, child] : node.children)
-   emit_scope(out, child_name, child);
-  out << "$upscope $end\n";
+   emit_scope(child_name, child);
+  write_str("$upscope $end\n");
  }
 
- static void write_value(std::ofstream& out, const W& val, const std::string& code) {
+ static void append_value(std::string& out, const W& val, const std::string& code) {
   if (val.w == 1) {
    char ch = val.z.limb[0] ? 'z' : val.x.limb[0] ? 'x' : (val.v.limb[0] ? '1' : '0');
-   out << ch << code << '\n';
+   out.push_back(ch);
+   out += code;
+   out.push_back('\n');
    return;
   }
   std::string bits = text(val);
@@ -71,31 +89,82 @@ class VcdWriter {
     }
    }
   }
-  out << 'b' << bits.substr(start) << ' ' << code << '\n';
+  out.push_back('b');
+  out.append(bits, start, bits.size() - start);
+  out.push_back(' ');
+  out += code;
+  out.push_back('\n');
+ }
+
+ static bool matches_selector(const std::string& full, const std::string& sel) {
+  if (full == sel) return true;
+  if (full.size() > sel.size() && full.compare(0, sel.size(), sel) == 0 && full[sel.size()] == '.')
+   return true;
+  return false;
  }
 
 public:
  VcdWriter() = default;
- ~VcdWriter() { close(); }
+ ~VcdWriter() {
+  try { close(); } catch (...) {}
+ }
  VcdWriter(const VcdWriter&) = delete;
  VcdWriter& operator=(const VcdWriter&) = delete;
 
  bool is_open() const noexcept { return opened_; }
+ bool is_compressed() const noexcept { return opened_ && use_gzip_; }
 
  template <class SignalDesc>
  void open(const std::string& path, const std::string& top_name,
-           const std::vector<SignalDesc>& signals, const std::string& timescale = "1ns") {
+           const std::vector<SignalDesc>& signals, const std::string& timescale = "1ns",
+           bool gzip = false, const std::vector<std::string>& filter_prefixes = {}) {
   close();
-  out_.open(path, std::ios::binary | std::ios::trunc);
-  if (!out_) throw std::runtime_error("failed to open VCD output file: " + path);
-  out_ << "$version VeloSim $end\n";
-  out_ << "$timescale " << timescale << " $end\n";
+  if (path.empty()) throw std::invalid_argument("VCD output path must not be empty");
+  if (timescale.empty()) throw std::invalid_argument("VCD timescale must not be empty");
+
+  std::vector<bool> matched_selector(filter_prefixes.size(), false);
+  for (const auto& sel : filter_prefixes) {
+   if (sel.empty()) throw std::invalid_argument("VCD trace selector must not be empty");
+  }
+
+  std::vector<size_t> selected_ids;
+  selected_ids.reserve(signals.size());
+  for (size_t i = 0; i < signals.size(); ++i) {
+   std::string full = signals[i].name ? signals[i].name : ("sig_" + std::to_string(i));
+   if (filter_prefixes.empty()) {
+    selected_ids.push_back(i);
+   } else {
+    bool hit = false;
+    for (size_t k = 0; k < filter_prefixes.size(); ++k) {
+     if (matches_selector(full, filter_prefixes[k])) {
+      matched_selector[k] = true;
+      hit = true;
+     }
+    }
+    if (hit) selected_ids.push_back(i);
+   }
+  }
+  for (size_t k = 0; k < filter_prefixes.size(); ++k) {
+   if (!matched_selector[k])
+    throw std::invalid_argument("VCD trace selector matched no signals: " + filter_prefixes[k]);
+  }
+
+  use_gzip_ = gzip;
+  if (use_gzip_) {
+   gz_.open(path);
+  } else {
+   out_.open(path, std::ios::binary | std::ios::trunc);
+   if (!out_) throw std::runtime_error("failed to open VCD output file: " + path);
+  }
+
+  write_str("$version VeloSim $end\n$timescale " + timescale + " $end\n");
 
   ScopeNode root;
   entries_.clear();
-  entries_.reserve(signals.size());
-  for (size_t i = 0; i < signals.size(); ++i) {
-   std::string code = make_code(i);
+  entries_.reserve(selected_ids.size());
+  for (size_t idx = 0; idx < selected_ids.size(); ++idx) {
+   size_t i = selected_ids[idx];
+   std::string code = make_code(idx);
    std::string full = signals[i].name ? signals[i].name : ("sig_" + std::to_string(i));
    ScopeNode* cur = &root;
    size_t pos = 0;
@@ -112,8 +181,8 @@ public:
    entries_.push_back(Entry{i, signals[i].width, std::move(code), unknown(signals[i].width)});
   }
 
-  emit_scope(out_, top_name.empty() ? "top" : top_name, root);
-  out_ << "$enddefinitions $end\n";
+  emit_scope(top_name.empty() ? "top" : top_name, root);
+  write_str("$enddefinitions $end\n");
   opened_ = true;
   dumped_initial_ = false;
   last_time_ = 0;
@@ -121,14 +190,16 @@ public:
 
  void dump(uint64_t time, const std::vector<W>& s) {
   if (!opened_) return;
+  std::string buf;
   if (!dumped_initial_) {
-   out_ << '#' << time << "\n$dumpvars\n";
+   buf += "#" + std::to_string(time) + "\n$dumpvars\n";
    for (auto& e : entries_) {
     if (e.sig_id >= s.size()) continue;
     e.last = s[e.sig_id];
-    write_value(out_, e.last, e.code);
+    append_value(buf, e.last, e.code);
    }
-   out_ << "$end\n";
+   buf += "$end\n";
+   write_str(buf);
    dumped_initial_ = true;
    last_time_ = time;
    return;
@@ -139,26 +210,38 @@ public:
    const W& cur = s[e.sig_id];
    if (exact(cur, e.last)) continue;
    if (!header_written) {
-    out_ << '#' << time << '\n';
+    buf += "#" + std::to_string(time) + "\n";
     header_written = true;
    }
    e.last = cur;
-   write_value(out_, cur, e.code);
+   append_value(buf, cur, e.code);
   }
+  if (!buf.empty()) write_str(buf);
   if (time > last_time_) last_time_ = time;
  }
 
  void flush() {
-  if (opened_) out_.flush();
+  if (!opened_) return;
+  if (use_gzip_) {
+   gz_.flush();
+  } else {
+   out_.flush();
+   if (!out_) throw std::runtime_error("failed flushing VCD output stream");
+  }
  }
 
  void close() {
-  if (opened_) {
+  if (!opened_) return;
+  opened_ = false;
+  dumped_initial_ = false;
+  entries_.clear();
+  if (use_gzip_) {
+   gz_.close();
+  } else {
    out_.flush();
+   bool ok = static_cast<bool>(out_);
    out_.close();
-   opened_ = false;
-   dumped_initial_ = false;
-   entries_.clear();
+   if (!ok) throw std::runtime_error("failed finalizing VCD output file");
   }
  }
 };

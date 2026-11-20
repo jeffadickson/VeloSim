@@ -109,5 +109,54 @@ int main(int argc,char** argv){try{
  bool failed=false;try{first.loadVpi("/missing.so");}catch(const std::runtime_error&){failed=true;}check(failed);
  first.final();value.format=vpiIntVal;value.value.integer=1;vpi_put_value(data,&value,nullptr,vpiNoDelay);check(vpi_chk_error(nullptr));check(!vpi_register_cb(&cb)&&vpi_chk_error(nullptr));
  }
+ // Wave 3: VPI force/release, cbAfterDelay, cbReadWriteSynch, vpi_get_vlog_info plusargs, and vpiMemory/vpiMemoryWord.
+ {
+  static int delayHits=0, rwHits=0;
+  auto onDelay=[](p_cb_data)->PLI_INT32{++delayHits;return 0;};
+  auto onRw=[](p_cb_data)->PLI_INT32{++rwHits;return 0;};
+  struct MemModel final : vsrtl::Model {
+   vsrtl::Port clk, q;
+   void evaluate() override {
+    if(s[0].v) s[1]=vsrtl::word(42,0,0,8); else s[1]=vsrtl::word(7,0,0,8);
+   }
+   MemModel():vsrtl::Model("memtop",{{"clk",1,vpiInput},{"q",8,vpiOutput}},0),clk(*this,0),q(*this,1){
+    mem={std::vector<vsrtl::W>(4,vsrtl::word(0,0,0,8))};
+    mem[0][2]=vsrtl::word(0x5A,0,0,8);
+   }
+  };
+  MemModel mm; mm.useVpi();
+  mm.setPlusargs({"+MODE=fast", "SEED=123"});
+  s_vpi_vlog_info vi{}; check(vpi_get_vlog_info(&vi) && vi.argc==2 && std::string(vi.argv[0])=="+MODE=fast" && std::string(vi.argv[1])=="+SEED=123");
+  auto mod=named("memtop"); auto qh=named("memtop.q");
+  mm.clk=1; mm.eval(); check(uint64_t(mm.q)==42);
+  // Force output q to 99 via VPI vpiForceFlag; eval() must preserve forced value even when clk=0 drives 7.
+  s_vpi_value fv{}; fv.format=vpiIntVal; fv.value.integer=99;
+  vpi_put_value(qh,&fv,nullptr,vpiForceFlag); check(!vpi_chk_error(nullptr) && mm.isForced(1) && uint64_t(mm.q)==99);
+  mm.clk=0; mm.eval(); check(uint64_t(mm.q)==99);
+  // Release via vpiReleaseFlag; next eval() restores driven value 7.
+  vpi_put_value(qh,nullptr,nullptr,vpiReleaseFlag); check(!vpi_chk_error(nullptr) && !mm.isForced(1));
+  mm.eval(); check(uint64_t(mm.q)==7);
+  // cbAfterDelay and cbReadWriteSynch.
+  s_vpi_time dt{vpiSimTime,0,10,0}; s_cb_data dcb{}; dcb.reason=cbAfterDelay; dcb.cb_rtn=onDelay; dcb.time=&dt;
+  check(vpi_register_cb(&dcb));
+  s_cb_data rwcb{}; rwcb.reason=cbReadWriteSynch; rwcb.cb_rtn=onRw;
+  check(vpi_register_cb(&rwcb));
+  mm.eval(); check(rwHits==1 && delayHits==0);
+  mm.timeInc(5); mm.eval(); check(delayHits==0);
+  mm.timeInc(5); mm.eval(); check(delayHits==1);
+  mm.timeInc(10); mm.eval(); check(delayHits==1);
+  // vpiMemory / vpiMemoryWord inspection and write.
+  auto mit=vpi_iterate(vpiMemory,mod); check(mit);
+  auto mh=vpi_scan(mit); check(mh && vpi_get(vpiType,mh)==vpiMemory && vpi_get(vpiSize,mh)==4 && !vpi_scan(mit));
+  auto wit=vpi_iterate(vpiMemoryWord,mh); check(wit);
+  vpiHandle w2=nullptr; int wcount=0;
+  while(auto wh=vpi_scan(wit)){ if(wcount==2)w2=wh; else vpi_free_object(wh); ++wcount; }
+  check(wcount==4 && w2 && vpi_get(vpiSize,w2)==8);
+  s_vpi_value mv{}; mv.format=vpiIntVal; vpi_get_value(w2,&mv); check(!vpi_chk_error(nullptr) && mv.value.integer==0x5A);
+  mv.value.integer=0xA5; vpi_put_value(w2,&mv,nullptr,vpiNoDelay); check(!vpi_chk_error(nullptr));
+  mv.value.integer=0; vpi_get_value(w2,&mv); check(!vpi_chk_error(nullptr) && mv.value.integer==0xA5);
+  vpi_free_object(w2); vpi_free_object(mh);
+  mm.final();
+ }
  std::cout<<"external interface tests pass\n";return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

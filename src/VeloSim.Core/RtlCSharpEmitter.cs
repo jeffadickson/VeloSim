@@ -30,7 +30,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> CSharpPortNames()
     {
         var reserved = (
-            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc OpenVcd DumpVcd CloseVcd W64 W64Ops W2Ops VcdWriter"
+            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange ForceSignal ReleaseSignal IsForced SaveCheckpoint RestoreCheckpoint W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -97,11 +97,24 @@ public sealed partial class RtlDesign
         if (kind == "bitselect") return $"W64Ops.SelBit({CsExpr64(e.GetProperty("value"))},{CsExpr64(e.GetProperty("index"))})";
         if (kind == "partselect") return $"W64Ops.SelPart({CsExpr64(e.GetProperty("value"))},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
         if (kind == "indexedselect") return $"W64Ops.SelIdx({CsExpr64(e.GetProperty("value"))},{CsExpr64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
+        if (kind == "test_plusargs") return Extend($"new W64(TestPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}),0UL,0UL,32)");
+        if (kind == "urandom") return Extend("new W64(NextUrandom(),0UL,0UL,32)");
+        if (kind == "urandom_range")
+        {
+            string maxExpr = $"(uint)({CsExpr64(e.GetProperty("max"))}).V";
+            string minExpr = e.TryGetProperty("min", out var minEl) ? $"(uint)({CsExpr64(minEl)}).V" : "0u";
+            return Extend($"new W64(NextUrandomRange({maxExpr},{minExpr}),0UL,0UL,32)");
+        }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ExpressionWidth(e));
         return kind switch
         {
             "castsigned" or "castunsigned" => Extend(CsExpr64(args[0])),
+            "countones" => Extend($"W64Ops.CountOnes({CsExpr64(args[0])})"),
+            "onehot" => $"W64Ops.OneHot({CsExpr64(args[0])})",
+            "onehot0" => $"W64Ops.OneHot0({CsExpr64(args[0])})",
+            "isunknown" => $"W64Ops.IsUnknown({CsExpr64(args[0])})",
+            "clog2" => Extend($"W64Ops.CLog2({CsExpr64(args[0])})"),
             "add" or "sub" => $"W64Ops.Arith({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{width},{(kind == "sub" ? "true" : "false")})",
             "bitnot" => $"W64Ops.BNot({CsExpr64(args[0], width, signed)},{width})",
             "neg" => $"W64Ops.Arith(new W64(0UL,0UL,0UL,{width}),{CsExpr64(args[0], width, signed)},{width},true)",
@@ -153,11 +166,24 @@ public sealed partial class RtlDesign
             var valEl = e.GetProperty("value");
             return $"W2Ops.SelIdx({CsExpr2(valEl)},{ExpressionWidth(valEl)},{CsExpr2(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
         }
+        if (kind == "test_plusargs") return Extend($"(ulong)TestPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)})");
+        if (kind == "urandom") return Extend("(ulong)NextUrandom()");
+        if (kind == "urandom_range")
+        {
+            string maxExpr = $"(uint)({CsExpr2(e.GetProperty("max"))})";
+            string minExpr = e.TryGetProperty("min", out var minEl) ? $"(uint)({CsExpr2(minEl)})" : "0u";
+            return Extend($"(ulong)NextUrandomRange({maxExpr},{minExpr})");
+        }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ew);
         return kind switch
         {
             "castsigned" or "castunsigned" => Extend(CsExpr2(args[0])),
+            "countones" => Extend($"W2Ops.CountOnes({CsExpr2(args[0])},{ExpressionWidth(args[0])})"),
+            "onehot" => $"W2Ops.OneHot({CsExpr2(args[0])},{ExpressionWidth(args[0])})",
+            "onehot0" => $"W2Ops.OneHot0({CsExpr2(args[0])},{ExpressionWidth(args[0])})",
+            "isunknown" => "0UL",
+            "clog2" => Extend($"W2Ops.CLog2({CsExpr2(args[0])},{ExpressionWidth(args[0])})"),
             "add" or "sub" => $"W2Ops.Arith({CsExpr2(args[0], width, signed)},{CsExpr2(args[1], width, signed)},{width},{(kind == "sub" ? "true" : "false")})",
             "bitnot" => $"W2Ops.BNot({CsExpr2(args[0], width, signed)},{width})",
             "neg" => $"W2Ops.Arith(0UL,{CsExpr2(args[0], width, signed)},{width},true)",
@@ -324,6 +350,36 @@ public sealed partial class RtlDesign
                 code.AppendLine($"EmitDisplay(W64Ops.FormatDisplay({fmt}, [{argList}], {(nl ? "true" : "false")}));");
                 break;
             }
+            case "value_plusargs":
+            {
+                string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                var tsig = Signals[tid];
+                code.AppendLine($"{{W64 _vp = {(twoState ? $"new W64(_next{tid},0UL,0UL,{tsig.Width})" : $"_next{tid}")}; uint _vpm = ValuePlusargs({fmt}, ref _vp); if (_vpm != 0u) _next{tid} = {CsStore(twoState ? "_vp.V" : "_vp", tsig, twoState)};");
+                if (e.TryGetProperty("matched", out var vpMatched) && vpMatched.ValueKind != JsonValueKind.Null)
+                {
+                    int mid = SignalId(vpMatched.GetString()!);
+                    code.AppendLine($"_next{mid} = {CsStore(twoState ? "(ulong)_vpm" : "new W64(_vpm,0UL,0UL,32)", Signals[mid], twoState)};");
+                }
+                code.AppendLine("}");
+                break;
+            }
+            case "force":
+            {
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                var tsig = Signals[tid];
+                string valExpr = twoState
+                    ? $"new W64({CsStore(CsExpr2(e.GetProperty("value")), tsig, true)},0UL,0UL,{tsig.Width})"
+                    : CsStore(CsExpr64(e.GetProperty("value")), tsig, false);
+                code.AppendLine($"ForceSignal({tid}, {valExpr});");
+                break;
+            }
+            case "release":
+            {
+                int tid = SignalId(e.GetProperty("target").GetString()!);
+                code.AppendLine($"ReleaseSignal({tid});");
+                break;
+            }
             case "case":
             {
                 string lbl = "cs" + unique++;
@@ -376,12 +432,19 @@ public sealed partial class RtlDesign
         var procs = CombinationalOnly ? Array.Empty<JsonElement>() : (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]);
         var eventIds = CombinationalOnly ? Array.Empty<int>() : EventSignals.Select(SignalId).ToArray();
         int[] seqIds = CombinationalOnly ? [] : Statements(Body).Where(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) != "index")
-            .SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(t => SignalId(TargetOwner(t))).Distinct().Order().ToArray();
+            .SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(t => SignalId(TargetOwner(t)))
+            .Concat(Statements(Body).Where(e => Kind(e) == "value_plusargs").SelectMany(e =>
+                e.TryGetProperty("matched", out var m) && m.ValueKind != JsonValueKind.Null
+                    ? new[] { SignalId(e.GetProperty("target").GetString()!), SignalId(m.GetString()!) }
+                    : new[] { SignalId(e.GetProperty("target").GetString()!) }))
+            .Distinct().Order().ToArray();
         bool hasFixedMemWrites = !CombinationalOnly && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index");
 
         var code = new StringBuilder();
         code.AppendLine("// <auto-generated/>");
+        code.AppendLine("#nullable enable");
         code.AppendLine("using System;");
+        code.AppendLine("using System.Collections.Generic;");
         code.AppendLine("using System.Runtime.CompilerServices;");
         code.AppendLine($"namespace {@namespace};");
         code.AppendLine();
@@ -389,11 +452,52 @@ public sealed partial class RtlDesign
         code.AppendLine("{");
         if (hasRuntimeLoops) code.AppendLine("    private int _budget = 20000;");
         code.AppendLine("    private ulong _time;");
-        code.AppendLine("    private bool _finished;");
+        code.AppendLine("    private bool _finished = false;");
         code.AppendLine("    private VcdWriter? _vcd;");
+        code.AppendLine("    private readonly PlusargStore _plusargs = new();");
+        code.AppendLine("    private SplitMix64Rng _rng = new();");
+        code.AppendLine($"    private Dictionary<int, {wordType}>? _forced;");
         code.AppendLine("    public bool GotFinish => _finished;");
         code.AppendLine("    public Action<string>? DisplaySink { get; set; }");
         code.AppendLine("    private void EmitDisplay(string text) { if (DisplaySink is not null) DisplaySink(text); else Console.Write(text); }");
+        code.AppendLine("    public void SetPlusargs(IEnumerable<string> args) => _plusargs.Set(args);");
+        code.AppendLine("    public void AddPlusarg(string arg) => _plusargs.Add(arg);");
+        code.AppendLine("    public uint TestPlusargs(string prefix) => _plusargs.Test(prefix);");
+        code.AppendLine("    public uint ValuePlusargs(string spec, ref W64 output) => _plusargs.Value(spec, ref output);");
+        code.AppendLine("    public void SetRandomSeed(ulong seed) => _rng.State = seed;");
+        code.AppendLine("    public ulong RandomSeed => _rng.State;");
+        code.AppendLine("    public uint NextUrandom() => _rng.NextU32();");
+        code.AppendLine("    public uint NextUrandomRange(uint maxVal, uint minVal = 0u) => _rng.NextRange(maxVal, minVal);");
+        code.AppendLine("    public bool IsForced(int signalId) => _forced is not null && _forced.ContainsKey(signalId);");
+        code.AppendLine("    public void ForceSignal(int signalId, W64 value)");
+        code.AppendLine("    {");
+        code.AppendLine("        _forced ??= new();");
+        code.AppendLine("        switch (signalId)");
+        code.AppendLine("        {");
+        for (int i = 0; i < Signals.Count; ++i)
+        {
+            var sig = Signals[i];
+            if (twoState)
+                code.AppendLine($"            case {i}: {{ ulong fv = W2Ops.Resize(value.V, {sig.Width}); _forced[{i}] = fv; _s{i} = fv; break; }}");
+            else
+                code.AppendLine($"            case {i}: {{ W64 fv = {(sig.TwoState ? $"W64Ops.TwoState(W64Ops.Resize(value, {sig.Width}))" : $"W64Ops.Resize(value, {sig.Width})")}; _forced[{i}] = fv; _s{i} = fv; break; }}");
+        }
+        code.AppendLine("            default: throw new ArgumentOutOfRangeException(nameof(signalId));");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("    public void ReleaseSignal(int signalId) { _forced?.Remove(signalId); }");
+        code.AppendLine("    private void ApplyForces()");
+        code.AppendLine("    {");
+        code.AppendLine("        if (_forced is null || _forced.Count == 0) return;");
+        code.AppendLine("        foreach (var kv in _forced)");
+        code.AppendLine("        {");
+        code.AppendLine("            switch (kv.Key)");
+        code.AppendLine("            {");
+        for (int i = 0; i < Signals.Count; ++i)
+            code.AppendLine($"                case {i}: _s{i} = kv.Value; break;");
+        code.AppendLine("            }");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
         for (int i = 0; i < Signals.Count; ++i)
             code.AppendLine($"    private {wordType} _s{i};");
         foreach (int id in eventIds)
@@ -441,12 +545,20 @@ public sealed partial class RtlDesign
         code.AppendLine("    public ulong Time => _time;");
         code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)] public void TimeInc(ulong delta) => _time += delta;");
         code.AppendLine("    public void Final() { CloseVcd(); }");
-        code.AppendLine("    public void OpenVcd(string path, string timescale = \"1ns\")");
+        code.AppendLine("    private static readonly (string Name, int Width)[] _signalSchema = [");
+        code.Append("        ");
+        code.AppendJoin(", ", Signals.Select(s => $"({CppStringLiteral(s.SourcePath ?? s.Name)}, {s.Width})"));
+        code.AppendLine();
+        code.AppendLine("    ];");
+        code.AppendLine("    public void OpenVcd(string path, string timescale = \"1ns\", string[]? filterPrefixes = null)");
         code.AppendLine("    {");
         code.AppendLine("        CloseVcd();");
-        code.Append($"        _vcd = new VcdWriter(path, \"{top}\", [");
-        code.AppendJoin(", ", Signals.Select(s => $"({CppStringLiteral(s.SourcePath ?? s.Name)}, {s.Width})"));
-        code.AppendLine("], timescale);");
+        code.AppendLine($"        _vcd = new VcdWriter(path, \"{top}\", _signalSchema, timescale, false, filterPrefixes);");
+        code.AppendLine("    }");
+        code.AppendLine("    public void OpenVcdGz(string path, string timescale = \"1ns\", string[]? filterPrefixes = null)");
+        code.AppendLine("    {");
+        code.AppendLine("        CloseVcd();");
+        code.AppendLine($"        _vcd = new VcdWriter(path, \"{top}\", _signalSchema, timescale, true, filterPrefixes);");
         code.AppendLine("    }");
         code.AppendLine("    public void DumpVcd()");
         code.AppendLine("    {");
@@ -456,6 +568,42 @@ public sealed partial class RtlDesign
         code.AppendLine("]);");
         code.AppendLine("    }");
         code.AppendLine("    public void CloseVcd() { _vcd?.Dispose(); _vcd = null; }");
+        // Persistent binary checkpoint with schema hash and FNV-1a integrity verification.
+        code.AppendLine($"    private static ulong CheckpointSchemaHash() => CheckpointIO.SchemaHash(\"{top}\", {(twoState ? "true" : "false")}, _signalSchema, [{string.Join(", ", Memories.Select(m => $"({m.Depth}, {m.Width})"))}]);");
+        code.AppendLine("    public void SaveCheckpoint(string path)");
+        code.AppendLine("    {");
+        code.Append("        W64[] sigs = [");
+        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"new W64(_s{idx}, 0UL, 0UL, {s.Width})" : $"_s{idx}"));
+        code.AppendLine("];");
+        code.Append("        W64[] prevs = [");
+        code.AppendJoin(", ", eventIds.Select(id => twoState ? $"new W64(_prev{id}, 0UL, 0UL, 1)" : $"_prev{id}"));
+        code.AppendLine("];");
+        code.AppendLine($"        W64[][] mems = new W64[{Memories.Count}][];");
+        for (int i = 0; i < Memories.Count; ++i)
+        {
+            if (twoState)
+                code.AppendLine($"        mems[{i}] = Array.ConvertAll(_m{i}, v => new W64(v, 0UL, 0UL, {Memories[i].Width}));");
+            else
+                code.AppendLine($"        mems[{i}] = _m{i};");
+        }
+        code.AppendLine("        CheckpointIO.Save(path, CheckpointSchemaHash(), _time, _rng.State, sigs, prevs, mems);");
+        code.AppendLine("    }");
+        code.AppendLine("    public void RestoreCheckpoint(string path)");
+        code.AppendLine("    {");
+        code.AppendLine($"        var (t, rngState, sigs, prevs, mems) = CheckpointIO.Load(path, CheckpointSchemaHash(), {Signals.Count}, {eventIds.Length}, [{string.Join(", ", Memories.Select(m => m.Depth))}]);");
+        code.AppendLine("        _time = t; _rng.State = rngState;");
+        for (int i = 0; i < Signals.Count; ++i)
+            code.AppendLine(twoState ? $"        _s{i} = W2Ops.Resize(sigs[{i}].V, {Signals[i].Width});" : $"        _s{i} = sigs[{i}];");
+        for (int i = 0; i < eventIds.Length; ++i)
+            code.AppendLine(twoState ? $"        _prev{eventIds[i]} = prevs[{i}].V & 1UL;" : $"        _prev{eventIds[i]} = prevs[{i}];");
+        for (int i = 0; i < Memories.Count; ++i)
+        {
+            if (twoState)
+                code.AppendLine($"        for (int j = 0; j < _m{i}.Length; ++j) _m{i}[j] = W2Ops.Resize(mems[{i}][j].V, {Memories[i].Width});");
+            else
+                code.AppendLine($"        Array.Copy(mems[{i}], _m{i}, _m{i}.Length);");
+        }
+        code.AppendLine("    }");
         code.AppendLine();
         foreach (var sig in Signals.Where(s => s.Direction != "internal"))
         {
@@ -523,7 +671,9 @@ public sealed partial class RtlDesign
             for (int i = 0; i < Memories.Count; ++i) code.AppendLine($"        var sv_m{i} = ({wordType}[])_m{i}.Clone();");
             code.AppendLine("        try {");
         }
+        code.AppendLine("        if (_forced is { Count: > 0 }) ApplyForces();");
         code.AppendLine("        Settle();");
+        code.AppendLine("        if (_forced is { Count: > 0 }) ApplyForces();");
         if (!CombinationalOnly)
         {
             for (int p = 0; p < procs.Length; ++p)
@@ -552,6 +702,7 @@ public sealed partial class RtlDesign
             foreach (int id in seqIds) code.AppendLine($"            _s{id} = _next{id};");
             if (hasFixedMemWrites) code.AppendLine("            _mlog.Commit(_mems);");
             code.AppendLine("            Settle();");
+            code.AppendLine("            if (_forced is { Count: > 0 }) ApplyForces();");
             code.AppendLine("        }");
             foreach (int id in eventIds) code.AppendLine($"        _prev{id} = _s{id};");
         }
@@ -572,6 +723,7 @@ public sealed partial class RtlDesign
 
     internal static string EmitCSharpRuntime(string @namespace = "VeloSim.Generated") => $$"""
 // <auto-generated/>
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -992,12 +1144,55 @@ public static class W64Ops
         if ((idx.X | idx.Z) != 0UL || idx.V >= (ulong)m.Length) return Unknown(w);
         return m[(int)idx.V];
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 CountOnes(W64 a)
+    {
+        ulong ones = a.V & ~a.X & ~a.Z & Mask(a.W);
+        return new W64((ulong)BitOperations.PopCount(ones), 0UL, 0UL, 32);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 OneHot(W64 a) => new W64(CountOnes(a).V == 1UL ? 1UL : 0UL, 0UL, 0UL, 1);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 OneHot0(W64 a) => new W64(CountOnes(a).V <= 1UL ? 1UL : 0UL, 0UL, 0UL, 1);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 IsUnknown(W64 a) => new W64(((a.X | a.Z) & Mask(a.W)) != 0UL ? 1UL : 0UL, 0UL, 0UL, 1);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 CLog2(W64 a)
+    {
+        ulong m = Mask(a.W);
+        if (((a.X | a.Z) & m) != 0UL) return new W64(0UL, 0UL, 0UL, 32);
+        ulong x = a.V & m;
+        if (x <= 1UL) return new W64(0UL, 0UL, 0UL, 32);
+        return new W64((ulong)(64 - BitOperations.LeadingZeroCount(x - 1UL)), 0UL, 0UL, 32);
+    }
 }
 
 public static class W2Ops
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong Mask(int w) => w >= 64 ? ulong.MaxValue : (w <= 0 ? 0UL : ((1UL << w) - 1UL));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong CountOnes(ulong a, int w) => (ulong)BitOperations.PopCount(a & Mask(w));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong OneHot(ulong a, int w) => CountOnes(a, w) == 1UL ? 1UL : 0UL;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong OneHot0(ulong a, int w) => CountOnes(a, w) <= 1UL ? 1UL : 0UL;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong CLog2(ulong a, int w)
+    {
+        ulong x = a & Mask(w);
+        if (x <= 1UL) return 0UL;
+        return (ulong)(64 - BitOperations.LeadingZeroCount(x - 1UL));
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long SExt(ulong a, int w)
@@ -1214,24 +1409,57 @@ public sealed class MemLog2
 public sealed class VcdWriter : IDisposable
 {
     private readonly System.IO.StreamWriter _writer;
+    private readonly int[] _sigIds;
     private readonly string[] _codes;
     private readonly W64[] _last;
     private bool _initial;
     private bool _disposed;
 
-    public VcdWriter(string path, string topName, (string Name, int Width)[] signals, string timescale = "1ns")
+    private static bool MatchesSelector(string full, string sel) =>
+        full == sel || (full.Length > sel.Length && full.StartsWith(sel, StringComparison.Ordinal) && full[sel.Length] == '.');
+
+    public VcdWriter(string path, string topName, (string Name, int Width)[] signals, string timescale = "1ns", bool gzip = false, string[]? filterPrefixes = null)
     {
-        _writer = new System.IO.StreamWriter(path, false, new System.Text.UTF8Encoding(false));
-        _codes = new string[signals.Length];
-        _last = new W64[signals.Length];
+        if (string.IsNullOrEmpty(path)) throw new ArgumentException("VCD output path must not be empty.", nameof(path));
+        if (string.IsNullOrEmpty(timescale)) throw new ArgumentException("VCD timescale must not be empty.", nameof(timescale));
+        var selected = new List<int>(signals.Length);
+        if (filterPrefixes is null || filterPrefixes.Length == 0)
+        {
+            for (int i = 0; i < signals.Length; ++i) selected.Add(i);
+        }
+        else
+        {
+            var matched = new bool[filterPrefixes.Length];
+            for (int k = 0; k < filterPrefixes.Length; ++k)
+                if (string.IsNullOrEmpty(filterPrefixes[k])) throw new ArgumentException("VCD trace selector must not be empty.", nameof(filterPrefixes));
+            for (int i = 0; i < signals.Length; ++i)
+            {
+                bool hit = false;
+                for (int k = 0; k < filterPrefixes.Length; ++k)
+                {
+                    if (MatchesSelector(signals[i].Name, filterPrefixes[k])) { matched[k] = true; hit = true; }
+                }
+                if (hit) selected.Add(i);
+            }
+            for (int k = 0; k < filterPrefixes.Length; ++k)
+                if (!matched[k]) throw new ArgumentException($"VCD trace selector matched no signals: {filterPrefixes[k]}");
+        }
+
+        System.IO.Stream raw = new System.IO.FileStream(path, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.Read);
+        System.IO.Stream stream = gzip ? new System.IO.Compression.GZipStream(raw, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: false) : raw;
+        _writer = new System.IO.StreamWriter(stream, new System.Text.UTF8Encoding(false));
+        _sigIds = selected.ToArray();
+        _codes = new string[_sigIds.Length];
+        _last = new W64[_sigIds.Length];
         _writer.Write("$version VeloSim $end\n");
         _writer.Write($"$timescale {timescale} $end\n");
         _writer.Write($"$scope module {(string.IsNullOrEmpty(topName) ? "top" : topName)} $end\n");
-        for (int i = 0; i < signals.Length; ++i)
+        for (int idx = 0; idx < _sigIds.Length; ++idx)
         {
-            string code = MakeCode(i);
-            _codes[i] = code;
-            _last[i] = W64Ops.Unknown(signals[i].Width);
+            int i = _sigIds[idx];
+            string code = MakeCode(idx);
+            _codes[idx] = code;
+            _last[idx] = W64Ops.Unknown(signals[i].Width);
             string leaf = signals[i].Name.Replace('.', '_');
             _writer.Write(signals[i].Width > 1
                 ? $"$var wire {signals[i].Width} {code} {leaf} [{signals[i].Width - 1}:0] $end\n"
@@ -1273,22 +1501,26 @@ public sealed class VcdWriter : IDisposable
             _writer.Write('#');
             _writer.Write(time);
             _writer.Write("\n$dumpvars\n");
-            for (int i = 0; i < _codes.Length && i < values.Length; ++i)
+            for (int idx = 0; idx < _sigIds.Length; ++idx)
             {
-                _last[i] = values[i];
-                WriteVal(values[i], _codes[i]);
+                int sid = _sigIds[idx];
+                if (sid >= values.Length) continue;
+                _last[idx] = values[sid];
+                WriteVal(values[sid], _codes[idx]);
             }
             _writer.Write("$end\n");
             _initial = true;
             return;
         }
         bool wroteTime = false;
-        for (int i = 0; i < _codes.Length && i < values.Length; ++i)
+        for (int idx = 0; idx < _sigIds.Length; ++idx)
         {
-            if (W64Ops.Exact(values[i], _last[i])) continue;
+            int sid = _sigIds[idx];
+            if (sid >= values.Length) continue;
+            if (W64Ops.Exact(values[sid], _last[idx])) continue;
             if (!wroteTime) { _writer.Write('#'); _writer.Write(time); _writer.Write('\n'); wroteTime = true; }
-            _last[i] = values[i];
-            WriteVal(values[i], _codes[i]);
+            _last[idx] = values[sid];
+            WriteVal(values[sid], _codes[idx]);
         }
     }
 
@@ -1298,6 +1530,198 @@ public sealed class VcdWriter : IDisposable
         _disposed = true;
         _writer.Flush();
         _writer.Dispose();
+    }
+}
+
+public sealed class PlusargStore
+{
+    private readonly List<string> _args = new();
+    public void Set(IEnumerable<string> args)
+    {
+        _args.Clear();
+        foreach (var raw in args) Add(raw);
+    }
+    public void Add(string arg) => _args.Add(arg.StartsWith('+') ? arg[1..] : arg);
+    public uint Test(string prefix)
+    {
+        string p = prefix.StartsWith('+') ? prefix[1..] : prefix;
+        foreach (var a in _args) if (a.StartsWith(p, StringComparison.Ordinal)) return 1u;
+        return 0u;
+    }
+    public uint Value(string spec, ref W64 output)
+    {
+        string s = spec.StartsWith('+') ? spec[1..] : spec;
+        int pct = s.IndexOf('%');
+        if (pct < 0 || pct + 1 >= s.Length) return 0u;
+        string prefix = s[..pct];
+        int fi = pct + 1;
+        if (s[fi] == '0' && fi + 1 < s.Length) ++fi;
+        char fmt = char.ToLowerInvariant(s[fi]);
+        foreach (var a in _args)
+        {
+            if (!a.StartsWith(prefix, StringComparison.Ordinal)) continue;
+            string clean = a[prefix.Length..].Replace("_", "");
+            if (clean.Length == 0) continue;
+            if (TryParse(clean, fmt, output.W, out W64 parsed)) { output = parsed; return 1u; }
+        }
+        return 0u;
+    }
+    private static bool TryParse(string s, char fmt, int width, out W64 value)
+    {
+        value = default;
+        ulong m = W64Ops.Mask(width);
+        if (fmt is 'd' or 'u')
+        {
+            bool neg = fmt == 'd' && s[0] == '-';
+            string digits = (neg || s[0] == '+') ? s[1..] : s;
+            if (!ulong.TryParse(digits, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ulong v)) return false;
+            if (neg) v = unchecked((ulong)(-(long)v));
+            value = new W64(v & m, 0UL, 0UL, width);
+            return true;
+        }
+        int shift = fmt is 'h' or 'x' ? 4 : fmt == 'o' ? 3 : fmt == 'b' ? 1 : 0;
+        if (shift == 0) return false;
+        ulong nib = (1UL << shift) - 1UL;
+        ulong vv = 0, xx = 0, zz = 0;
+        foreach (char raw in s)
+        {
+            char c = char.ToLowerInvariant(raw);
+            vv <<= shift; xx <<= shift; zz <<= shift;
+            if (c == 'x') xx |= nib;
+            else if (c == 'z') zz |= nib;
+            else
+            {
+                int d = c is >= '0' and <= '9' ? c - '0' : c is >= 'a' and <= 'f' ? c - 'a' + 10 : -1;
+                if (d < 0 || d >= (1 << shift)) return false;
+                vv |= (uint)d;
+            }
+        }
+        value = new W64(vv & ~(xx | zz) & m, xx & ~zz & m, zz & m, width);
+        return true;
+    }
+}
+
+public struct SplitMix64Rng
+{
+    public ulong State;
+    public SplitMix64Rng() { State = 0x9E3779B97F4A7C15UL; }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public uint NextU32()
+    {
+        ulong z = State += 0x9E3779B97F4A7C15UL;
+        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+        z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+        z ^= z >> 31;
+        return (uint)z;
+    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public uint NextRange(uint maxVal, uint minVal)
+    {
+        if (maxVal < minVal) (maxVal, minVal) = (minVal, maxVal);
+        ulong span = (ulong)maxVal - minVal + 1UL;
+        uint r = NextU32();
+        if (span >= 0x100000000UL) return r;
+        return (uint)(minVal + (r % span));
+    }
+}
+
+public static class CheckpointIO
+{
+    private const uint Magic = 0x31435356u; // "VSC1"
+    private const uint Version = 1u;
+
+    private static ulong FnvMix(ulong h, ulong v)
+    {
+        for (int i = 0; i < 8; ++i) { h ^= (v >> (i * 8)) & 0xFFUL; h *= 1099511628211UL; }
+        return h;
+    }
+    private static ulong FnvBytes(byte[] data)
+    {
+        ulong h = 14695981039346656037UL;
+        for (int i = 0; i < data.Length; ++i) { h ^= data[i]; h *= 1099511628211UL; }
+        return h;
+    }
+    public static ulong SchemaHash(string top, bool twoState, (string Name, int Width)[] signals, (int Depth, int Width)[] memories)
+    {
+        ulong h = 14695981039346656037UL;
+        foreach (char c in top) h = FnvMix(h, c);
+        h = FnvMix(h, twoState ? 2UL : 4UL);
+        h = FnvMix(h, (ulong)signals.Length);
+        foreach (var (name, width) in signals)
+        {
+            foreach (char c in name) h = FnvMix(h, c);
+            h = FnvMix(h, (ulong)width);
+        }
+        h = FnvMix(h, (ulong)memories.Length);
+        foreach (var (depth, width) in memories) { h = FnvMix(h, (ulong)depth); h = FnvMix(h, (ulong)width); }
+        return h;
+    }
+    public static void Save(string path, ulong schemaHash, ulong time, ulong rngState, W64[] sigs, W64[] prevs, W64[][] mems)
+    {
+        using var payloadMs = new System.IO.MemoryStream();
+        using (var bw = new System.IO.BinaryWriter(payloadMs, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            bw.Write(time);
+            bw.Write(rngState);
+            bw.Write(sigs.Length);
+            foreach (var w in sigs) { bw.Write(w.V); bw.Write(w.X); bw.Write(w.Z); bw.Write(w.W); }
+            bw.Write(prevs.Length);
+            foreach (var w in prevs) { bw.Write(w.V); bw.Write(w.X); bw.Write(w.Z); bw.Write(w.W); }
+            bw.Write(mems.Length);
+            foreach (var m in mems)
+            {
+                bw.Write(m.Length);
+                foreach (var w in m) { bw.Write(w.V); bw.Write(w.X); bw.Write(w.Z); bw.Write(w.W); }
+            }
+        }
+        byte[] payload = payloadMs.ToArray();
+        ulong checksum = FnvBytes(payload);
+        using var fs = new System.IO.FileStream(path, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.None);
+        using var hw = new System.IO.BinaryWriter(fs);
+        hw.Write(Magic);
+        hw.Write(Version);
+        hw.Write(schemaHash);
+        hw.Write((ulong)payload.Length);
+        hw.Write(checksum);
+        hw.Write(payload);
+    }
+    public static (ulong Time, ulong RngState, W64[] Sigs, W64[] Prevs, W64[][] Mems) Load(string path, ulong expectedSchema, int expectedSigs, int expectedPrevs, int[] expectedMemDepths)
+    {
+        byte[] raw = System.IO.File.ReadAllBytes(path);
+        if (raw.Length < 32) throw new System.IO.InvalidDataException("Checkpoint file is truncated.");
+        using var ms = new System.IO.MemoryStream(raw);
+        using var br = new System.IO.BinaryReader(ms);
+        if (br.ReadUInt32() != Magic) throw new System.IO.InvalidDataException("Invalid checkpoint magic.");
+        if (br.ReadUInt32() != Version) throw new System.IO.InvalidDataException("Unsupported checkpoint version.");
+        if (br.ReadUInt64() != expectedSchema) throw new System.IO.InvalidDataException("Checkpoint schema hash mismatch.");
+        ulong payloadLen = br.ReadUInt64();
+        ulong expectedCsum = br.ReadUInt64();
+        if (payloadLen != (ulong)(raw.Length - 32)) throw new System.IO.InvalidDataException("Checkpoint payload length mismatch.");
+        byte[] payload = br.ReadBytes((int)payloadLen);
+        if (FnvBytes(payload) != expectedCsum) throw new System.IO.InvalidDataException("Checkpoint checksum mismatch.");
+        using var pms = new System.IO.MemoryStream(payload);
+        using var pr = new System.IO.BinaryReader(pms);
+        ulong time = pr.ReadUInt64();
+        ulong rngState = pr.ReadUInt64();
+        int nSigs = pr.ReadInt32();
+        if (nSigs != expectedSigs) throw new System.IO.InvalidDataException("Checkpoint signal count mismatch.");
+        var sigs = new W64[nSigs];
+        for (int i = 0; i < nSigs; ++i) sigs[i] = new W64(pr.ReadUInt64(), pr.ReadUInt64(), pr.ReadUInt64(), pr.ReadInt32());
+        int nPrevs = pr.ReadInt32();
+        if (nPrevs != expectedPrevs) throw new System.IO.InvalidDataException("Checkpoint event count mismatch.");
+        var prevs = new W64[nPrevs];
+        for (int i = 0; i < nPrevs; ++i) prevs[i] = new W64(pr.ReadUInt64(), pr.ReadUInt64(), pr.ReadUInt64(), pr.ReadInt32());
+        int nMems = pr.ReadInt32();
+        if (nMems != expectedMemDepths.Length) throw new System.IO.InvalidDataException("Checkpoint memory count mismatch.");
+        var mems = new W64[nMems][];
+        for (int i = 0; i < nMems; ++i)
+        {
+            int depth = pr.ReadInt32();
+            if (depth != expectedMemDepths[i]) throw new System.IO.InvalidDataException("Checkpoint memory depth mismatch.");
+            mems[i] = new W64[depth];
+            for (int j = 0; j < depth; ++j) mems[i][j] = new W64(pr.ReadUInt64(), pr.ReadUInt64(), pr.ReadUInt64(), pr.ReadInt32());
+        }
+        return (time, rngState, sigs, prevs, mems);
     }
 }
 """;
