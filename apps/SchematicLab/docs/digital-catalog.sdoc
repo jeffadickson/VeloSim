@@ -1,0 +1,422 @@
+[DOCUMENT]
+TITLE: Digital and timing code-model requirements
+
+[REQUIREMENT]
+UID: SCH-CM-D-BUFFER
+TITLE: d_buffer code model
+STATEMENT: >>>
+The logic catalog shall expose d_buffer with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-INVERTER
+TITLE: d_inverter code model
+STATEMENT: >>>
+The logic catalog shall expose d_inverter with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-AND
+TITLE: d_and code model
+STATEMENT: >>>
+The logic catalog shall expose d_and with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-OR
+TITLE: d_or code model
+STATEMENT: >>>
+The logic catalog shall expose d_or with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-NAND
+TITLE: d_nand code model
+STATEMENT: >>>
+The logic catalog shall expose d_nand with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-NOR
+TITLE: d_nor code model
+STATEMENT: >>>
+The logic catalog shall expose d_nor with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-XOR
+TITLE: d_xor code model
+STATEMENT: >>>
+The logic catalog shall expose d_xor with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-XNOR
+TITLE: d_xnor code model
+STATEMENT: >>>
+The logic catalog shall expose d_xnor with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-TRISTATE
+TITLE: d_tristate code model
+STATEMENT: >>>
+The logic catalog shall expose d_tristate with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-OPEN-C
+TITLE: d_open_c code model
+STATEMENT: >>>
+The logic catalog shall expose d_open_c with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-OPEN-E
+TITLE: d_open_e code model
+STATEMENT: >>>
+The logic catalog shall expose d_open_e with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-PULLDOWN
+TITLE: d_pulldown code model
+STATEMENT: >>>
+The logic catalog shall expose d_pulldown with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-PULLUP
+TITLE: d_pullup code model
+STATEMENT: >>>
+The logic catalog shall expose d_pullup with logic terminals, drive state and delay. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check truth or drive tables, timing and unknown states as applicable.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-DFF
+TITLE: d_dff code model
+STATEMENT: >>>
+The state catalog shall expose d_dff with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-JKFF
+TITLE: d_jkff code model
+STATEMENT: >>>
+The state catalog shall expose d_jkff with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-SRLATCH
+TITLE: d_srlatch code model
+STATEMENT: >>>
+The state catalog shall expose d_srlatch with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-DLATCH
+TITLE: d_dlatch code model
+STATEMENT: >>>
+The state catalog shall expose d_dlatch with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-SRFF
+TITLE: d_srff code model
+STATEMENT: >>>
+The state catalog shall expose d_srff with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-TFF
+TITLE: d_tff code model
+STATEMENT: >>>
+The state catalog shall expose d_tff with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-RAM
+TITLE: d_ram code model
+STATEMENT: >>>
+The state catalog shall expose d_ram with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-STATE
+TITLE: d_state code model
+STATEMENT: >>>
+The state catalog shall expose d_state with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-ASTATE
+TITLE: astate code model
+STATEMENT: >>>
+The state catalog shall expose astate with state inputs, initialization and transitions. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Exercise initialization, held state and invalid control or address inputs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-FDIV
+TITLE: d_fdiv code model
+STATEMENT: >>>
+The timing catalog shall expose d_fdiv with timing inputs, delays and initial state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify timing boundaries and repeatability.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-OSC
+TITLE: d_osc code model
+STATEMENT: >>>
+The timing catalog shall expose d_osc with timing inputs, delays and initial state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify timing boundaries and repeatability.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-PWM
+TITLE: d_pwm code model
+STATEMENT: >>>
+The timing catalog shall expose d_pwm with timing inputs, delays and initial state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify timing boundaries and repeatability.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-DELAY
+TITLE: delay code model
+STATEMENT: >>>
+The timing catalog shall expose delay with timing inputs, delays and initial state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify timing boundaries and repeatability.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-REAL-DELAY
+TITLE: real_delay code model
+STATEMENT: >>>
+The timing catalog shall expose real_delay with timing inputs, delays and initial state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify timing boundaries and repeatability.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-NCO
+TITLE: nco code model
+STATEMENT: >>>
+The timing catalog shall expose nco with timing inputs, delays and initial state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify timing boundaries and repeatability.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-ONESHOT
+TITLE: oneshot code model
+STATEMENT: >>>
+The timing catalog shall expose oneshot with timing inputs, delays and initial state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify timing boundaries and repeatability.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-S-H
+TITLE: s_h code model
+STATEMENT: >>>
+The timing catalog shall expose s_h with timing inputs, delays and initial state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify timing boundaries and repeatability.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-ADC-BRIDGE
+TITLE: adc_bridge code model
+STATEMENT: >>>
+The bridge catalog shall expose adc_bridge with typed ports, conversion and thresholds. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify threshold edges and converted units.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-DAC-BRIDGE
+TITLE: dac_bridge code model
+STATEMENT: >>>
+The bridge catalog shall expose dac_bridge with typed ports, conversion and thresholds. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify threshold edges and converted units.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-BIDI-BRIDGE
+TITLE: bidi_bridge code model
+STATEMENT: >>>
+The bridge catalog shall expose bidi_bridge with typed ports, conversion and thresholds. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify threshold edges and converted units.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-TO-REAL
+TITLE: d_to_real code model
+STATEMENT: >>>
+The bridge catalog shall expose d_to_real with typed ports, conversion and thresholds. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify threshold edges and converted units.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-REAL-TO-V
+TITLE: real_to_v code model
+STATEMENT: >>>
+The bridge catalog shall expose real_to_v with typed ports, conversion and thresholds. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify threshold edges and converted units.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-V-TO-REAL
+TITLE: v_to_real code model
+STATEMENT: >>>
+The bridge catalog shall expose v_to_real with typed ports, conversion and thresholds. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify threshold edges and converted units.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-LUT
+TITLE: d_lut code model
+STATEMENT: >>>
+The programmable digital catalog shall expose d_lut with the declared port schema and program, file or vector inputs. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Validate vector width and replay a deterministic fixture.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-PROCESS
+TITLE: d_process code model
+STATEMENT: >>>
+The programmable digital catalog shall expose d_process with the declared port schema and program, file or vector inputs. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Validate vector width and replay a deterministic fixture.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-SOURCE
+TITLE: d_source code model
+STATEMENT: >>>
+The programmable digital catalog shall expose d_source with the declared port schema and program, file or vector inputs. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Validate vector width and replay a deterministic fixture.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-PSPICE-D-STIM
+TITLE: pspice_d_stim code model
+STATEMENT: >>>
+The programmable digital catalog shall expose pspice_d_stim with the declared port schema and program, file or vector inputs. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Validate vector width and replay a deterministic fixture.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-D-COSIM
+TITLE: d_cosim code model
+STATEMENT: >>>
+The programmable digital catalog shall expose d_cosim with the declared port schema and program, file or vector inputs. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Validate vector width and replay a deterministic fixture.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-XYCE-D-ADD
+TITLE: xyce_d_add code model
+STATEMENT: >>>
+The programmable digital catalog shall expose xyce_d_add with the declared port schema and program, file or vector inputs. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Validate vector width and replay a deterministic fixture.
+<<<

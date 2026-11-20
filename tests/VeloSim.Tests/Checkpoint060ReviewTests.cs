@@ -29,7 +29,7 @@ public class Checkpoint060ReviewTests
             {
                 case "surelog": File.WriteAllText(Path.Combine(cwd, "surelog.uhdm"), "db"); break;
                 case "velosim-uhdm-normalize":
-                    var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+                    var directory = new DirectoryInfo(TestRepository.Root);
                     while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "examples", "counter.normalized.json"))) directory = directory.Parent;
                     File.Copy(Path.Combine(directory!.FullName, "examples", "counter.normalized.json"), arguments[1]); break;
                 case "iverilog": File.WriteAllText(arguments[arguments.ToList().IndexOf("-o") + 1], "exe"); break;

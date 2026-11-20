@@ -1,0 +1,22 @@
+---
+title: "A live RC experiment"
+format: revealjs
+execute:
+  enabled: false
+---
+
+## Change the resistance
+
+The author fixes the wiring. Change R1, select P1, then run the transient.
+Predict the change in the time constant before running it.
+
+```{=html}
+<iframe title="Live RC circuit experiment" src="http://localhost:5088/"
+        width="100%" height="650" style="border:0"
+        loading="lazy"></iframe>
+```
+
+<!-- Deployment sample, not a verified WALLY build. Run the schematic host with
+SCHEMATIC_LAYOUT_MODE=author-locked and SCHEMATIC_LESSON=rc. In an offline bundle,
+replace the loopback URL with the widget route on the shared slide/widget host.
+Use a snapshot and live-example link for PDF or PowerPoint exports. -->

@@ -1,0 +1,432 @@
+[DOCUMENT]
+TITLE: Versioned compact-model requirements
+
+[REQUIREMENT]
+UID: SCH-COMPACT-ANGELOV-GAN
+TITLE: angelov-gan compact-model binding
+STATEMENT: >>>
+The catalog shall give angelov-gan an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-ANGELOV
+TITLE: angelov compact-model binding
+STATEMENT: >>>
+The catalog shall give angelov an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-ASMESD-DIO
+TITLE: asmesd-dio compact-model binding
+STATEMENT: >>>
+The catalog shall give asmesd-dio an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-ASMESD
+TITLE: asmesd compact-model binding
+STATEMENT: >>>
+The catalog shall give asmesd an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-ASMHEMT
+TITLE: asmhemt compact-model binding
+STATEMENT: >>>
+The catalog shall give asmhemt an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BJT505-VA
+TITLE: bjt505-va compact-model binding
+STATEMENT: >>>
+The catalog shall give bjt505-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BJT505T-VA
+TITLE: bjt505t-va compact-model binding
+STATEMENT: >>>
+The catalog shall give bjt505t-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BJTD505-VA
+TITLE: bjtd505-va compact-model binding
+STATEMENT: >>>
+The catalog shall give bjtd505-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BJTD505T-VA
+TITLE: bjtd505t-va compact-model binding
+STATEMENT: >>>
+The catalog shall give bjtd505t-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BSIMBULK
+TITLE: bsimbulk compact-model binding
+STATEMENT: >>>
+The catalog shall give bsimbulk an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BSIMCMG-VA
+TITLE: bsimcmg-va compact-model binding
+STATEMENT: >>>
+The catalog shall give bsimcmg-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BSIMIMG
+TITLE: bsimimg compact-model binding
+STATEMENT: >>>
+The catalog shall give bsimimg an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BSIMSOI-18C250BC
+TITLE: bsimsoi-18c250bc compact-model binding
+STATEMENT: >>>
+The catalog shall give bsimsoi-18c250bc an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BSIMSOI-E2AFF994
+TITLE: bsimsoi-e2aff994 compact-model binding
+STATEMENT: >>>
+The catalog shall give bsimsoi-e2aff994 an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-BSIMSOI-VA
+TITLE: bsimsoi-va compact-model binding
+STATEMENT: >>>
+The catalog shall give bsimsoi-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-DIODE-CMC
+TITLE: diode-cmc compact-model binding
+STATEMENT: >>>
+The catalog shall give diode-cmc an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-EKV-VA
+TITLE: ekv-va compact-model binding
+STATEMENT: >>>
+The catalog shall give ekv-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-EKV3-RF
+TITLE: ekv3-rf compact-model binding
+STATEMENT: >>>
+The catalog shall give ekv3-rf an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-EPFL-HEMT-10A
+TITLE: epfl-hemt-10a compact-model binding
+STATEMENT: >>>
+The catalog shall give epfl-hemt-10a an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HICUML0VA
+TITLE: hicuml0va compact-model binding
+STATEMENT: >>>
+The catalog shall give hicuml0va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HICUML2VA
+TITLE: hicuml2va compact-model binding
+STATEMENT: >>>
+The catalog shall give hicuml2va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HISIMHV-N4-VA
+TITLE: hisimhv-n4-va compact-model binding
+STATEMENT: >>>
+The catalog shall give hisimhv-n4-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HISIMHV-N5-VA
+TITLE: hisimhv-n5-va compact-model binding
+STATEMENT: >>>
+The catalog shall give hisimhv-n5-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HISIMHV-VA
+TITLE: hisimhv-va compact-model binding
+STATEMENT: >>>
+The catalog shall give hisimhv-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HISIMSOI-VA-242BC21D
+TITLE: hisimsoi-va-242bc21d compact-model binding
+STATEMENT: >>>
+The catalog shall give hisimsoi-va-242bc21d an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HISIMSOI-VA-38074D06
+TITLE: hisimsoi-va-38074d06 compact-model binding
+STATEMENT: >>>
+The catalog shall give hisimsoi-va-38074d06 an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HISIMSOI-VA-5BE18005
+TITLE: hisimsoi-va-5be18005 compact-model binding
+STATEMENT: >>>
+The catalog shall give hisimsoi-va-5be18005 an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-HISIMSOTB-VA
+TITLE: hisimsotb-va compact-model binding
+STATEMENT: >>>
+The catalog shall give hisimsotb-va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-JUNCAP200
+TITLE: juncap200 compact-model binding
+STATEMENT: >>>
+The catalog shall give juncap200 an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-L-UTSOI-485E0AC9
+TITLE: l-utsoi-485e0ac9 compact-model binding
+STATEMENT: >>>
+The catalog shall give l-utsoi-485e0ac9 an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-L-UTSOI-832CE87D
+TITLE: l-utsoi-832ce87d compact-model binding
+STATEMENT: >>>
+The catalog shall give l-utsoi-832ce87d an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-MOSVAR
+TITLE: mosvar compact-model binding
+STATEMENT: >>>
+The catalog shall give mosvar an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-MVSG-CMC
+TITLE: mvsg-cmc compact-model binding
+STATEMENT: >>>
+The catalog shall give mvsg-cmc an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-PSP104TVA
+TITLE: psp104tva compact-model binding
+STATEMENT: >>>
+The catalog shall give psp104tva an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-PSP104VA
+TITLE: psp104va compact-model binding
+STATEMENT: >>>
+The catalog shall give psp104va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-PSPNQS104VA
+TITLE: pspnqs104va compact-model binding
+STATEMENT: >>>
+The catalog shall give pspnqs104va an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-R2-CMC
+TITLE: r2-cmc compact-model binding
+STATEMENT: >>>
+The catalog shall give r2-cmc an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-R2-ET-CMC
+TITLE: r2-et-cmc compact-model binding
+STATEMENT: >>>
+The catalog shall give r2-et-cmc an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-R3-CMC
+TITLE: r3-cmc compact-model binding
+STATEMENT: >>>
+The catalog shall give r3-cmc an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-VBIC-4T-ET-CF
+TITLE: vbic-4t-et-cf compact-model binding
+STATEMENT: >>>
+The catalog shall give vbic-4t-et-cf an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-VBIC13-3T-ET
+TITLE: vbic13-3t-et compact-model binding
+STATEMENT: >>>
+The catalog shall give vbic13-3t-et an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-VBIC13-4T
+TITLE: vbic13-4t compact-model binding
+STATEMENT: >>>
+The catalog shall give vbic13-4t an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<
+
+[REQUIREMENT]
+UID: SCH-COMPACT-VBIC13
+TITLE: vbic13 compact-model binding
+STATEMENT: >>>
+The catalog shall give vbic13 an exact model identity and version, ordered electrical and optional thermal terminals, typed parameters, and advertised analysis capabilities. Reject unavailable or incompatible providers explicitly.
+<<<
+COMMENT: >>>
+Catalog target. Verify descriptor-to-symbol pin order and parameter binding. Compare independent DC bias points and qualify AC derivatives, transient charge, thermal behavior or noise individually when advertised.
+<<<

@@ -15,7 +15,7 @@ public class FifoTests
          {"match":{"kind":"const","bits":"0000000100000000"},"body":{"kind":"nba","target":{"kind":"ref","name":"qc"},"value":{"kind":"const","bits":"1"}}},
          {"match":null,"body":{"kind":"nba","target":{"kind":"ref","name":"qc"},"value":{"kind":"const","bits":"0"}}}]}]}}
     """;
-    private static string Root() { for (var d = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "native/rtl/runtime.h"))) return d.FullName; throw new IOException("Checkout missing."); }
+    private static string Root() { for (var d = new DirectoryInfo(TestRepository.Root); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "native/rtl/runtime.h"))) return d.FullName; throw new IOException("Checkout missing."); }
     [Test] public async Task NativeRtlHonorsEqualityCaseContextAndNbaHistory()
     {
         if (OperatingSystem.IsWindows()) Assert.Ignore("Native RTL compilation uses the Linux/macOS Ninja toolchain.");

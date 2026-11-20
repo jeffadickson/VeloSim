@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net11.0": {
+      "schematiclab.core": {
+        "type": "Project"
+      },
+      "schematiclab.solver": {
+        "type": "Project",
+        "dependencies": {
+          "SchematicLab.Core": "[1.0.0, )"
+        }
+      }
+    },
+    "net11.0/linux-x64": {},
+    "net11.0/win-x64": {}
+  }
+}

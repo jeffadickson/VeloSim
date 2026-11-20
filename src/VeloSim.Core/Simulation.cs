@@ -16,7 +16,9 @@ internal static partial class NativeMethods
     internal static string? LoadedLibraryPath { get; private set; }
     internal static string? LoadedSchedulerPath { get; private set; }
     private static readonly Lock libraryGate = new();
-    private static readonly Dictionary<string, nint> loadedModules = new(StringComparer.Ordinal);
+    // Native module identities are ordinal; C# 15 passes that comparer directly
+    // to the collection constructor without changing cache identity semantics.
+    private static readonly Dictionary<string, nint> loadedModules = [with(StringComparer.Ordinal)];
     static NativeMethods() => NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, Resolve);
     private static nint Resolve(string name, Assembly assembly, DllImportSearchPath? search)
     {

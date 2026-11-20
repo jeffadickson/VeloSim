@@ -1,0 +1,44 @@
+[DOCUMENT]
+TITLE: SchematicLab prototype requirements
+
+[REQUIREMENT]
+UID: SCH-WEB-001
+TITLE: Embedded electronics lesson
+STATEMENT: >>>
+The prototype shall run in a browser from static files and expose a voltage-divider lesson that can be embedded in an iframe.
+<<<
+
+[REQUIREMENT]
+UID: SCH-MODEL-001
+TITLE: Parts and electrical identity
+STATEMENT: >>>
+The schematic shall store typed part instances and wires between explicit terminals independently of symbol artwork. Wire crossings and coincident drawing coordinates shall not create electrical connections.
+<<<
+
+[REQUIREMENT]
+UID: SCH-EDIT-001
+TITLE: Bounded editing
+STATEMENT: >>>
+A learner shall be able to place supported parts, wire terminals, change component values, delete a selected part and its incident wires, and reset the lesson. Rejected connections and invalid values shall leave the document intact.
+<<<
+
+[REQUIREMENT]
+UID: SCH-LESSON-001
+TITLE: Voltage-divider feedback
+STATEMENT: >>>
+The prototype shall report the analytical output voltage of a valid two-resistor divider. Incomplete or unsupported circuits shall receive feedback and shall not display a computed voltage.
+<<<
+
+[REQUIREMENT]
+UID: SCH-PLOT-001
+TITLE: Probe and DC sweep plot
+STATEMENT: >>>
+The lesson shall label the voltage probe at its terminal and plot its voltage against the input in volts over a 21-point analytical DC sweep. Invalid circuit topology shall suppress the trace and report the missing result.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CAT-001
+TITLE: Generic component library
+STATEMENT: >>>
+The browser palette shall expose grouped and searchable generic symbols with explicit ordered terminal names and geometry. Placing a symbol shall give it a unique instance ID. The inspector shall distinguish symbols that can be evaluated in the lesson from symbols available for placement and wiring.
+<<<

@@ -1,0 +1,235 @@
+[DOCUMENT]
+TITLE: VeloSim toolchain and standalone schematic requirements
+
+[TEXT]
+STATEMENT: >>>
+Trace: global.json, Directory.Build.props, Makefile and tools/VeloSim.Build
+implement the toolchain selection and framework paths. apps/SchematicLab keeps
+the imported component/source and command requirements. WebHost/StartupCommand.cs
+and StartupOptions.cs implement finite CLI outcomes; WebHost/Program.cs enforces
+localhost and source-generated failure JSON. Solver/SolverLocation.cs supplies
+installed-relative lookup for WebHost and Mcp/Program.cs. Tests/StandaloneStartupTests.cs
+checks boundary, deployment, malformed-input and seeded properties. scripts/Publish-Schematic.ps1,
+Launch-Schematic.ps1 and Test-SchematicBundle.ps1 create/run/verify distributions;
+Tests/Bundle.Tests.ps1 checks refusal boundaries. scripts/Test-Schematic.ps1
+checks actual TRX outcomes. docs/csharp-modernization.md records language choices
+and verification limitations; docs/schematic-import-evidence.json records import
+integrity and the original baseline. Draft status does not imply general HDL,
+analog or model-family qualification.
+Book interaction trace: Core/InteractionPolicy.cs and LessonSession.cs enforce
+typed lock/read commands and parameter-only history; CircuitBridge.cs and
+BridgeDraft.cs enforce unchanged F/H connections at the asynchronous analysis
+boundary. Web/Program.cs and WebHost/Program.cs provide required deployment
+bootstrap; Mcp/Program.cs and LessonTools.cs reuse the same policy/commands.
+Tests/InteractionPolicyTests.cs, Tests/BookBrowserSmoke.cjs and scripts/McpSmoke.cs
+verify the bounded contracts. docs/live-lessons.md and examples/wally-live-rc.qmd
+describe deployment/readiness; actual WALLY rendering and shared visible-session
+agent control remain open. See docs/schematic-book-verification.md for current
+counts, coverage scope, seeds, package provenance and unresolved checks.
+Backend selection trace: Core/SolverBackend.cs, BridgeDraft.cs, RcTransient.cs
+and CircuitBridge.cs; Solver/NativeRcSolver.cs and NativeCircuitSolver.cs;
+Tests/BackendSelectionTests.cs and scripts/BackendSmoke.cs. The shared UI/MCP
+commands expose the bounded LU/QR/Faer surface. Verification scope and QR's
+unsupported AC path are recorded in docs/linear-backend-selection.md.
+<<<
+
+[REQUIREMENT]
+UID: SCH-LINEAR-BACKEND-001
+STATUS: Draft
+TITLE: Typed and persistent linear provider selection
+STATEMENT: >>>
+The schematic shall allow supported LU, QR and Faer CPU adapter selection through
+shared typed browser/MCP commands. RC and general analyses shall inherit the
+selection unless an explicit supported per-run override is supplied. Selection
+shall preserve document freshness checks, save/reload and parameter-only history,
+remain usable in locked lessons, and default legacy documents to LU. Undefined
+providers and malformed field imports shall fail without partial changes.
+<<<
+
+[REQUIREMENT]
+UID: SCH-LINEAR-PROVENANCE-001
+STATUS: Draft
+TITLE: Check effective provider and capabilities without silent fallback
+STATEMENT: >>>
+Both native request builders shall send the selected adapter identity and check
+the response provider identity before accepting samples. Results shall retain
+the effective selection. Discovery shall state known adapter limits; real-only
+QR shall refuse complex AC before simulation without silently selecting LU.
+Numerical qualification shall identify actual analyses, references, tolerances
+and unavailable platforms rather than imply all providers support every analysis.
+<<<
+
+[REQUIREMENT]
+UID: VELO-TOOLCHAIN-NET11-001
+STATUS: Draft
+TITLE: Released .NET 11 toolchain
+STATEMENT: >>>
+Maintained VeloSim C# projects and included schematic projects shall build with
+released SDK 11.0.100 and target net11.0. SDK selection, framework-dependent
+paths, package locks, examples and build instructions shall agree. Verification
+shall distinguish successful compilation, runtime execution and unavailable
+native/platform coverage. The RC SDK shall not be required by this repository.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-OWNERSHIP-001
+STATUS: Draft
+TITLE: Versioned schematic subproject
+STATEMENT: >>>
+The complete schematic source, requirements, tests, UI, solver adapter and MCP
+host shall reside under apps/SchematicLab in VeloSim. Import shall retain its
+history and stable requirements/command identifiers. Existing checkout data
+shall not be discarded. Core shall remain independent of UI and HDL engines.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-STANDALONE-001
+STATUS: Draft
+TITLE: Relocatable standalone web application
+STATEMENT: >>>
+A standalone schematic distribution shall contain its server and published
+browser assets, and shall run outside the source checkout without building
+the HDL simulator. Its default assets shall resolve relative to the installed
+application, independent of current working directory. Packaging shall record
+file hashes, runtime requirements and any included external solver provenance.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-STARTUP-001
+STATUS: Draft
+TITLE: Typed bounded startup commands
+STATEMENT: >>>
+Startup shall parse bounded explicit arguments into serve, help or error
+commands. Duplicate or unknown options, missing values, invalid numeric ports
+and invalid explicit paths shall fail before starting a server. Help shall
+not require assets or a solver and shall not open interactive dialogs.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-LOOPBACK-001
+STATUS: Draft
+TITLE: Local host boundary
+STATEMENT: >>>
+The standalone server shall listen only on localhost at an explicitly validated
+port in 1024..65535, defaulting to 5087. It shall retain the 64 KiB request-body
+bound and existing typed command validation, revision checks and structured
+solver refusals. CLI configuration shall not enable public network binding.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-SOLVER-001
+STATUS: Draft
+TITLE: Explicit native solver availability
+STATEMENT: >>>
+The distribution may include an explicitly selected trusted solver with its
+SHA-256 and source provenance, or accept an explicit absolute solver path.
+A missing optional solver shall preserve schematic editing and the analytical
+divider while native analyses return an explicit unavailable result. Missing
+model providers or numerical outputs shall never be replaced with invented
+successful results. Browser and MCP shall retain the shared command contracts.
+<<<
+
+[REQUIREMENT]
+UID: VELO-CSHARP-AUDIT-001
+STATUS: Draft
+TITLE: Evidence-based language modernization
+STATEMENT: >>>
+The migration shall document useful C# features adopted or already present and
+their verified scope. Changes shall preserve public wire contracts and error,
+cancellation and resource semantics. New syntax alone shall not establish a
+performance improvement. Inapplicable or incompatible features shall be
+documented rather than introduced solely for feature-count claims.
+<<<
+
+[REQUIREMENT]
+UID: VELO-SCHEMATIC-VERIFICATION-001
+STATUS: Draft
+TITLE: Reject partial test-framework success
+STATEMENT: >>>
+The schematic verification entry point shall validate the generated test report,
+completed counts and required contract/property cases. A zero process exit or
+nominally successful partial report shall not pass when an unhandled framework
+exception, fatal error, aborted run or missing required case is present. Actual
+executed counts, property replay and unavailable coverage shall remain explicit.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-BUNDLE-001
+STATUS: Draft
+TITLE: Executable standalone lesson package
+STATEMENT: >>>
+The standard standalone schematic package shall include its real simulation
+executable, host runtime and browser assets. A representative RC lesson shall
+execute from the extracted package outside a source checkout without a separate
+solver installation. Optional provider/model dependencies and platform limits
+shall be declared; a UI-only package shall not be described as a simulation bundle.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-LOCK-001
+STATUS: Draft
+TITLE: Author-controlled layout lock
+STATEMENT: >>>
+A lesson author shall choose whether readers may unlock its layout. A locked
+lesson shall preserve component identities, types, positions, orientations,
+wiring, routes, named nets, junctions and hierarchy while permitting supported
+parameter changes, inspection and simulation. The default general editor shall
+remain editable and may expose a layout-lock checkbox.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-COMMAND-001
+STATUS: Draft
+TITLE: Shared command enforcement and explicit refusals
+STATEMENT: >>>
+Layout policy shall be enforced by the shared typed command layer for browser,
+keyboard, programmatic and MCP entry points. Refused operations shall return a
+structured result, preserve state/history, and retain document/revision checks.
+Disabling browser controls alone shall not implement this requirement.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-HISTORY-001
+STATUS: Draft
+TITLE: Persistence and undo preserve author policy
+STATEMENT: >>>
+Reader save/load, undo/redo and reset commands shall not relax a deployment's
+author policy or bypass a layout lock. Parameter-only history may remain usable
+while structural history is refused. Enabling a lock shall not erase author or
+reader history. Old editable documents shall retain a documented default.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-LESSON-001
+STATUS: Draft
+TITLE: Evidence-backed electronics lesson readiness
+STATEMENT: >>>
+The project shall maintain an electronics-topic, model and analysis readiness
+matrix covering passive networks, diode circuits, bipolar and field-effect
+transistor circuits, feedback amplifiers, filters, oscillators and switching.
+Drawing availability shall remain separate from execution support and verified
+lesson readiness. Each ready lesson shall include actual parameters, probes,
+waveforms as applicable, expected results and independent reference evidence.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-EMBED-001
+STATUS: Draft
+TITLE: Web and presentation embedding
+STATEMENT: >>>
+A lesson shall be embeddable in an HTML book or WALLY presentation with a
+documented simulation-service dependency, author layout policy and independent
+document identity. Offline packaging shall provide a usable local host path;
+static HTML shall not be claimed to execute a native solver by itself.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BOOK-AGENT-001
+STATUS: Draft
+TITLE: Agent control of the visible embedded session
+STATEMENT: >>>
+An embedded automation integration shall address the same visible circuit and
+document revision as the reader or presenter. It shall expose supported typed
+commands, correlate outcomes, reject stale requests and validate message origins
+and sources. A separate hidden MCP session shall not satisfy this requirement.
+<<<

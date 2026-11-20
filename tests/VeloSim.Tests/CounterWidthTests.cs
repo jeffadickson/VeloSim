@@ -7,7 +7,7 @@ namespace VeloSim.Tests;
 public class CounterWidthTests
 {
     private static string Temp() { var d = Path.Combine(Path.GetTempPath(), "velosim-width-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(d); return d; }
-    private static string Root { get { var d = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); while (d is not null && !File.Exists(Path.Combine(d.FullName, "examples", "counter.normalized.json"))) d = d.Parent; return d!.FullName; } }
+    private static string Root { get { var d = new DirectoryInfo(TestRepository.Root); while (d is not null && !File.Exists(Path.Combine(d.FullName, "examples", "counter.normalized.json"))) d = d.Parent; return d!.FullName; } }
     private static IrDesign Counter(int width) => new([new("clk", new(1)), new("rst_n", new(1)), new("count", new(width))], [new("clk", "count", "count", "rst_n", IrEdge.Posedge, IrOperation.SvIfResetIncrementStrict)]);
     private static string Source(string directory, int width) { var path = Path.Combine(directory, "counter" + width + ".sv"); File.WriteAllText(path, $"module counter{width}(input logic clk,rst_n,output logic [{width - 1}:0] count); always_ff @(posedge clk) if(!rst_n) count <= '0; else count <= count + 1'b1; endmodule"); return path; }
     private sealed class WidthRunner : IProcessRunner

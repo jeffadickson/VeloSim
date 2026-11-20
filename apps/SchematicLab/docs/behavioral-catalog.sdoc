@@ -1,0 +1,442 @@
+[DOCUMENT]
+TITLE: Analog and behavioral code-model requirements
+
+[REQUIREMENT]
+UID: SCH-CM-GAIN
+TITLE: gain code model
+STATEMENT: >>>
+The analog catalog shall expose gain with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-SUMMER
+TITLE: summer code model
+STATEMENT: >>>
+The analog catalog shall expose summer with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-MULT
+TITLE: mult code model
+STATEMENT: >>>
+The analog catalog shall expose mult with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-DIVIDE
+TITLE: divide code model
+STATEMENT: >>>
+The analog catalog shall expose divide with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-LIMIT
+TITLE: limit code model
+STATEMENT: >>>
+The analog catalog shall expose limit with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-INT
+TITLE: int code model
+STATEMENT: >>>
+The analog catalog shall expose int with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-DIFFERENTIATOR
+TITLE: differentiator code model
+STATEMENT: >>>
+The analog catalog shall expose differentiator with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-CLIMIT
+TITLE: climit code model
+STATEMENT: >>>
+The analog catalog shall expose climit with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-ILIMIT
+TITLE: ilimit code model
+STATEMENT: >>>
+The analog catalog shall expose ilimit with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-HYST
+TITLE: hyst code model
+STATEMENT: >>>
+The analog catalog shall expose hyst with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-SLEW
+TITLE: slew code model
+STATEMENT: >>>
+The analog catalog shall expose slew with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-REAL-GAIN
+TITLE: real_gain code model
+STATEMENT: >>>
+The analog catalog shall expose real_gain with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-XFER
+TITLE: xfer code model
+STATEMENT: >>>
+The analog catalog shall expose xfer with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-S-XFER
+TITLE: s_xfer code model
+STATEMENT: >>>
+The analog catalog shall expose s_xfer with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-ASWITCH
+TITLE: aswitch code model
+STATEMENT: >>>
+The analog catalog shall expose aswitch with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-PSWITCH
+TITLE: pswitch code model
+STATEMENT: >>>
+The analog catalog shall expose pswitch with analog ports and applicable gain, limits and state. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare transfer and dynamic response and reject malformed values.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-MULTI-INPUT-PWL
+TITLE: multi_input_pwl code model
+STATEMENT: >>>
+The table catalog shall expose multi_input_pwl with typed inputs and explicit table axes or coefficients. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify interpolation and reject mismatched dimensions.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-PWL
+TITLE: pwl code model
+STATEMENT: >>>
+The table catalog shall expose pwl with typed inputs and explicit table axes or coefficients. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify interpolation and reject mismatched dimensions.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-PWLTS
+TITLE: pwlts code model
+STATEMENT: >>>
+The table catalog shall expose pwlts with typed inputs and explicit table axes or coefficients. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify interpolation and reject mismatched dimensions.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-TABLE2D
+TITLE: table2d code model
+STATEMENT: >>>
+The table catalog shall expose table2d with typed inputs and explicit table axes or coefficients. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify interpolation and reject mismatched dimensions.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-TABLE3D
+TITLE: table3d code model
+STATEMENT: >>>
+The table catalog shall expose table3d with typed inputs and explicit table axes or coefficients. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify interpolation and reject mismatched dimensions.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-SPICE2POLY
+TITLE: spice2poly code model
+STATEMENT: >>>
+The table catalog shall expose spice2poly with typed inputs and explicit table axes or coefficients. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify interpolation and reject mismatched dimensions.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-FILE-SOURCE
+TITLE: file_source code model
+STATEMENT: >>>
+The stimulus catalog shall expose file_source with waveform units and timing parameters or a bounded asset. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check waveform samples and malformed input refusal.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-SEEGENERATOR
+TITLE: seegenerator code model
+STATEMENT: >>>
+The stimulus catalog shall expose seegenerator with waveform units and timing parameters or a bounded asset. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check waveform samples and malformed input refusal.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-SINE
+TITLE: sine code model
+STATEMENT: >>>
+The stimulus catalog shall expose sine with waveform units and timing parameters or a bounded asset. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check waveform samples and malformed input refusal.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-SQUARE
+TITLE: square code model
+STATEMENT: >>>
+The stimulus catalog shall expose square with waveform units and timing parameters or a bounded asset. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check waveform samples and malformed input refusal.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-TRIANGLE
+TITLE: triangle code model
+STATEMENT: >>>
+The stimulus catalog shall expose triangle with waveform units and timing parameters or a bounded asset. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Check waveform samples and malformed input refusal.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-CAPACITOR
+TITLE: capacitor code model
+STATEMENT: >>>
+The energy and rf catalog shall expose capacitor with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-CAPACITORIC
+TITLE: capacitoric code model
+STATEMENT: >>>
+The energy and rf catalog shall expose capacitoric with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-INDUCTOR
+TITLE: inductor code model
+STATEMENT: >>>
+The energy and rf catalog shall expose inductor with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-INDUCTORIC
+TITLE: inductoric code model
+STATEMENT: >>>
+The energy and rf catalog shall expose inductoric with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-CORE
+TITLE: core code model
+STATEMENT: >>>
+The energy and rf catalog shall expose core with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-LCOUPLE
+TITLE: lcouple code model
+STATEMENT: >>>
+The energy and rf catalog shall expose lcouple with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-CPLINE
+TITLE: cpline code model
+STATEMENT: >>>
+The energy and rf catalog shall expose cpline with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-CPMLIN
+TITLE: cpmlin code model
+STATEMENT: >>>
+The energy and rf catalog shall expose cpmlin with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-MLIN
+TITLE: mlin code model
+STATEMENT: >>>
+The energy and rf catalog shall expose mlin with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-MSOPEN
+TITLE: msopen code model
+STATEMENT: >>>
+The energy and rf catalog shall expose msopen with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-TLINE
+TITLE: tline code model
+STATEMENT: >>>
+The energy and rf catalog shall expose tline with terminal order and applicable energy state or propagation model. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC, AC or time-domain response as claimed.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-CMETER
+TITLE: cmeter code model
+STATEMENT: >>>
+The measurement catalog shall expose cmeter with ordered terminals and a defined result quantity. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare the extracted quantity with a known fixture.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-LMETER
+TITLE: lmeter code model
+STATEMENT: >>>
+The measurement catalog shall expose lmeter with ordered terminals and a defined result quantity. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Compare the extracted quantity with a known fixture.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-MEMRISTOR
+TITLE: memristor code model
+STATEMENT: >>>
+The nonlinear catalog shall expose memristor with model-specific terminal order and parameters. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC characteristics and any advertised state or charge dynamics.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-POTENTIOMETER
+TITLE: potentiometer code model
+STATEMENT: >>>
+The nonlinear catalog shall expose potentiometer with model-specific terminal order and parameters. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC characteristics and any advertised state or charge dynamics.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-SIDIODE
+TITLE: sidiode code model
+STATEMENT: >>>
+The nonlinear catalog shall expose sidiode with model-specific terminal order and parameters. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC characteristics and any advertised state or charge dynamics.
+<<<
+
+[REQUIREMENT]
+UID: SCH-CM-ZENER
+TITLE: zener code model
+STATEMENT: >>>
+The nonlinear catalog shall expose zener with model-specific terminal order and parameters. Validate terminal direction, domain, width and nullability against the executable schema.
+<<<
+COMMENT: >>>
+Catalog target. Verify DC characteristics and any advertised state or charge dynamics.
+<<<
