@@ -6,7 +6,7 @@ namespace VeloSim.Tests;
 
 public class RtlSelectionTests
 {
-    private static string Root() { for (var d = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "native/rtl/runtime.h"))) return d.FullName; throw new IOException("Checkout missing."); }
+    private static string Root() { for (var d = new DirectoryInfo(TestRepository.Root); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "native/rtl/runtime.h"))) return d.FullName; throw new IOException("Checkout missing."); }
     private static string Fixture(object value, object? target = null) => JsonSerializer.Serialize(new { format = "velosim.rtl.v1", signals = new[] { new { name = "clk", width = 1, direction = "input" }, new { name = "a", width = 64, direction = "input" }, new { name = "i", width = 7, direction = "input" }, new { name = "q", width = 8, direction = "output" } }, memories = Array.Empty<object>(), continuous = Array.Empty<object>(), clock = "clk", body = new { kind = "nba", target = target ?? new { kind = "ref", name = "q" }, value } });
     [Test] public void SelectionIrValidatesFieldsBoundsAndSelectedTargets()
     {

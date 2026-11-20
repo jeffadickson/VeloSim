@@ -1,5 +1,11 @@
 # VeloSim
 
+The included [SchematicLab](apps/SchematicLab/README.md) project provides an
+independently runnable browser schematic, waveform views and a typed MCP host.
+It is separate from HDL execution; importing it does not establish analog/HDL
+co-simulation. Maintained C# projects use released .NET SDK 11.0.100 and C# 15.
+See the [migration plan](docs/superpowers/plans/2026-11-12-schematic-net11.md).
+
 Current development: [100 open-item iterations and the execution contract](docs/open-items-100.md), building on [shared-clock processes, hierarchy and signed 1–128-bit words](docs/rtl-processes-hierarchy-signed.md). Older milestone reports below retain their historical scope.
 
 Open-source experimental Verilog/SystemVerilog simulation project.
@@ -8,11 +14,11 @@ Start with the illustrated [HTML introduction](docs/introduction.html) to see ho
 
 ## Status
 
-Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET10 C# helpers validate IR, orchestrate frontends and run regressions. The real Surelog/UHDM structural path supports bounded edge-driven processes, instance hierarchy, signed 128-bit words, two-state bit signals and fixed word memories. See the current execution contract above for restrictions.
+Early research prototype. C++20 kernels execute restricted four-state processes; compiled .NET 11 C# helpers validate IR, orchestrate frontends and run regressions. The real Surelog/UHDM structural path supports bounded edge-driven processes, instance hierarchy, signed 128-bit words, two-state bit signals and fixed word memories. See the current execution contract above for restrictions.
 
 ## Build and test
 
-Run in Linux or WSL with .NET10 SDK, CMake, Ninja, and a C++20 compiler:
+Run in Linux or WSL with the released .NET 11 SDK, CMake, Ninja, and a C++20 compiler:
 
 ```sh
 make test JOBS=4

@@ -6,7 +6,7 @@ namespace VeloSim.Tests;
 public class SuiteTests
 {
     private static string Temp() { var directory = Path.Combine(Path.GetTempPath(), "velosim-suite-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory); return directory; }
-    private static string Root { get { var d = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); while (d is not null && !File.Exists(Path.Combine(d.FullName, "examples", "counter.normalized.json"))) d = d.Parent; return d!.FullName; } }
+    private static string Root { get { var d = new DirectoryInfo(TestRepository.Root); while (d is not null && !File.Exists(Path.Combine(d.FullName, "examples", "counter.normalized.json"))) d = d.Parent; return d!.FullName; } }
     private static RegressionManifest Case(string name) => new(name, "counter", ["counter.sv"], "clk", "count", "rst_n", 8, TraceComparison.Parse("0 00000000\n1 00000001", 8), [1]);
     private static RegressionSuiteManifest Suite(string directory, int cases = 3)
     {

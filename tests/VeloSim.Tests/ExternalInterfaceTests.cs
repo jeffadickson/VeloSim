@@ -5,7 +5,7 @@ namespace VeloSim.Tests;
 
 public class ExternalInterfaceTests
 {
-    private static string Root() { for (var d = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "native/rtl/external_model.h"))) return d.FullName; throw new IOException("Checkout missing."); }
+    private static string Root() { for (var d = new DirectoryInfo(TestRepository.Root); d is not null; d = d.Parent) if (File.Exists(Path.Combine(d.FullName, "native/rtl/external_model.h"))) return d.FullName; throw new IOException("Checkout missing."); }
     [Test]
     public void GeneratedModelProtectsCppIdentifiersAndExportsAllPorts()
     {

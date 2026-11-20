@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Core/SchematicLab.Core.csproj" />
+  <Project Path="Solver/SchematicLab.Solver.csproj" />
+  <Project Path="Web/SchematicLab.Web.csproj" />
+  <Project Path="WebHost/SchematicLab.WebHost.csproj" />
+  <Project Path="Mcp/SchematicLab.Mcp.csproj" />
+  <Project Path="Tests/SchematicLab.Tests.csproj" />
+</Solution>

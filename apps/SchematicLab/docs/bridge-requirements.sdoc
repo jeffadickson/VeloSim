@@ -1,0 +1,152 @@
+[DOCUMENT]
+TITLE: General schematic simulation bridge
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-NETS-001
+TITLE: Compile the electrical graph for the native solver
+STATEMENT: >>>
+The shared command shall compile the captured schematic revision into a ground-first circuit using terminal wires, equal labels and explicit junctions. Drawing coordinates shall have no effect. Ground symbols shall represent the common reference. R, L, C, independent voltage and current sources and linear E, F, G and H sources shall retain terminal order and SI values. F and H shall bind explicitly to a voltage source branch. Unsupported parts, open terminals, shorted device terminals and invalid bindings shall be refused.
+<<<
+COMMENT: >>>
+CircuitBridge, NativeCircuitSolver and BridgeTests. Native API input is bounded and never executes user commands or source text.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-RUN-001
+TITLE: Execute and verify probe analyses
+STATEMENT: >>>
+The browser and MCP shall dispatch the same revisioned command for DC operating point, explicit AC frequency points and transient with stop and maximum step settings. AC independent-source excitation shall use explicit magnitude and phase. Transient shall support explicit bounded voltage and current pulse settings. Results shall include the original revision, probe, analysis and finite samples on the requested axis, with real and imaginary components for AC. Unavailable or incomplete results shall fail explicitly.
+<<<
+COMMENT: >>>
+BrowserSmoke, McpSmoke, BridgeTests and BridgeNgspice compare the same mixed RLC lesson with an independently authored deck. General run history persistence and additional waveform forms remain separate requirements.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-MODEL-001
+TITLE: Bind conduction-only diode and level 1 MOS channels
+STATEMENT: >>>
+The schematic bridge shall bind a diode to effective saturation current and thermal voltage. An NMOS or PMOS level 1 channel shall require an explicit instance binding and preserve drain, gate, source and bulk identity. The binding shall validate finite effective parameters, including positive beta and surface potential and nonnegative body-effect and modulation coefficients. Nonlinear transient shall select the native backward Euler profile. Unsupported model families shall produce an explicit failure.
+<<<
+COMMENT: >>>
+BridgeTests verifies binding and terminal identity. BrowserSmoke, McpSmoke and BridgeNgspice exercise the diode and NMOS fixtures. Junction and channel charge, other model levels, and broader polarity and bias coverage remain open.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-DIODE-Q-001
+TITLE: Bind diode depletion and diffusion charge
+STATEMENT: >>>
+A diode binding shall carry optional effective junction capacitance, junction potential, grading coefficient, forward coefficient and transit time. Valid nonzero storage parameters shall map to the native depletion and diffusion model for operating point, complex AC and backward Euler transient. Invalid parameter domains shall be refused before solving.
+<<<
+COMMENT: >>>
+ChargedDiodeBinding, BridgeNgspice diode-charge fixture, BrowserSmoke and McpSmoke. Avalanche, series resistance and temperature scaling are outside this profile.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-MOS1-Q-001
+TITLE: Bind MOS1 body depletion and overlap charge
+STATEMENT: >>>
+The bridge shall map effective MOS1 gate overlap capacitances and body depletion parameters to explicit native companions. The body junction polarity shall follow the transistor polarity. An equipotential companion shall contribute no element. Invalid storage parameter domains shall be refused. Intrinsic channel charge is outside this profile.
+<<<
+COMMENT: >>>
+Mos1OverlapAndBodyCharge, BridgeNgspice mos1-charge fixture, BrowserSmoke and McpSmoke.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-BJT-001
+TITLE: Bind a three-terminal bipolar conduction model
+STATEMENT: >>>
+The bridge shall preserve collector, base and emitter identity and require explicit saturation current, forward and reverse gain, and effective thermal voltages. It shall lower the three-terminal conduction profile into native junctions and signed controlled branches, with private nodes counted against the circuit limit. Invalid parameters or missing models shall fail before solving.
+<<<
+COMMENT: >>>
+BjtRequiresExplicitModel, BridgeNgspice bjt fixture, BrowserSmoke and McpSmoke. Charge storage, substrate, series resistances, and full Gummel-Poon behavior remain outside this profile.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-BSIM330-001
+TITLE: Bind bulk BSIM3 3.3.0 through a trusted native provider
+STATEMENT: >>>
+The bridge shall validate explicit bulk BSIM3 geometry and effective model parameters, preserve drain, gate, source and bulk order, and reject a simultaneous MOS1 binding. Analysis shall use the host-configured native provider for DC, AC and transient. A sheet or command shall have no mechanism to select executable module paths.
+<<<
+COMMENT: >>>
+BulkBsim330Requires, BridgeNgspice bsim3 fixture, BrowserSmoke and McpSmoke. This profile excludes SOI, arbitrary model cards and unqualified bias ranges.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-BJT-Q-001
+TITLE: Bind base junction depletion and transit storage
+STATEMENT: >>>
+A bipolar binding shall accept independent base-emitter and base-collector junction storage. Each storage contribution shall preserve polarity and remain outside the conduction sense branch so the transport gain does not amplify displacement current. The bridge shall validate the physical domain before execution.
+<<<
+COMMENT: >>>
+Verified on a resistor-loaded NPN with a finite base drive resistance. The profile retains bounded Ebers-Moll conduction.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-WAVEFORMS-001
+TITLE: Execute inline PWL, damped sine and exponential sources
+STATEMENT: >>>
+The bridge shall support inline ordered PWL, damped sine and exponential overrides for independent sources with SI times and values, phase in degrees and bounded payloads. It shall refuse duplicate source assignments across waveform families and refuse nonfinite and invalid parameters. Browser and MCP shall use the same typed analysis request.
+<<<
+COMMENT: >>>
+BridgeTests, BrowserSmoke, McpSmoke and BridgeNgspice. File assets and stochastic sources are outside this requirement.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-SOI-FD-001
+TITLE: Execute the pinned four-terminal FD-SOI profile
+STATEMENT: >>>
+The bridge shall bind an explicitly selected NMOS SOI instance to the pinned four-terminal native model and preserve drain, gate, source and back gate identity. The schematic body contact shall be left unconnected. The binding shall admit DC operating point and refuse AC or transient before invoking the native solver.
+<<<
+COMMENT: >>>
+SoiBridgeTests, BrowserSmoke, McpSmoke and BridgeNgspice fd-soi. Arbitrary SOI cards, PMOS, body-contact models and charge-dependent analyses remain separate.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-SETTINGS-001
+TITLE: Persist and transfer analysis entry settings
+STATEMENT: >>>
+A saved sheet shall retain bounded model, waveform and analysis entry fields. Reload and undo shall restore the applicable fields, and older sheets shall use defaults. MCP shall read fields and apply a bounded batch atomically. Importing entry fields shall not bypass model validation at execution.
+<<<
+COMMENT: >>>
+BridgeSettingsTests, BrowserSmoke and McpSmoke. These are sheet-local settings rather than a named reusable model definition store.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-DC-STEP-001
+TITLE: Select bounded DC source continuation
+STATEMENT: >>>
+An explicit DC source-continuation request shall use the bounded native source-stepping policy. It shall preserve the full-source operating point and refuse the policy on other analysis modes.
+<<<
+COMMENT: >>>
+BridgeNgspice mos1-high and browser and MCP high-bias runs.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-MODEL-LIB-001
+TITLE: Save and reuse named model definitions
+STATEMENT: >>>
+A sheet shall store a bounded collection of case-insensitive named model definitions separately from instance settings. Typed commands shall list, define, remove and apply definitions through the browser and MCP. Applying a definition shall copy its parameters to a compatible instance without changing other instance bindings. Loading an older sheet without definitions shall yield an empty library. Invalid definitions shall not change the current sheet.
+<<<
+COMMENT: >>>
+BridgeSettingsTests, BrowserSmoke and McpSmoke. The supported families are diode, BJT, MOS1 and BSIM3. Applying a definition creates an instance-local copy; later edits to the definition do not change existing bindings. MCP can transfer definitions between sheets by reading and defining them.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-HIERARCHY-001
+TITLE: Attach and execute nested two-terminal passive sheets
+STATEMENT: >>>
+The editor shall attach a validated saved child sheet to a cell instance through a typed revision-checked command. Each child shall bind two distinct connected interface ports to the two parent terminals. The bridge shall preserve each instance's electrical connectivity and scope internal nets separately, with ground shared as node zero. Saving, loading, and undo shall preserve the attached topology.
+<<<
+COMMENT: >>>
+HierarchyTests, BrowserSmoke, McpSmoke and BridgeNgspice hierarchy. Supported child devices are R, L, C, ground and nested two-terminal cells. Limits are eight attachments per sheet, three levels below the root and 32,768 characters per child document. Child analysis settings are separate from the parent analysis. Child documents are embedded snapshots.
+<<<
+
+[REQUIREMENT]
+UID: SCH-BRIDGE-MOS1-MEYER-001
+TITLE: Bind intrinsic MOS1 gate displacement
+STATEMENT: >>>
+The MOS1 schematic binding shall accept an optional total effective oxide capacitance in farads, separate from gate overlap and body junction parameters. The browser and MCP shall forward the same typed binding and validate its finite nonnegative domain. An omitted or zero value shall preserve existing results.
+<<<
+COMMENT: >>>
+The native model evaluates the bias-dependent Meyer partition for AC and integrates branch displacement with backward Euler for transient. The binding uses an effective capacitance, and does not prepare arbitrary model cards with TOX. Verification uses BridgeSettingsTests, BrowserSmoke, McpSmoke and BridgeNgspice mos1-meyer.
+<<<

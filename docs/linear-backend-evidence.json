@@ -1,0 +1,237 @@
+{
+  "tests": {
+    "failed": 0,
+    "skipped": 0,
+    "report": "E:/Artifacts/VeloSim-backends-ff63ff8-20261114/isolated-tests/backend.trx",
+    "passed": 87
+  },
+  "source_base": "ff63ff81b0324da42960054a6e990725fdb4f8eb",
+  "artifact_root": "E:/Artifacts/VeloSim-backends-ff63ff8-20261114",
+  "properties": {
+    "replay": "111414,2026111403",
+    "scope": "arbitrary backend names",
+    "cases": 128
+  },
+  "limits": [
+    "QR AC unsupported and refused",
+    "No new ngspice corpus benchmark",
+    "No broad Stryker.NET mutation score",
+    "No Linux/macOS runtime qualification",
+    "Browser/MCP sessions independent",
+    "Prior whole-VeloSim Windows test failures remain open"
+  ],
+  "native": {
+    "native_sha256": "c3caf38a08fa03c4cb375408d96ddbcf984fe4e1ef19f34b2e3c4fedce46888b",
+    "runs": [
+      {
+        "backend": 0,
+        "provider": "nalgebra_dense_lu_reference",
+        "analysis": "RC transient",
+        "samples": 502,
+        "max_absolute_volts": 4.125269350606364E-05
+      },
+      {
+        "backend": 0,
+        "provider": "nalgebra_dense_lu_reference",
+        "analysis": "Dc",
+        "samples": 1,
+        "max_absolute_volts": 0
+      },
+      {
+        "backend": 0,
+        "provider": "nalgebra_dense_lu_reference",
+        "analysis": "Ac",
+        "samples": 2,
+        "max_absolute_volts": 5.551115123125783E-17
+      },
+      {
+        "backend": 0,
+        "provider": "nalgebra_dense_lu_reference",
+        "analysis": "Transient",
+        "samples": 501,
+        "max_absolute_volts": 4.125269350606364E-05
+      },
+      {
+        "backend": 1,
+        "provider": "nalgebra_dense_qr_reference",
+        "analysis": "RC transient",
+        "samples": 502,
+        "max_absolute_volts": 4.125269350606364E-05
+      },
+      {
+        "backend": 1,
+        "provider": "nalgebra_dense_qr_reference",
+        "analysis": "Dc",
+        "samples": 1,
+        "max_absolute_volts": 0
+      },
+      {
+        "backend": 1,
+        "analysis": "Ac",
+        "status": "unsupported_no_fallback"
+      },
+      {
+        "backend": 1,
+        "provider": "nalgebra_dense_qr_reference",
+        "analysis": "Transient",
+        "samples": 501,
+        "max_absolute_volts": 4.125269350606364E-05
+      },
+      {
+        "backend": 2,
+        "provider": "faer_sparse_lu",
+        "analysis": "RC transient",
+        "samples": 502,
+        "max_absolute_volts": 4.125269350606017E-05
+      },
+      {
+        "backend": 2,
+        "provider": "faer_sparse_lu",
+        "analysis": "Dc",
+        "samples": 1,
+        "max_absolute_volts": 0
+      },
+      {
+        "backend": 2,
+        "provider": "faer_sparse_lu",
+        "analysis": "Ac",
+        "samples": 2,
+        "max_absolute_volts": 1.2412670766236366E-16
+      },
+      {
+        "backend": 2,
+        "provider": "faer_sparse_lu",
+        "analysis": "Transient",
+        "samples": 501,
+        "max_absolute_volts": 4.125269350606017E-05
+      }
+    ]
+  },
+  "schema": "velosim.linear-backend.evidence.v1",
+  "source_dirty": true,
+  "strictdoc": {
+    "version": "0.30.4",
+    "documents": 13,
+    "mode": "real SDReader parsing"
+  },
+  "mcp": {
+    "result": "MCP author lock, Faer selection/inheritance, value edit, stale refusal and native RC/AC=True passed.",
+    "log": "E:/Artifacts/VeloSim-backends-ff63ff8-20261114/mcp.log"
+  },
+  "request_mutants": [
+    {
+      "original_sha256": "b1f9edbd1ce3a278c988b2e0fd8155c9b36749614d8e3f874f0d08c7eb9dd478",
+      "exit": -532462766,
+      "outcome": "detected_by_native_provider_contract",
+      "name": "rc-hardcoded-lu"
+    },
+    {
+      "original_sha256": "63692ec491740e0b69f1dd70b8824784d4a1b566e584d560f81ef59b7b501f2d",
+      "exit": -532462766,
+      "outcome": "detected_by_native_provider_contract",
+      "name": "general-hardcoded-lu"
+    }
+  ],
+  "browser": {
+    "result": "Embedded author-locked RC: Faer selected, reset refused, value changed, geometry preserved, real Faer RC waveform and AC rendered.",
+    "log": "E:/Artifacts/VeloSim-backends-ff63ff8-20261114/browser.log"
+  },
+  "source_files": [
+    {
+      "path": "apps/SchematicLab/Core/BridgeDraft.cs",
+      "sha256": "50afbd3b8ac4bbecaaf61937ff472266c0beae1aae5afff61058dc90e0e0f747"
+    },
+    {
+      "path": "apps/SchematicLab/Core/CircuitBridge.cs",
+      "sha256": "351722bc54d7f535c00eaea2516b108ad3607d122a2013a25546be110f4ac279"
+    },
+    {
+      "path": "apps/SchematicLab/Core/Commands.cs",
+      "sha256": "f278ecb81ca95b8499fd60f17dd68b0e189e44f9047c9946d003678a63a518c3"
+    },
+    {
+      "path": "apps/SchematicLab/Core/InteractionPolicy.cs",
+      "sha256": "9ea5bb8ec277aed4725639565cee21476770d8fc976e08cef4b22dab05b1fef3"
+    },
+    {
+      "path": "apps/SchematicLab/Core/LessonSession.cs",
+      "sha256": "c2dd8556de147514d89b698fdeb891eb9e32e7a639d97cc7f9aa54f35dc5fb79"
+    },
+    {
+      "path": "apps/SchematicLab/Core/RcTransient.cs",
+      "sha256": "27a7ca61e20a9aaa8494674887859cfedb4f142db1b7a61a1c5dce9f960b029b"
+    },
+    {
+      "path": "apps/SchematicLab/Core/SessionPersistence.cs",
+      "sha256": "507e0bdbe0fd725fb1007293bc74c7a6310aa46a9e092a8851e975623ff7daa3"
+    },
+    {
+      "path": "apps/SchematicLab/Core/SolverBackend.cs",
+      "sha256": "55c74196c3d0266bb058a3d5078a30e3a9a69ab7fcbf2984d9b43ff60b66c51c"
+    },
+    {
+      "path": "apps/SchematicLab/Mcp/LessonTools.cs",
+      "sha256": "c0c28d56596a0ac5775097428c1451a603b1052f27d5813f8d083bbd11db420a"
+    },
+    {
+      "path": "apps/SchematicLab/scripts/BackendSmoke.cs",
+      "sha256": "b02cc630362882ea284b3d385448d948776e123b8487c572b0e75eabc779e4a8"
+    },
+    {
+      "path": "apps/SchematicLab/scripts/McpSmoke.cs",
+      "sha256": "a919275031e71a60d91388f3ef28ad63d7d9a6ae812d2b3a7f6ca70017bf3972"
+    },
+    {
+      "path": "apps/SchematicLab/Solver/NativeCircuitSolver.cs",
+      "sha256": "63692ec491740e0b69f1dd70b8824784d4a1b566e584d560f81ef59b7b501f2d"
+    },
+    {
+      "path": "apps/SchematicLab/Solver/NativeRcSolver.cs",
+      "sha256": "412d085f790018633f6ed55119dee0c5ed07f8e20e0444c9ac252967a887399d"
+    },
+    {
+      "path": "apps/SchematicLab/Solver/SchematicLab.Solver.csproj",
+      "sha256": "03f65922fed446733a7d64f39fbaaf26aabf847a182f68148f10d97251bfa6d8"
+    },
+    {
+      "path": "apps/SchematicLab/Tests/BackendSelectionTests.cs",
+      "sha256": "e54a6baaa149b5b5a5583ed1c9ba9fd471f615a36722a6570c0f4aee0b8d6b6c"
+    },
+    {
+      "path": "apps/SchematicLab/Web/BridgePanel.razor",
+      "sha256": "8c95b22237c98de8fa95027d7ecc6a8c11db99ccd6a847332ea318cc097ef667"
+    },
+    {
+      "path": "apps/SchematicLab/Web/Lesson.razor",
+      "sha256": "bc9abe2089068fcb87c57f507aa390502a27bc51b958c2e8a0e887d6c2668710"
+    },
+    {
+      "path": "docs/requirements.sdoc",
+      "sha256": "54f4d8304380c9144196d43b4ead4532d5c900f55b87f24a5866fc50cf69b9c7"
+    }
+  ],
+  "coverage": {
+    "scope": "Core/Solver/WebHost reached by schematic xUnit suite; browser/MCP protocol and Rust numerical code excluded",
+    "total_lines": 5700,
+    "branches": 1601,
+    "lines": 4546,
+    "total_branches": 2590
+  },
+  "release": {
+    "manifest_sha256": "bb438a59da0caa9d5ac933d0a0d845d6bb472e53cd8de71285225155b0fd4ba0",
+    "browser_result": "Embedded author-locked RC: Faer selected, reset refused, value changed, geometry preserved, real Faer RC waveform and AC rendered.",
+    "source_dirty": true,
+    "mcp_result": "MCP author lock, Faer selection/inheritance, value edit, stale refusal and native RC/AC=True passed.",
+    "source_commit": "b32b828133942b913900ac368b3da29512df224e",
+    "package": {
+      "bundle": "E:\\Artifacts\\VeloSim-backends-ff63ff8-20261114\\release\\bundle",
+      "archive": "E:\\Artifacts\\VeloSim-backends-ff63ff8-20261114\\release\\SchematicLab-win-x64.zip",
+      "sha256": "2c7c875b586c47446f568421c6a507c7637c055f2fbf82d8706a5def4ff74c37"
+    },
+    "files": 747,
+    "browser_log": "E:/Artifacts/VeloSim-backends-ff63ff8-20261114/release-browser.log",
+    "url": "http://localhost:5091",
+    "mcp_log": "E:/Artifacts/VeloSim-backends-ff63ff8-20261114/release-mcp.log",
+    "dirty_reason": "Only Core/Solver NuGet lockfiles gained SDK-generated net11.0/win-x64 restore groups; all recorded application source hashes matched"
+  }
+}

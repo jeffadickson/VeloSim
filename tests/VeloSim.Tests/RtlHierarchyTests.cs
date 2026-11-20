@@ -7,7 +7,7 @@ public class RtlHierarchyTests
     public async Task UnsupportedConnectionsAndGlobalDriverConflictsFailClosed()
     {
         if(Environment.GetEnvironmentVariable("VELOSIM_REAL_FIFO")!="1")Assert.Ignore("Requires pinned frontend.");
-        var root=new DirectoryInfo(TestContext.CurrentContext.TestDirectory);while(root is not null&&!File.Exists(Path.Combine(root.FullName,"native/rtl/runtime.h")))root=root.Parent;
+        var root=new DirectoryInfo(TestRepository.Root);while(root is not null&&!File.Exists(Path.Combine(root.FullName,"native/rtl/runtime.h")))root=root.Parent;
         Assert.That(root,Is.Not.Null);string directory=Path.Combine(root!.FullName,"artifacts","hierarchy-rejections-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
         const string source="module leaf(input logic clk,input logic[7:0]a,output logic[7:0]q);always_ff @(posedge clk)q<=a;endmodule module dut(input logic clk,clk2,input logic[7:0]a,output logic[7:0]q,s);leaf u(.clk(clk),.a(a),.q(q));always_ff @(posedge clk)s<=a;endmodule";
         var variants=new Dictionary<string,string>{["inout"]=source.Replace("module leaf(input logic clk,input logic[7:0]a","module leaf(input logic clk,inout wire[7:0]a"),["output-select"]=source.Replace(".q(q)",".q(q[7:0])"),["multiple-drivers"]=source.Replace("s<=a;","begin s<=a;q<=a;end "),["feedback"]=source.Replace("always_ff @(posedge clk)q<=a;","assign q=a;").Replace(".a(a)",".a(q)")};

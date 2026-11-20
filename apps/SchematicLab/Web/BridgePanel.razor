@@ -1,0 +1,171 @@
+@using System.Globalization
+@inject RcBrowserSolver Solver
+<section class="results" aria-label="General circuit analysis">
+    <div>
+        <h2>Circuit analysis</h2>
+        <p>Read a voltage probe in DC, AC or transient analysis.</p>
+        @foreach (var analysis in Enum.GetValues<BridgeAnalysis>())
+        {
+            <button disabled="@running" @onclick="() => Run(analysis)">Analyze @analysis</button>
+        }
+    </div>
+    <div class="inspector">
+        <label for="linear-backend">Linear solver</label>
+        <select id="linear-backend" value="@Session.SelectedBackend" @onchange="SetBackend">
+            @foreach (var backend in Enum.GetValues<SolverBackend>())
+            {
+                <option value="@backend">@backend@(backend == SolverBackend.Qr ? " (DC/transient only)" : "")</option>
+            }
+        </select>
+        <p>LU and QR are dense reference adapters; Faer is the CPU sparse adapter.</p>
+        @foreach (var field in fields)
+        {
+            <label for="@field.Key">@field.Label</label>
+            <input id="@field.Key" value="@Session.BridgeDraft[field.Key]" maxlength="4096" @onchange="e => Set(field.Key, e)" />
+        }
+        <details>
+            <summary>Model library</summary>
+            <label for="named-model">Model name</label>
+            <input id="named-model" @bind="modelName" maxlength="48" />
+            <label for="named-family">Model family</label>
+            <select id="named-family" @bind="modelFamily">
+                <option value="@BridgeField.Diodes">Diode</option>
+                <option value="@BridgeField.Bjts">BJT</option>
+                <option value="@BridgeField.Mos1">MOS1</option>
+                <option value="@BridgeField.Bsim3">BSIM3</option>
+            </select>
+            <label for="named-parameters">Model parameters without instance ID</label>
+            <input id="named-parameters" @bind="modelParameters" maxlength="512" />
+            <button @onclick="StoreModel">Store named model</button>
+            <label for="model-instance">Target instance</label>
+            <input id="model-instance" @bind="modelInstance" maxlength="12" />
+            @foreach (var model in Session.Execute(new ReadNamedModels()).Models ?? [])
+            {
+                <button @onclick="() => UseModel(model.Name)">Apply @model.Name</button>
+                <button @onclick="() => DeleteModel(model.Name)">Remove @model.Name</button>
+            }
+            <p role="status">@modelStatus</p>
+        </details>
+        <details>
+            <summary>Child sheet</summary>
+            <label for="child-instance">Cell instance ID</label>
+            <input id="child-instance" @bind="cellId" maxlength="12" />
+            <button @onclick="ExportSheet">Copy current sheet into JSON field</button>
+            <button @onclick="ReadChild">Read attached child</button>
+            <label for="child-left">Left interface port ID</label>
+            <input id="child-left" @bind="leftPort" maxlength="12" />
+            <label for="child-right">Right interface port ID</label>
+            <input id="child-right" @bind="rightPort" maxlength="12" />
+            <label for="child-document">Saved child sheet JSON</label>
+            <textarea id="child-document" @bind="childDocument" maxlength="32768"></textarea>
+            <button @onclick="AttachChild">Attach child sheet</button>
+            <p role="status">@childStatus</p>
+        </details>
+        @if (result is { } response)
+        {
+            <p role="status" data-testid="bridge-status">@response.Message</p>
+            @if (response.Bridge is { } run)
+            {
+                <p data-testid="bridge-count">@run.Samples.Count samples · @run.ProbeId · @run.Analysis</p>
+                <p data-testid="bridge-backend">Linear solver: @run.Backend</p>
+                @if (run.Version != Session.Version) { <p>These samples are from an earlier revision.</p> }
+                <table aria-label="Probe samples">
+                    <thead><tr><th>@AxisLabel(run.Analysis)</th><th>Real (V)</th><th>Imaginary (V)</th></tr></thead>
+                    <tbody>
+                    @foreach (var sample in run.Samples.Count <= 8 ? run.Samples : new[] { run.Samples[0], run.Samples[^1] })
+                    {
+                        <tr><td>@Number(sample.Axis)</td><td>@Number(sample.Real)</td><td>@Number(sample.Imaginary)</td></tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public LessonSession Session { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+    private CommandResult? result;
+    private bool running;
+    private string modelName = "";
+    private BridgeField modelFamily = BridgeField.Bjts;
+    private string modelParameters = "";
+    private string modelInstance = "";
+    private string cellId = "";
+    private string leftPort = "";
+    private string rightPort = "";
+    private string childDocument = "";
+    private string childStatus = "";
+
+    private void ExportSheet()
+    {
+        var response = Session.Execute(new SaveDocument());
+        childStatus = response.Message;
+        childDocument = response.Document ?? "";
+    }
+
+    private void ReadChild()
+    {
+        var response = Session.Execute(new ReadChildSheet(cellId));
+        childStatus = response.Message;
+        if (response.Child is not { } child) return;
+        (childDocument, leftPort, rightPort) = (child.Document, child.LeftPort, child.RightPort);
+    }
+
+    private void AttachChild() => childStatus = Session.Execute(new AttachChildSheet(Session.Version, cellId,
+        new(childDocument, leftPort, rightPort))).Message;
+
+    private string modelStatus = "";
+
+    private void StoreModel() => modelStatus = Session.Execute(
+        new DefineNamedModel(new(modelName, modelFamily, modelParameters))).Message;
+    private void UseModel(string name) => modelStatus = Session.Execute(new ApplyNamedModel(name, modelInstance)).Message;
+    private void DeleteModel(string name) => modelStatus = Session.Execute(new RemoveNamedModel(name)).Message;
+    private static readonly (BridgeField Key, string Label)[] fields =
+    [
+        (BridgeField.DcContinuation, "DC source stepping (true or false)"),
+        (BridgeField.Probe, "Probe ID"), (BridgeField.Frequencies, "AC frequencies (Hz)"),
+        (BridgeField.Stop, "Transient stop (s)"), (BridgeField.Step, "Maximum step (s)"),
+        (BridgeField.Phasors, "AC sources (ID magnitude phase°)"),
+        (BridgeField.Pulses, "Pulse sources (ID low high delay rise fall width period)"),
+        (BridgeField.Pwl, "PWL sources (ID time value …)"),
+        (BridgeField.Sines, "SIN sources (ID offset amplitude Hz delay damping phase°)"),
+        (BridgeField.Exponentials, "EXP sources (ID initial pulsed rise-delay rise-tau fall-delay fall-tau)"),
+        (BridgeField.Controls, "Current controls (ID voltage-source ID)"),
+        (BridgeField.Diodes, "Diode (ID IS thermal volts [CJO VJ M FC TT])"),
+        (BridgeField.Mos1, "MOS1 (ID threshold beta gamma phi lambda [CGS CGD CGB CBD CBS PB MJ FC] [Cox·W·L in F])"),
+        (BridgeField.Bjts, "BJT (ID IS BF BR forward-Vt reverse-Vt [BE C V M FC TT, then BC C V M FC TT])"),
+        (BridgeField.Bsim3, "BSIM3 3.3.0 (ID TOX NCH NSUB VTH0 W L PD PS AD AS)"),
+        (BridgeField.FdSoi, "Pinned FD-SOI DC (instance IDs)")
+    ];
+
+    private void Set(BridgeField field, ChangeEventArgs change) =>
+        Session.Execute(new SetBridgeDraft(field, change.Value?.ToString() ?? ""));
+
+    private async Task SetBackend(ChangeEventArgs change)
+    {
+        if (Enum.TryParse<SolverBackend>(change.Value?.ToString(), out var backend))
+            result = Session.Execute(new SetSolverBackend(Session.Version, backend));
+        await Changed.InvokeAsync();
+    }
+
+    private async Task Run(BridgeAnalysis analysis)
+    {
+        if (running) return;
+        running = true;
+        try
+        {
+            result = Session.BridgeDraft.Parse(analysis) is { } options
+                ? await Session.ExecuteBridgeAsync(new RunBridge(Session.Version, options), Solver.SolveCircuitAsync)
+                : new(CommandCode.InvalidInput, Session.Version, "Use spaces within each source row and semicolons between rows.");
+        }
+        finally { running = false; }
+    }
+
+    private static string AxisLabel(BridgeAnalysis analysis) => analysis switch
+    {
+        BridgeAnalysis.Ac => "Frequency (Hz)", BridgeAnalysis.Transient => "Time (s)", _ => "Operating point"
+    };
+    private static string Number(double value) => value.ToString("G9", CultureInfo.InvariantCulture);
+}

@@ -6,7 +6,7 @@ public class RegressionWorkflowTests
 {
     private static string Root
     {
-        get { var d = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); while (d is not null && !File.Exists(Path.Combine(d.FullName, "examples", "counter.normalized.json"))) d = d.Parent; return d!.FullName; }
+        get { var d = new DirectoryInfo(TestRepository.Root); while (d is not null && !File.Exists(Path.Combine(d.FullName, "examples", "counter.normalized.json"))) d = d.Parent; return d!.FullName; }
     }
     private static string Temp() => Path.Combine(Path.GetTempPath(), "velosim-workflow-" + Guid.NewGuid().ToString("N"));
     private static RegressionManifest Manifest() => new("counter", "slang_counter", [Path.Combine(Root, "examples", "slang_counter.sv")], "clk", "count", "rst_n", 8, TraceComparison.Parse("0 00000000\n1 00000001\n2 00000010", 8), [1, 4]);
