@@ -1,6 +1,7 @@
 #include "../../native/rtl/runtime.h"
 #include "../../native/rtl/vcd_trace.h"
 #include "../../native/rtl/checkpoint.h"
+#include "../../native/rtl/svdpi.h"
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -349,6 +350,43 @@ int main(){
   bool asserted=false;
   try{w64::check_assert(w64::lit(0,1,0,1),"boom");}catch(const std::runtime_error& e){asserted=std::string(e.what()).find("boom")!=std::string::npos;}
   check(asserted);
+
+  // Wave 2: IEEE 1800 ==? / !=?, casez / casex, and svdpi.h bit helpers.
+  check(text(wildeq(parse("1010"),parse("10zz")))=="1");
+  check(text(wildeq(parse("10x1"),parse("10xx")))=="1");
+  check(text(wildeq(parse("1110"),parse("10zz")))=="0");
+  check(text(wildeq(parse("1x10"),parse("10zz")))=="x");
+  check(text(wildeq(parse("1x10"),parse("00zz")))=="0");
+  check(text(wildneq(parse("1010"),parse("10zz")))=="0");
+  check(text(wildneq(parse("1110"),parse("10zz")))=="1");
+  check(text(wildneq(parse("1x10"),parse("10zz")))=="x");
+  check(casez_match(parse("1010"),parse("10zz")));
+  check(casez_match(parse("10z0"),parse("1010")));
+  check(!casez_match(parse("10x0"),parse("1010")));
+  check(casez_match(parse("10x0"),parse("10x0")));
+  check(casex_match(parse("10x0"),parse("1010")));
+  check(casex_match(parse("1010"),parse("10xz")));
+  check(!casex_match(parse("1110"),parse("10xz")));
+
+  // w64 fast-path wildcard equivalence with W oracle.
+  check(w64::exact(w64::wildeq(w64::to(parse("1010")),w64::to(parse("10zz"))),w64::lit(1,1)));
+  check(w64::exact(w64::wildeq(w64::to(parse("1x10")),w64::to(parse("10zz"))),w64::unknown(1)));
+  check(w64::exact(w64::wildneq(w64::to(parse("1110")),w64::to(parse("10zz"))),w64::lit(1,1)));
+  check(w64::casez_match(w64::to(parse("1010")),w64::to(parse("10zz"))));
+  check(!w64::casez_match(w64::to(parse("10x0")),w64::to(parse("1010"))));
+  check(w64::casex_match(w64::to(parse("10x0")),w64::to(parse("1010"))));
+
+  // svdpi.h bit and logic vector helpers.
+  svBitVecVal bv[2]{0,0};
+  svPutBitselBit(bv,37,sv_1);
+  check(svGetBitselBit(bv,37)==sv_1&&svGetBitselBit(bv,36)==sv_0);
+  svPutBitselBit(bv,37,sv_0);
+  check(svGetBitselBit(bv,37)==sv_0);
+  svLogicVecVal lv[2]{{0,0},{0,0}};
+  svPutBitselLogic(lv,5,sv_x);
+  svPutBitselLogic(lv,33,sv_z);
+  svPutBitselLogic(lv,34,sv_1);
+  check(svGetBitselLogic(lv,5)==sv_x&&svGetBitselLogic(lv,33)==sv_z&&svGetBitselLogic(lv,34)==sv_1&&svGetBitselLogic(lv,0)==sv_0);
  }
 }
 

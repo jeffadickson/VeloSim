@@ -15,6 +15,7 @@ public sealed partial class RtlDesign
     internal bool CanUsePortable64(RtlStateMode stateMode)
     {
         if (Timed) return false;
+        if (CollectDpiCalls().Count > 0) return false;
         bool hasBlocking = Statements(Body).Any(e => Kind(e) is "blocking" or "allocate" or "delete" or "queue_push" or "queue_pop" or "assoc_traverse");
         bool hasContainers = Memories.Any(m => m.Associative || m.Queue || m.Dynamic);
         bool useFastEvent = EventDriven && !hasBlocking && !hasContainers;
@@ -29,7 +30,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> CSharpPortNames()
     {
         var reserved = (
-            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc W64 W64Ops W2Ops"
+            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc OpenVcd DumpVcd CloseVcd W64 W64Ops W2Ops VcdWriter"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -116,6 +117,7 @@ public sealed partial class RtlDesign
             "and" => $"W64Ops.LAnd({CsExpr64(args[0])},{CsExpr64(args[1])})",
             "or" => $"W64Ops.LOr({CsExpr64(args[0])},{CsExpr64(args[1])})",
             "eq" or "neq" => (kind == "neq" ? "W64Ops.LNot(" : "") + $"W64Ops.Eq({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})" + (kind == "neq" ? ")" : ""),
+            "wildeq" or "wildneq" => $"W64Ops.{(kind == "wildneq" ? "WildNeq" : "WildEq")}({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})",
             "caseeq" or "caseneq" => $"new W64({(kind == "caseneq" ? "!" : "")}W64Ops.Exact({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})?1UL:0UL,0UL,0UL,1)",
             "lt" or "le" or "gt" or "ge" => $"W64Ops.{(args.All(ExpressionSigned) ? "SCmp" : "Cmp")}({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
             "concat" => $"W64Ops.Concat({CsExpr64(args[0])},{CsExpr64(args[1])})",
@@ -170,10 +172,10 @@ public sealed partial class RtlDesign
             "not" => $"W2Ops.LNot({CsExpr2(args[0])})",
             "and" => $"W2Ops.LAnd({CsExpr2(args[0])},{CsExpr2(args[1])})",
             "or" => $"W2Ops.LOr({CsExpr2(args[0])},{CsExpr2(args[1])})",
-            "eq" or "neq" or "caseeq" or "caseneq" =>
-                (kind is "neq" or "caseneq" ? "W2Ops.LNot(" : "")
+            "eq" or "neq" or "caseeq" or "caseneq" or "wildeq" or "wildneq" =>
+                (kind is "neq" or "caseneq" or "wildneq" ? "W2Ops.LNot(" : "")
                 + $"W2Ops.Eq({CsExpr2(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr2(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})"
-                + (kind is "neq" or "caseneq" ? ")" : ""),
+                + (kind is "neq" or "caseneq" or "wildneq" ? ")" : ""),
             "lt" or "le" or "gt" or "ge" =>
                 args.All(ExpressionSigned)
                     ? $"W2Ops.SCmp({CsExpr2(args[0], args.Max(ExpressionWidth), true)},{CsExpr2(args[1], args.Max(ExpressionWidth), true)},{args.Max(ExpressionWidth)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})"
@@ -323,25 +325,29 @@ public sealed partial class RtlDesign
                 break;
             }
             case "case":
+            {
                 string lbl = "cs" + unique++;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
-                int cw = Math.Max(ExpressionWidth(e.GetProperty("value")), items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).Select(i => ExpressionWidth(i.GetProperty("match"))).DefaultIfEmpty(1).Max());
-                bool csSigned = ExpressionSigned(e.GetProperty("value")) && items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).All(i => ExpressionSigned(i.GetProperty("match")));
+                string matcher = CaseKind(e) switch { "casez" => "W64Ops.CasezMatch", "casex" => "W64Ops.CasexMatch", _ => "W64Ops.Exact" };
+                var allMatches = items.SelectMany(CaseItemMatches).ToArray();
+                int cw = Math.Max(ExpressionWidth(e.GetProperty("value")), allMatches.Select(ExpressionWidth).DefaultIfEmpty(1).Max());
+                bool csSigned = ExpressionSigned(e.GetProperty("value")) && allMatches.All(ExpressionSigned);
                 code.AppendLine(twoState
                     ? $"{{ulong {lbl}={CsExpr2(e.GetProperty("value"), cw, csSigned)};"
                     : $"{{W64 {lbl}={CsExpr64(e.GetProperty("value"), cw, csSigned)};");
                 bool first = true;
-                foreach (var item in items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null))
+                foreach (var item in items.Where(i => !IsCaseDefault(i)))
                 {
+                    var ms = CaseItemMatches(item);
                     string cmp = twoState
-                        ? $"{lbl}=={CsExpr2(item.GetProperty("match"), cw, csSigned)}"
-                        : $"W64Ops.Exact({lbl},{CsExpr64(item.GetProperty("match"), cw, csSigned)})";
+                        ? string.Join(" || ", ms.Select(m => $"{lbl}=={CsExpr2(m, cw, csSigned)}"))
+                        : string.Join(" || ", ms.Select(m => $"{matcher}({lbl},{CsExpr64(m, cw, csSigned)})"));
                     code.AppendLine($"{(first ? "if" : "else if")}({cmp}){{");
                     CsStmt(code, item.GetProperty("body"), ref unique, twoState, trackBudget);
                     code.AppendLine("}");
                     first = false;
                 }
-                var defItem = items.FirstOrDefault(i => i.GetProperty("match").ValueKind == JsonValueKind.Null);
+                var defItem = items.FirstOrDefault(IsCaseDefault);
                 if (defItem.ValueKind != JsonValueKind.Undefined)
                 {
                     code.AppendLine(first ? "{" : "else{");
@@ -350,6 +356,7 @@ public sealed partial class RtlDesign
                 }
                 code.AppendLine("}");
                 break;
+            }
         }
     }
 
@@ -383,6 +390,7 @@ public sealed partial class RtlDesign
         if (hasRuntimeLoops) code.AppendLine("    private int _budget = 20000;");
         code.AppendLine("    private ulong _time;");
         code.AppendLine("    private bool _finished;");
+        code.AppendLine("    private VcdWriter? _vcd;");
         code.AppendLine("    public bool GotFinish => _finished;");
         code.AppendLine("    public Action<string>? DisplaySink { get; set; }");
         code.AppendLine("    private void EmitDisplay(string text) { if (DisplaySink is not null) DisplaySink(text); else Console.Write(text); }");
@@ -432,7 +440,22 @@ public sealed partial class RtlDesign
         code.AppendLine();
         code.AppendLine("    public ulong Time => _time;");
         code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)] public void TimeInc(ulong delta) => _time += delta;");
-        code.AppendLine("    public void Final() { }");
+        code.AppendLine("    public void Final() { CloseVcd(); }");
+        code.AppendLine("    public void OpenVcd(string path, string timescale = \"1ns\")");
+        code.AppendLine("    {");
+        code.AppendLine("        CloseVcd();");
+        code.Append($"        _vcd = new VcdWriter(path, \"{top}\", [");
+        code.AppendJoin(", ", Signals.Select(s => $"({CppStringLiteral(s.SourcePath ?? s.Name)}, {s.Width})"));
+        code.AppendLine("], timescale);");
+        code.AppendLine("    }");
+        code.AppendLine("    public void DumpVcd()");
+        code.AppendLine("    {");
+        code.AppendLine("        if (_vcd is null) return;");
+        code.Append("        _vcd.Dump(_time, [");
+        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"new W64(_s{idx}, 0UL, 0UL, {s.Width})" : $"_s{idx}"));
+        code.AppendLine("]);");
+        code.AppendLine("    }");
+        code.AppendLine("    public void CloseVcd() { _vcd?.Dispose(); _vcd = null; }");
         code.AppendLine();
         foreach (var sig in Signals.Where(s => s.Direction != "internal"))
         {
@@ -743,6 +766,36 @@ public static class W64Ops
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool Exact(W64 a, W64 b) => a.V == b.V && a.X == b.X && a.Z == b.Z;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool CasezMatch(W64 a, W64 b)
+    {
+        int w = a.W > b.W ? a.W : b.W;
+        ulong care = ~(a.Z | b.Z) & Mask(w);
+        return (((a.V ^ b.V) | (a.X ^ b.X)) & care) == 0UL;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool CasexMatch(W64 a, W64 b)
+    {
+        int w = a.W > b.W ? a.W : b.W;
+        ulong care = ~(a.X | a.Z | b.X | b.Z) & Mask(w);
+        return ((a.V ^ b.V) & care) == 0UL;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 WildEq(W64 a, W64 b)
+    {
+        int w = a.W > b.W ? a.W : b.W;
+        ulong care = ~(b.X | b.Z) & Mask(w);
+        ulong au = (a.X | a.Z) & care;
+        ulong known = care & ~au;
+        if (((a.V ^ b.V) & known) != 0UL) return new W64(0UL, 0UL, 0UL, 1);
+        return au != 0UL ? new W64(0UL, 1UL, 0UL, 1) : new W64(1UL, 0UL, 0UL, 1);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 WildNeq(W64 a, W64 b) => LNot(WildEq(a, b));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W64 Eq(W64 a, W64 b)
@@ -1156,6 +1209,96 @@ public sealed class MemLog2
     }
 
     public void Clear() { _count = 0; _overflow?.Clear(); }
+}
+
+public sealed class VcdWriter : IDisposable
+{
+    private readonly System.IO.StreamWriter _writer;
+    private readonly string[] _codes;
+    private readonly W64[] _last;
+    private bool _initial;
+    private bool _disposed;
+
+    public VcdWriter(string path, string topName, (string Name, int Width)[] signals, string timescale = "1ns")
+    {
+        _writer = new System.IO.StreamWriter(path, false, new System.Text.UTF8Encoding(false));
+        _codes = new string[signals.Length];
+        _last = new W64[signals.Length];
+        _writer.Write("$version VeloSim $end\n");
+        _writer.Write($"$timescale {timescale} $end\n");
+        _writer.Write($"$scope module {(string.IsNullOrEmpty(topName) ? "top" : topName)} $end\n");
+        for (int i = 0; i < signals.Length; ++i)
+        {
+            string code = MakeCode(i);
+            _codes[i] = code;
+            _last[i] = W64Ops.Unknown(signals[i].Width);
+            string leaf = signals[i].Name.Replace('.', '_');
+            _writer.Write(signals[i].Width > 1
+                ? $"$var wire {signals[i].Width} {code} {leaf} [{signals[i].Width - 1}:0] $end\n"
+                : $"$var wire 1 {code} {leaf} $end\n");
+        }
+        _writer.Write("$upscope $end\n$enddefinitions $end\n");
+    }
+
+    private static string MakeCode(int index)
+    {
+        var sb = new System.Text.StringBuilder(4);
+        int n = index;
+        do { sb.Append((char)(33 + (n % 94))); n /= 94; } while (n > 0);
+        return sb.ToString();
+    }
+
+    private void WriteVal(W64 val, string code)
+    {
+        if (val.W == 1)
+        {
+            char ch = (val.Z & 1UL) != 0 ? 'z' : (val.X & 1UL) != 0 ? 'x' : (val.V & 1UL) != 0 ? '1' : '0';
+            _writer.Write(ch);
+            _writer.Write(code);
+            _writer.Write('\n');
+            return;
+        }
+        _writer.Write('b');
+        _writer.Write(W64Ops.Text(val));
+        _writer.Write(' ');
+        _writer.Write(code);
+        _writer.Write('\n');
+    }
+
+    public void Dump(ulong time, W64[] values)
+    {
+        if (_disposed) return;
+        if (!_initial)
+        {
+            _writer.Write('#');
+            _writer.Write(time);
+            _writer.Write("\n$dumpvars\n");
+            for (int i = 0; i < _codes.Length && i < values.Length; ++i)
+            {
+                _last[i] = values[i];
+                WriteVal(values[i], _codes[i]);
+            }
+            _writer.Write("$end\n");
+            _initial = true;
+            return;
+        }
+        bool wroteTime = false;
+        for (int i = 0; i < _codes.Length && i < values.Length; ++i)
+        {
+            if (W64Ops.Exact(values[i], _last[i])) continue;
+            if (!wroteTime) { _writer.Write('#'); _writer.Write(time); _writer.Write('\n'); wroteTime = true; }
+            _last[i] = values[i];
+            WriteVal(values[i], _codes[i]);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _writer.Flush();
+        _writer.Dispose();
+    }
 }
 """;
 }

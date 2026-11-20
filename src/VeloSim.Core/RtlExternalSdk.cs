@@ -3,7 +3,7 @@ namespace VeloSim;
 
 public static class RtlExternalSdk
 {
-    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null)
+    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null, bool enableCoverage = false)
     {
         var effectiveLimits = limits ?? RtlDesignLimits.Bounded;
         if (new FileInfo(ir).Length > effectiveLimits.MaxIrBytes) throw new ArgumentException($"RTL IR exceeds {effectiveLimits.MaxIrBytes / (1024 * 1024)} MiB.");
@@ -19,26 +19,28 @@ public static class RtlExternalSdk
         if (target == RtlTargetLanguage.Rust)
             return await ExportRustAsync(design, json, top, directory, stateMode, token).ConfigureAwait(false);
 
-        string header = design.EmitModelHeader(top, stateMode);
+        string header = design.EmitModelHeader(top, stateMode, enableCoverage);
         string? runtime = null;
         for (var parent = new DirectoryInfo(Environment.CurrentDirectory); parent is not null; parent = parent.Parent)
             if (File.Exists(Path.Combine(parent.FullName, "native/rtl/external_model.h"))) { runtime = Path.Combine(parent.FullName, "native/rtl"); break; }
         if (runtime is null) throw new IOException("Run rtl-export from a VeloSim checkout containing native/rtl/external_model.h.");
         Directory.CreateDirectory(directory);
         await File.WriteAllTextAsync(Path.Combine(directory, "V" + top + ".h"), header, token).ConfigureAwait(false);
-        foreach (string file in new[] { "runtime.h", "external_model.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
+        foreach (string file in new[] { "runtime.h", "external_model.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "svdpi.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
         if (design.Timed) File.Copy(Path.Combine(runtime, "hdl_scheduler.h"), Path.Combine(directory, "hdl_scheduler.h"));
         await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory,"timing-diagnostics.txt"),
             "Conservative timed-process analysis; warnings do not prove races, and absence does not prove race freedom.\n"+string.Join('\n',design.TimingDiagnostics)+"\n",token).ConfigureAwait(false);
-        string cmake = """
+        int maxWordBits = design.MaxWordBits;
+        string wideDef = maxWordBits > 256 ? $"\ntarget_compile_definitions(velosim_vpi PUBLIC VSRTL_MAX_WORD_BITS={maxWordBits})" : "";
+        string cmake = $$"""
             cmake_minimum_required(VERSION 3.20)
             project(VeloSimExternal LANGUAGES C CXX)
             set(CMAKE_CXX_STANDARD 20)
             set(CMAKE_CXX_STANDARD_REQUIRED ON)
             set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
             add_library(velosim_vpi SHARED vpi.cpp)
-            target_compile_definitions(velosim_vpi PRIVATE VELOSIM_VPI_BUILD)
+            target_compile_definitions(velosim_vpi PRIVATE VELOSIM_VPI_BUILD){{wideDef}}
             if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
               target_compile_options(velosim_vpi PRIVATE -fno-semantic-interposition)
             endif()
@@ -65,15 +67,16 @@ public static class RtlExternalSdk
             start zero (in --two-state mode, all signals start zero and X/Z inputs coerce to zero).
             Clockless models have no synthetic clock: eval() settles their DAG on startup and input changes.
             Bit inputs and destinations convert X/Z bits to zero.
-            Use bits() for X/Z and up to 256-bit words; uint64 conversion rejects unknown or overflowing values.
+            Use bits() for X/Z and wide words (256-bit default; 512-bit when exported with --large-design); uint64 conversion rejects unknown or overflowing values.
             Use openVcd()/dumpVcd()/closeVcd() for IEEE 1364 hierarchical 4-state VCD waveform output,
-            saveCheckpoint()/restoreCheckpoint() for versioned binary checkpoints, and
-            loadMemoryHex()/loadMemoryBin() for IEEE 1364 $readmemh/$readmemb memory initialization.
+            saveCheckpoint()/restoreCheckpoint() for versioned binary checkpoints,
+            loadMemoryHex()/loadMemoryBin() for IEEE 1364 $readmemh/$readmemb memory initialization,
+            and coveragePoints()/writeCoverageJson() when exported with --coverage.
             loadVpi() accepts a native plugin with a null-terminated exported
             vlog_startup_routines table before the first eval().
             The VPI subset supports signal lookup, metadata, identity, immediate
             input deposits, radix/vector/scalar values, and start/end/value/read-only
-            callbacks. There is no Verilator/DPI ABI.
+            callbacks. IEEE 1800 Annex I svdpi.h core types and scalar DPI-C C imports are supported.
             Models whose manifest says explicit-time include hdl_scheduler.h.
             Their timeInc()/eval() host sequence executes queued older events
             before applying new input values at the host tick. Query eventsPending()
@@ -88,7 +91,7 @@ public static class RtlExternalSdk
             do not prove races; absence does not prove race freedom.
             Models and handles belong to their creating thread.
             Concatenation NBA targets require distinct destination words and at
-            most 256 total assigned bits.
+            most 256 total assigned bits (512 in wide mode).
             Known bases for indexed reads and selected writes are limited to
             0..INT32_MAX; larger known bases throw before sequential updates commit.
 
@@ -99,15 +102,15 @@ public static class RtlExternalSdk
             SHA-256 hashes cover the generated/copied input files, excluding the
             manifest itself and any files you add later.
             """, token).ConfigureAwait(false);
-        var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
+        var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "svdpi.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
         if (design.Timed) inputPaths.Add("hdl_scheduler.h");
         inputPaths.Add("timing-diagnostics.txt");
         var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
         string manifest = Path.Combine(directory, "external-model.json");
         var names = design.ExternalPortNames();
         bool twoState = stateMode == RtlStateMode.TwoState;
-        string semantics = (twoState ? "two-state; " : "") + (design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
-        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 256, top, "V" + top,
+        string semantics = (twoState ? "two-state; " : "") + (enableCoverage ? "coverage; " : "") + (design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
+        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, maxWordBits, top, "V" + top,
             semantics,
             design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
             inputs.Select(input => new ExternalInputContract(Path.GetFileName(input.Path), input.Sha256)).ToArray());

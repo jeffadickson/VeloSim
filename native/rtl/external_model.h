@@ -1,6 +1,7 @@
 #pragma once
 #include "runtime.h"
 #include "vpi_user.h"
+#include "svdpi.h"
 #include <functional>
 #include <memory>
 #include <thread>
@@ -10,6 +11,7 @@
 #endif
 namespace vsrtl {
 struct Signal { const char* name; int width, direction; bool is_signed=false; bool two_state=false; };
+struct CoveragePoint { const char* id; const char* kind; uint64_t hits; };
 class Port;
 class VS_VPI_API Model {
  friend class Port;
@@ -76,6 +78,8 @@ public:
  size_t loadMemoryBin(size_t mem_id, const std::string& path, size_t start_addr = 0, size_t end_addr = SIZE_MAX);
  void setDisplaySink(std::function<void(const std::string&)> sink);
  void emitDisplay(const std::string& text);
+ virtual std::vector<CoveragePoint> coveragePoints() const { return {}; }
+ void writeCoverageJson(const std::string& path) const;
  const std::string& name() const; const std::vector<Signal>& signals() const;
  W get(size_t id) const; void put(size_t id, W value);
  std::weak_ptr<int> lifetime() const;
@@ -84,6 +88,15 @@ public:
 };
 class Port {
  Model* model; size_t id; int width; bool is_input;
+ static uint64_t toUint64Checked(const W& v) {
+  uint64_t xz = 0;
+  for (int i = 0; i < Bits::kLimbs; ++i) xz |= v.x.limb[i] | v.z.limb[i];
+  if (xz != 0) throw std::runtime_error("integer conversion of X/Z port");
+  uint64_t hi = 0;
+  for (int i = 1; i < Bits::kLimbs; ++i) hi |= v.v.limb[i];
+  if (hi != 0) throw std::overflow_error("port exceeds uint64_t");
+  return v.v.limb[0];
+ }
 public:
  Port(Model& owner, size_t index)
   : model(&owner), id(index),
@@ -122,18 +135,9 @@ public:
     if ((v.x.limb[0] | v.z.limb[0]) != 0) throw std::runtime_error("integer conversion of X/Z port");
     return v.v.limb[0];
    }
-   if ((v.x.limb[0] | v.x.limb[1] | v.x.limb[2] | v.x.limb[3] | v.z.limb[0] | v.z.limb[1] | v.z.limb[2] | v.z.limb[3]) != 0)
-    throw std::runtime_error("integer conversion of X/Z port");
-   if ((v.v.limb[1] | v.v.limb[2] | v.v.limb[3]) != 0)
-    throw std::overflow_error("port exceeds uint64_t");
-   return v.v.limb[0];
+   return toUint64Checked(v);
   }
-  const W v = model->get(id);
-  if ((v.x.limb[0] | v.x.limb[1] | v.x.limb[2] | v.x.limb[3] | v.z.limb[0] | v.z.limb[1] | v.z.limb[2] | v.z.limb[3]) != 0)
-   throw std::runtime_error("integer conversion of X/Z port");
-  if ((v.v.limb[1] | v.v.limb[2] | v.v.limb[3]) != 0)
-   throw std::overflow_error("port exceeds uint64_t");
-  return v.v.limb[0];
+  return toUint64Checked(model->get(id));
  }
 };
 }

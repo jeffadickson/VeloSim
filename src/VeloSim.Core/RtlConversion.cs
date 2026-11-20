@@ -9,7 +9,7 @@ public sealed partial class RtlDesign
         JsonShape.Fields(e,["kind","value","width","signed","two_state"]);
         ValidateExpression(e.GetProperty("value"),depth+1);
         int width=e.GetProperty("width").GetInt32();_=e.GetProperty("signed").GetBoolean();_=e.GetProperty("two_state").GetBoolean();
-        if(width is <1 or >256)throw new IrValidationException("Call conversion width must be 1..256.");return width;
+        if(width < 1 || width > Limits.MaxWordWidth)throw new IrValidationException($"Call conversion width must be 1..{Limits.MaxWordWidth}.");return width;
     }
     private string Conversion(JsonElement e)
     {

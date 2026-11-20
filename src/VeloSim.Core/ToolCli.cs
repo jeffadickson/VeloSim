@@ -38,7 +38,8 @@ public static class ToolCli
             };
             var stateMode = options.Flag("--two-state") ? RtlStateMode.TwoState : RtlStateMode.FourState;
             var limits = options.Flag("--large-design") ? RtlDesignLimits.Large : RtlDesignLimits.Bounded;
-            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits).ConfigureAwait(false)); return 0;
+            bool enableCoverage = options.Flag("--coverage");
+            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage).ConfigureAwait(false)); return 0;
         }
         if (args.Length > 0 && args[0] == "fifo-differential")
         {

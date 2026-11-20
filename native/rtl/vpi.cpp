@@ -19,13 +19,14 @@ struct Handle {
  Model* model{}; std::weak_ptr<int> life; int kind{}; size_t id{}; bool released=false, active=true;
  std::vector<size_t> items; size_t cursor=0; int itemKind=0;
  s_cb_data cb{}; s_vpi_time callbackTime{}; s_vpi_value callbackValue{};
- std::string stringValue; s_vpi_vecval vectorValue[8]{}; W previous{};
+ std::string stringValue; s_vpi_vecval vectorValue[VSRTL_MAX_WORD_BITS / 32]{}; W previous{};
 };
 thread_local std::unordered_map<vpiHandle,std::unique_ptr<Handle>> handles;
 thread_local Model* current=nullptr;
 thread_local std::weak_ptr<int> currentLife;
+thread_local svScope dpiScope=nullptr;
 thread_local std::string error, resultString;
-thread_local s_vpi_vecval resultVector[8];
+thread_local s_vpi_vecval resultVector[VSRTL_MAX_WORD_BITS / 32];
 Model& selected(){if(!current||currentLife.expired())throw std::runtime_error("no active VeloSim model; call useVpi()");current->checkThread();return *current;}
 struct Activation {
  Model* previous=current; std::weak_ptr<int> life=currentLife;
@@ -48,11 +49,12 @@ std::string radixText(W w,int group){
 }
 W radixWord(const char* input,int width,int group){
  if(!input)throw std::runtime_error("null radix string");
- const int limit=((width<=128?128:256)+group-1)/group;
+ const int cap=width<=128?128:(width<=256?256:VSRTL_MAX_WORD_BITS);
+ const int limit=(cap+group-1)/group;
  Bits v=0,x=0,z=0;bool any=false;
  for(int i=0;i<=limit;i++){
   unsigned char c=input[i];if(!c){if(!any)throw std::runtime_error("empty radix string");return vsrtl::word(v,x,z,width);}
-  if(i==limit)throw std::runtime_error("radix string exceeds256-bit digit budget");
+  if(i==limit)throw std::runtime_error(cap<=256?"radix string exceeds256-bit digit budget":"radix string exceeds512-bit digit budget");
   if(c>='A'&&c<='Z')c+=32;
   if(!i){if(c=='x')x=~Bits(0);else if(c=='z')z=~Bits(0);}
   v<<=group;x<<=group;z<<=group;auto bits=vsrtl::mask(group);
@@ -63,11 +65,13 @@ W radixWord(const char* input,int width,int group){
 }
 W decimalWord(const char* input,int width){
  if(!input)throw std::runtime_error("null decimal string");
- size_t n=0;const size_t digits=width<=128?39:78;while(n<=digits&&input[n])++n;
- if(!n||n>digits)throw std::runtime_error("decimal string requires1..78characters");
+ const int cap=width<=128?128:(width<=256?256:VSRTL_MAX_WORD_BITS);
+ const size_t digits=width<=128?39:(width<=256?78:155);
+ size_t n=0;while(n<=digits&&input[n])++n;
+ if(!n||n>digits)throw std::runtime_error(cap<=256?"decimal string requires1..78characters":"decimal string requires1..155characters");
  if(n==1&&(input[0]=='x'||input[0]=='X'))return vsrtl::unknown(width);
  if(n==1&&(input[0]=='z'||input[0]=='Z'))return vsrtl::word(0,0,~Bits(0),width);
- Bits value=0;for(size_t i=0;i<n;++i){if(input[i]<'0'||input[i]>'9')throw std::runtime_error("unsigned decimal digit error");unsigned digit=input[i]-'0';if(value>(vsrtl::mask(width<=128?128:256)-digit)/10)throw std::runtime_error("256-bit decimal overflow");value=value*10+digit;}
+ Bits value=0;for(size_t i=0;i<n;++i){if(input[i]<'0'||input[i]>'9')throw std::runtime_error("unsigned decimal digit error");unsigned digit=input[i]-'0';if(value>(vsrtl::mask(cap)-digit)/10)throw std::runtime_error(cap<=256?"256-bit decimal overflow":"512-bit decimal overflow");value=value*10+digit;}
  return vsrtl::word(value,0,0,width);
 }
 std::string decimalText(Bits v){std::string s;do{s+=char('0'+v%10);v/=10;}while(v);std::reverse(s.begin(),s.end());return s;}
@@ -78,7 +82,7 @@ void encode(W w,p_vpi_value value,std::string& buffer,s_vpi_vecval* vector,bool 
  case vpiDecStrVal:buffer=w.x?(w.x==vsrtl::mask(w.w)?"x":"X"):w.z?(w.z==vsrtl::mask(w.w)?"z":"Z"):((is_signed&&vsrtl::negative(w))?"-"+decimalText((~w.v+1)&vsrtl::mask(w.w)):decimalText(w.v));value->value.str=buffer.data();break;
  case vpiOctStrVal:buffer=radixText(w,3);value->value.str=buffer.data();break;
  case vpiHexStrVal:buffer=radixText(w,4);value->value.str=buffer.data();break;
- case vpiVectorVal:{Bits a=w.v|w.x,b=w.x|w.z;for(int i=0;i<8;i++)vector[i]={uint32_t(a>>(32*i)),uint32_t(b>>(32*i))};value->value.vector=vector;break;}
+ case vpiVectorVal:{Bits a=w.v|w.x,b=w.x|w.z;for(int i=0;i<VSRTL_MAX_WORD_BITS/32;i++)vector[i]={uint32_t(a>>(32*i)),uint32_t(b>>(32*i))};value->value.vector=vector;break;}
  case vpiIntVal:if(w.x||w.z)throw std::runtime_error("X/Z integer read; request binary or vector format");value->value.integer=static_cast<int32_t>(uint32_t(w.v));break;
  case vpiScalarVal:if(w.w!=1)throw std::runtime_error("scalar format requires width1");value->value.scalar=w.x?vpiX:w.z?vpiZ:w.v?vpi1:vpi0;break;
  default:break;
@@ -89,6 +93,18 @@ std::vector<Handle*> callbacks(Model& m){std::vector<Handle*> result;for(auto& [
  // Handles are allocated in registration order; retain that order explicitly below.
  std::sort(result.begin(),result.end(),[](auto a,auto b){return a->id<b->id;});return result;}
 void invoke(Handle& h){if(!h.active||h.released)return;Activation active(*h.model);auto data=h.cb;if(data.time){h.callbackTime=h.cb.time->type==vpiSuppressTime?s_vpi_time{vpiSuppressTime,0,0,0}:s_vpi_time{vpiSimTime,uint32_t(h.model->time()>>32),uint32_t(h.model->time()),0};data.time=&h.callbackTime;}if(data.value&&data.obj){auto& obj=signal(data.obj);encode(h.model->get(obj.id),&h.callbackValue,h.stringValue,h.vectorValue,obj.model->signals()[obj.id].is_signed);data.value=&h.callbackValue;}data.cb_rtn(&data);}
+std::string jsonEscape(const std::string& input){
+ std::string out;out.reserve(input.size()+4);
+ for(unsigned char c:input){
+  if(c=='\\')out+="\\\\";
+  else if(c=='"')out+="\\\"";
+  else if(c=='\n')out+="\\n";
+  else if(c=='\r')out+="\\r";
+  else if(c=='\t')out+="\\t";
+  else out+=char(c);
+ }
+ return out;
+}
 }
 namespace vsrtl {
 struct Model::State {
@@ -112,7 +128,7 @@ void Model::notifyCallbackStateChanged(bool active) noexcept {
 Model::Model(std::string name,std::vector<Signal> signals,int clock,int abi):state(std::make_unique<State>()),owner_thread(state->owner){
  if(abi!=2||name.empty()||signals.empty()||signals.size()>65536||clock < -1||(clock >= 0 && (size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)))throw std::invalid_argument("invalid external model interface");
  state->name=std::move(name);state->names.reserve(signals.size());s.reserve(signals.size());
- for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>256||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(sig.two_state?word(0,0,0,sig.width):unknown(sig.width));}
+ for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>VSRTL_MAX_WORD_BITS||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(sig.two_state?word(0,0,0,sig.width):unknown(sig.width));}
  for(size_t i=0;i<signals.size();i++)state->signals.push_back({state->names[i].c_str(),signals[i].width,signals[i].direction,signals[i].is_signed,signals[i].two_state});if(clock>=0)s[clock]=word(0,0,0,1);
  refreshFastFlags();
 }
@@ -120,6 +136,7 @@ Model::~Model(){
  state->vcd.close();
  // Derived state is already gone; destruction invalidates callbacks, never calls HDL or plugins.
  for(auto& [key,h]:handles)if(h->model==this&&h->life.lock()==state->life)h->active=false;
+ if(dpiScope==static_cast<svScope>(this))dpiScope=nullptr;
  state->life.reset();for(auto module:state->plugins){
 #if defined(_WIN32)
  FreeLibrary(static_cast<HMODULE>(module));
@@ -182,6 +199,21 @@ size_t Model::loadMemoryHex(size_t mem_id,const std::string& path,size_t start_a
 size_t Model::loadMemoryBin(size_t mem_id,const std::string& path,size_t start_addr,size_t end_addr){checkThread();size_t loaded=0;if(loadDerivedMemory(mem_id,path,false,start_addr,end_addr,loaded))return loaded;if(mem_id>=mem.size()||mem[mem_id].empty())throw std::out_of_range("invalid memory id for loadMemoryBin");return load_mem_file(mem[mem_id],mem[mem_id][0].w,path,false,start_addr,end_addr);}
 void Model::setDisplaySink(std::function<void(const std::string&)> sink){checkThread();state->displaySink=std::move(sink);}
 void Model::emitDisplay(const std::string& text){checkThread();if(state->displaySink)state->displaySink(text);else std::cout<<text;}
+void Model::writeCoverageJson(const std::string& path) const{
+ checkThread();
+ auto pts=coveragePoints();
+ uint64_t covered=0;
+ for(const auto& p:pts)if(p.hits>0)++covered;
+ std::ofstream out(path,std::ios::binary|std::ios::trunc);
+ if(!out)throw std::runtime_error("failed to open coverage file for writing: "+path);
+ out<<"{\"schema\":\"velosim.dut.coverage.v1\",\"model\":\""<<jsonEscape(state->name)<<"\",\"total\":"<<pts.size()<<",\"covered\":"<<covered<<",\"points\":[";
+ for(size_t i=0;i<pts.size();++i){
+  if(i)out<<',';
+  out<<"{\"id\":\""<<jsonEscape(pts[i].id?pts[i].id:"")<<"\",\"kind\":\""<<jsonEscape(pts[i].kind?pts[i].kind:"")<<"\",\"hits\":"<<pts[i].hits<<'}';
+ }
+ out<<"]}\n";
+ if(!out)throw std::runtime_error("failed writing coverage file: "+path);
+}
 void Model::loadVpi(const std::string& path){
  checkThread();if(fast_evaluating||state->evaluating||state->started||gotFinish()||state->plugins.size()>=64)throw std::runtime_error("load VPI plugins before first eval; maximum64");Activation active(*this);
 #if defined(_WIN32)
@@ -206,7 +238,7 @@ PLI_BYTE8* vpi_get_str(PLI_INT32 property,vpiHandle object){return api([&]()->PL
 void vpi_get_value(vpiHandle object,p_vpi_value value){action([&](){if(!value)throw std::runtime_error("null VPI value");auto& h=signal(object);encode(h.model->get(h.id),value,resultString,resultVector,h.model->signals()[h.id].is_signed);});}
 vpiHandle vpi_put_value(vpiHandle object,p_vpi_value value,p_vpi_time time,PLI_INT32 flags){return api([&]()->vpiHandle{
  if(!value||flags!=vpiNoDelay||(time&&(time->type!=vpiSimTime&&time->type!=vpiSuppressTime||time->high||time->low)))throw std::runtime_error("only immediate input deposits supported");auto& h=signal(object);int width=h.model->signals()[h.id].width;W w{};
- if(value->format==vpiBinStrVal){if(!value->value.str)throw std::runtime_error("null binary string");std::string bits;for(int i=0;i<=256;i++){char c=value->value.str[i];if(!c)break;if(i==256)throw std::runtime_error("binary value exceeds256bits");bits+=c=='X'?'x':c=='Z'?'z':c;}if(bits.size()!=size_t(width))throw std::runtime_error("binary deposit must match declared width");w=vsrtl::parse(bits);}
+ if(value->format==vpiBinStrVal){if(!value->value.str)throw std::runtime_error("null binary string");std::string bits;for(int i=0;i<=VSRTL_MAX_WORD_BITS;i++){char c=value->value.str[i];if(!c)break;if(i==VSRTL_MAX_WORD_BITS)throw std::runtime_error(VSRTL_MAX_WORD_BITS<=256?"binary value exceeds256bits":"binary value exceeds512bits");bits+=c=='X'?'x':c=='Z'?'z':c;}if(bits.size()!=size_t(width))throw std::runtime_error("binary deposit must match declared width");w=vsrtl::parse(bits);}
  else if(value->format==vpiDecStrVal)w=decimalWord(value->value.str,width);
  else if(value->format==vpiOctStrVal)w=radixWord(value->value.str,width,3);
  else if(value->format==vpiHexStrVal)w=radixWord(value->value.str,width,4);
@@ -227,4 +259,24 @@ PLI_INT32 vpi_chk_error(p_vpi_error_info info){if(error.empty())return 0;if(info
 PLI_INT32 vpi_control(PLI_INT32 operation,...){return api([&](){if(operation!=vpiFinish)throw std::runtime_error("only vpiFinish supported");selected().finish();return PLI_INT32(1);},PLI_INT32(0));}
 PLI_INT32 vpi_printf(PLI_BYTE8* format,...){if(!format)return 0;va_list args;va_start(args,format);int n=std::vprintf(format,args);va_end(args);return n;}
 PLI_INT32 vpi_get_vlog_info(p_vpi_vlog_info info){return api([&](){if(!info)throw std::runtime_error("null vlog info");*info={0,nullptr,const_cast<char*>("VeloSim"),const_cast<char*>("external.v2")};return PLI_INT32(1);},PLI_INT32(0));}
+svScope svGetScope(void){
+ if(dpiScope)return dpiScope;
+ if(current&&!currentLife.expired())return static_cast<svScope>(current);
+ return nullptr;
+}
+svScope svSetScope(const svScope scope){
+ svScope prev=svGetScope();
+ dpiScope=scope;
+ return prev;
+}
+const char* svGetNameFromScope(const svScope scope){
+ if(!scope)return nullptr;
+ return reinterpret_cast<const Model*>(scope)->name().c_str();
+}
+svScope svGetScopeFromName(const char* scopeName){
+ if(!scopeName)return nullptr;
+ if(current&&!currentLife.expired()&&current->name()==scopeName)return static_cast<svScope>(current);
+ if(dpiScope&&reinterpret_cast<const Model*>(dpiScope)->name()==scopeName)return dpiScope;
+ return nullptr;
+}
 }

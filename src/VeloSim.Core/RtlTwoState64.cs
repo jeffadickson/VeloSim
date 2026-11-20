@@ -66,6 +66,11 @@ public sealed partial class RtlDesign
             var valEl = e.GetProperty("value");
             return $"vsrtl::w2::selidx({Expression2(valEl)},{ExpressionWidth(valEl)},{Expression2(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
         }
+        if (kind == "dpi_call")
+        {
+            string callArgs = string.Join(",", e.GetProperty("args").EnumerateArray().Select(a => Expression2(a)));
+            return Extend($"vsrtl::w2::resize(::{Name(e)}({callArgs}),{e.GetProperty("width").GetInt32()})");
+        }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ew);
         return kind switch
@@ -85,10 +90,10 @@ public sealed partial class RtlDesign
             "not" => $"vsrtl::w2::lnot({Expression2(args[0])})",
             "and" => $"vsrtl::w2::land({Expression2(args[0])},{Expression2(args[1])})",
             "or" => $"vsrtl::w2::lor({Expression2(args[0])},{Expression2(args[1])})",
-            "eq" or "neq" or "caseeq" or "caseneq" =>
-                (kind is "neq" or "caseneq" ? "vsrtl::w2::lnot(" : "")
+            "eq" or "neq" or "caseeq" or "caseneq" or "wildeq" or "wildneq" =>
+                (kind is "neq" or "caseneq" or "wildneq" ? "vsrtl::w2::lnot(" : "")
                 + $"vsrtl::w2::eq({Expression2(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{Expression2(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})"
-                + (kind is "neq" or "caseneq" ? ")" : ""),
+                + (kind is "neq" or "caseneq" or "wildneq" ? ")" : ""),
             "lt" or "le" or "gt" or "ge" =>
                 args.All(ExpressionSigned)
                     ? $"vsrtl::w2::scmp({Expression2(args[0], args.Max(ExpressionWidth), true)},{Expression2(args[1], args.Max(ExpressionWidth), true)},{args.Max(ExpressionWidth)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})"
@@ -119,7 +124,7 @@ public sealed partial class RtlDesign
         code.AppendLine($"_vs_next[{selectedId}]=vsrtl::w2::depidx(_vs_next[{selectedId}],{Signals[selectedId].Width},{basis},{width},{(descending ? "true" : "false")},{value});");
     }
 
-    private void Statement2(StringBuilder code, JsonElement e, ref int unique, bool trackBudget)
+    private void Statement2(StringBuilder code, JsonElement e, ref int unique, bool trackBudget, List<(string Id, string Kind)>? coverage = null)
     {
         if (trackBudget) code.AppendLine("execution_step(execution_budget);");
         switch (Kind(e))
@@ -129,7 +134,7 @@ public sealed partial class RtlDesign
                 if (Kind(e) == "do") code.AppendLine("do{");
                 else code.AppendLine($"while(vsrtl::w2::yes({Expression2(e.GetProperty("condition"))})){{");
                 code.AppendLine("execution_step(execution_budget);");
-                Statement2(code, e.GetProperty("body"), ref unique, trackBudget);
+                Statement2(code, e.GetProperty("body"), ref unique, trackBudget, coverage);
                 code.AppendLine(Kind(e) == "do" ? $"}}while(vsrtl::w2::yes({Expression2(e.GetProperty("condition"))}));" : "}");
                 break;
             case "runtime_repeat":
@@ -137,17 +142,17 @@ public sealed partial class RtlDesign
                 var cntEl = e.GetProperty("count");
                 code.AppendLine($"for(unsigned {runtimeLoop}=repeat_count(vsrtl::w2::from({Expression2(cntEl)},{ExpressionWidth(cntEl)}),{(ExpressionSigned(cntEl) ? "true" : "false")});{runtimeLoop}>0;--{runtimeLoop}){{");
                 code.AppendLine("execution_step(execution_budget);");
-                Statement2(code, e.GetProperty("body"), ref unique, trackBudget);
+                Statement2(code, e.GetProperty("body"), ref unique, trackBudget, coverage);
                 code.AppendLine("}");
                 break;
             case "repeat":
                 string loop = "repeat" + unique++;
                 code.AppendLine($"for(int {loop}=0;{loop}<{e.GetProperty("count").GetInt32()};++{loop}){{");
-                Statement2(code, e.GetProperty("body"), ref unique, trackBudget);
+                Statement2(code, e.GetProperty("body"), ref unique, trackBudget, coverage);
                 code.AppendLine("}");
                 break;
             case "block":
-                foreach (var item in e.GetProperty("items").EnumerateArray()) Statement2(code, item, ref unique, trackBudget);
+                foreach (var item in e.GetProperty("items").EnumerateArray()) Statement2(code, item, ref unique, trackBudget, coverage);
                 break;
             case "nba":
                 var target = e.GetProperty("target");
@@ -180,12 +185,19 @@ public sealed partial class RtlDesign
                 }
                 break;
             case "if":
+            {
+                int ifId = unique++;
+                int thenCov = RegisterCoveragePoint(coverage, $"if.{ifId}.then", "branch");
+                int elseCov = RegisterCoveragePoint(coverage, $"if.{ifId}.else", "branch");
                 code.AppendLine($"if(vsrtl::w2::yes({Expression2(e.GetProperty("condition"))})){{");
-                Statement2(code, e.GetProperty("then"), ref unique, trackBudget);
+                if (thenCov >= 0) code.AppendLine($"++_vs_cov[{thenCov}];");
+                Statement2(code, e.GetProperty("then"), ref unique, trackBudget, coverage);
                 code.AppendLine("}else{");
-                Statement2(code, e.GetProperty("else"), ref unique, trackBudget);
+                if (elseCov >= 0) code.AppendLine($"++_vs_cov[{elseCov}];");
+                Statement2(code, e.GetProperty("else"), ref unique, trackBudget, coverage);
                 code.AppendLine("}");
                 break;
+            }
             case "assert":
                 code.AppendLine($"vsrtl::w2::check_assert({Expression2(e.GetProperty("condition"))},{CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "")});");
                 break;
@@ -203,32 +215,43 @@ public sealed partial class RtlDesign
                 break;
             }
             case "case":
-                var label = "case" + unique++;
+            {
+                int caseId = unique++;
+                var label = "case" + caseId;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
-                int caseWidth = Math.Max(ExpressionWidth(e.GetProperty("value")), items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).Select(i => ExpressionWidth(i.GetProperty("match"))).DefaultIfEmpty(1).Max());
-                bool caseSigned = ExpressionSigned(e.GetProperty("value")) && items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null).All(i => ExpressionSigned(i.GetProperty("match")));
+                var allMatches = items.SelectMany(CaseItemMatches).ToArray();
+                int caseWidth = Math.Max(ExpressionWidth(e.GetProperty("value")), allMatches.Select(ExpressionWidth).DefaultIfEmpty(1).Max());
+                bool caseSigned = ExpressionSigned(e.GetProperty("value")) && allMatches.All(ExpressionSigned);
                 code.AppendLine($"{{uint64_t {label}={Expression2(e.GetProperty("value"), caseWidth, caseSigned)};");
                 bool first = true;
-                foreach (var item in items.Where(i => i.GetProperty("match").ValueKind != JsonValueKind.Null))
+                int armIdx = 0;
+                foreach (var item in items.Where(i => !IsCaseDefault(i)))
                 {
-                    code.AppendLine($"{(first ? "if" : "else if")}({label}=={Expression2(item.GetProperty("match"), caseWidth, caseSigned)}){{");
-                    Statement2(code, item.GetProperty("body"), ref unique, trackBudget);
+                    var ms = CaseItemMatches(item);
+                    string cond = string.Join("||", ms.Select(m => $"{label}=={Expression2(m, caseWidth, caseSigned)}"));
+                    int armCov = RegisterCoveragePoint(coverage, $"case.{caseId}.arm.{armIdx++}", "case_arm");
+                    code.AppendLine($"{(first ? "if" : "else if")}({cond}){{");
+                    if (armCov >= 0) code.AppendLine($"++_vs_cov[{armCov}];");
+                    Statement2(code, item.GetProperty("body"), ref unique, trackBudget, coverage);
                     code.AppendLine("}");
                     first = false;
                 }
-                var defaultItem = items.FirstOrDefault(i => i.GetProperty("match").ValueKind == JsonValueKind.Null);
+                var defaultItem = items.FirstOrDefault(IsCaseDefault);
                 if (defaultItem.ValueKind != JsonValueKind.Undefined)
                 {
+                    int defCov = RegisterCoveragePoint(coverage, $"case.{caseId}.default", "case_default");
                     code.AppendLine(first ? "{" : "else{");
-                    Statement2(code, defaultItem.GetProperty("body"), ref unique, trackBudget);
+                    if (defCov >= 0) code.AppendLine($"++_vs_cov[{defCov}];");
+                    Statement2(code, defaultItem.GetProperty("body"), ref unique, trackBudget, coverage);
                     code.AppendLine("}");
                 }
                 code.AppendLine("}");
                 break;
+            }
         }
     }
 
-    private string EmitTwoState64ModelHeader(string top, IReadOnlyDictionary<string, string> names, int[] seqIds, bool hasFixedMemWrites, bool hasRuntimeLoops, bool canThrow)
+    private string EmitTwoState64ModelHeader(string top, IReadOnlyDictionary<string, string> names, int[] seqIds, bool hasFixedMemWrites, bool hasRuntimeLoops, bool canThrow, IReadOnlyList<(string Name, int ArgCount)> dpiCalls, bool enableCoverage)
     {
         string className = "V" + top;
         bool hasInit = Statements(Initialization).Any(st => Kind(st) is not "block");
@@ -236,8 +259,130 @@ public sealed partial class RtlDesign
             ? Array.Empty<JsonElement>()
             : (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]);
         var eventIds = CombinationalOnly ? Array.Empty<int>() : EventSignals.Select(SignalId).ToArray();
+        var coverage = enableCoverage ? new List<(string Id, string Kind)>() : null;
+
+        var bodyCode = new StringBuilder();
+        bodyCode.AppendLine("inline void settle(){");
+        foreach (var step in SettledSteps)
+        {
+            int id = SignalId(Name(step.GetProperty("target")));
+            var rhs = step.GetProperty("value");
+            int vw = ExpressionWidth(rhs);
+            bool exactWidth = vw == Signals[id].Width && !(ExpressionSigned(rhs) && Signals[id].Width > vw);
+            bodyCode.AppendLine($"vsrtl::w2::store(s[{id}],{StoreWord2(Expression2(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
+        }
+        bodyCode.AppendLine("}\nvoid evaluate() override {");
+        if (dpiCalls.Count > 0) bodyCode.AppendLine("struct _VsDpiScope{svScope prev;explicit _VsDpiScope(svScope s):prev(svSetScope(s)){}~_VsDpiScope(){svSetScope(prev);}} _vs_dpi_scope(static_cast<svScope>(this));");
+        if (hasRuntimeLoops) bodyCode.AppendLine("execution_budget=20000;");
+        if (canThrow)
+        {
+            bodyCode.Append($"auto saved_s=s;");
+            if (!CombinationalOnly) bodyCode.Append($"uint64_t saved_prev[{Signals.Count}];for(int i=0;i<{Signals.Count};++i)saved_prev[i]=_vs_prev[i];");
+            for (int i = 0; i < Memories.Count; ++i)
+                bodyCode.Append($"uint64_t saved_m{i}[{Memories[i].Depth}];for(int i=0;i<{Memories[i].Depth};++i)saved_m{i}[i]=_vs_m{i}[i];");
+            bodyCode.AppendLine("try{");
+        }
+        bodyCode.AppendLine("settle();");
+        if (!CombinationalOnly)
+        {
+            for (int p = 0; p < procs.Length; ++p)
+            {
+                string cond = string.Join("||", procs[p].GetProperty("events").EnumerateArray().Select(trigger =>
+                {
+                    int id = SignalId(trigger.GetProperty("signal").GetString()!);
+                    return $"vsrtl::w2::edge(_vs_prev[{id}],vsrtl::w2::to(s[{id}]),{(trigger.GetProperty("edge").GetString() == "posedge" ? "true" : "false")})";
+                }));
+                bodyCode.AppendLine($"const bool _vs_ev{p}={cond};");
+            }
+            string anyEv = string.Join("||", Enumerable.Range(0, procs.Length).Select(p => $"_vs_ev{p}"));
+            bodyCode.AppendLine($"if({anyEv}){{");
+            if (seqIds.Length > 0)
+                bodyCode.AppendLine(string.Concat(seqIds.Select(id => $"_vs_next[{id}]=vsrtl::w2::to(s[{id}]);")));
+            int unique = 0;
+            for (int p = 0; p < procs.Length; ++p)
+            {
+                if (procs.Length > 1) bodyCode.AppendLine($"if(_vs_ev{p}){{");
+                Statement2(bodyCode, procs[p].GetProperty("body"), ref unique, hasRuntimeLoops, coverage);
+                if (procs.Length > 1) bodyCode.AppendLine("}");
+            }
+            if (seqIds.Length > 0)
+                bodyCode.AppendLine(string.Concat(seqIds.Select(id => $"vsrtl::w2::store(s[{id}],_vs_next[{id}]);")));
+            if (hasFixedMemWrites)
+                bodyCode.AppendLine("_vs_mlog.commit(_vs_mptrs);");
+            bodyCode.AppendLine("settle();\n}");
+            foreach (int id in eventIds)
+                bodyCode.AppendLine($"_vs_prev[{id}]=vsrtl::w2::to(s[{id}]);");
+        }
+        if (canThrow)
+        {
+            bodyCode.Append("\n}catch(...){s=std::move(saved_s);");
+            if (!CombinationalOnly) bodyCode.Append($"for(int i=0;i<{Signals.Count};++i)_vs_prev[i]=saved_prev[i];");
+            for (int i = 0; i < Memories.Count; ++i)
+                bodyCode.Append($"for(int i=0;i<{Memories[i].Depth};++i)_vs_m{i}[i]=saved_m{i}[i];");
+            if (hasFixedMemWrites) bodyCode.Append("_vs_mlog.count=0;_vs_mlog.overflow.clear();");
+            bodyCode.AppendLine("throw;}");
+        }
+        bodyCode.AppendLine("}\nvoid saveExtraState(std::vector<uint8_t>& out) const override {");
+        bodyCode.AppendLine("out.clear();");
+        if (!CombinationalOnly)
+            bodyCode.AppendLine($"{{const auto* p=reinterpret_cast<const uint8_t*>(_vs_prev);out.insert(out.end(),p,p+sizeof(_vs_prev));}}");
+        for (int i = 0; i < Memories.Count; ++i)
+            bodyCode.AppendLine($"{{const auto* p=reinterpret_cast<const uint8_t*>(_vs_m{i});out.insert(out.end(),p,p+sizeof(_vs_m{i}));}}");
+        bodyCode.AppendLine("}\nvoid restoreExtraState(const uint8_t* data,size_t len) override {");
+        bodyCode.AppendLine("size_t off=0;");
+        if (!CombinationalOnly)
+            bodyCode.AppendLine("if(off+sizeof(_vs_prev)>len)throw std::runtime_error(\"checkpoint W2 state size mismatch\");std::memcpy(_vs_prev,data+off,sizeof(_vs_prev));off+=sizeof(_vs_prev);");
+        for (int i = 0; i < Memories.Count; ++i)
+            bodyCode.AppendLine($"if(off+sizeof(_vs_m{i})>len)throw std::runtime_error(\"checkpoint W2 memory size mismatch\");std::memcpy(_vs_m{i},data+off,sizeof(_vs_m{i}));off+=sizeof(_vs_m{i});");
+        bodyCode.AppendLine("if(off!=len)throw std::runtime_error(\"checkpoint W2 extra trailing bytes\");");
+        bodyCode.AppendLine("}");
+        if (Memories.Count > 0)
+        {
+            bodyCode.AppendLine("bool loadDerivedMemory(size_t mem_id,const std::string& path,bool hex,size_t start_addr,size_t end_addr,size_t& loaded) override {");
+            bodyCode.AppendLine("switch(mem_id){");
+            for (int i = 0; i < Memories.Count; ++i)
+                bodyCode.AppendLine($"case {i}: loaded=vsrtl::load_mem_file_flat(_vs_m{i},{Memories[i].Depth},{Memories[i].Width},path,hex,start_addr,end_addr);return true;");
+            bodyCode.AppendLine("default: return false;}}");
+        }
+        bodyCode.AppendLine("public:");
+        EmitCoveragePointsOverride(bodyCode, coverage);
+        // Non-virtual inline fast-path lets GCC/Clang inline evaluate() directly into host loops.
+        bodyCode.AppendLine("inline void eval(){");
+        bodyCode.AppendLine("if(fast_eval_ok&&owner_thread==std::this_thread::get_id())[[likely]]{");
+        bodyCode.AppendLine("fast_eval_ok=false;fast_evaluating=true;fast_dirty=false;");
+        if (canThrow)
+            bodyCode.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_evaluating=false;fast_dirty=true;fast_eval_ok=fast_eligible;throw;}}");
+        else
+            bodyCode.AppendLine($"this->{className}::evaluate();");
+        bodyCode.AppendLine("fast_evaluating=false;fast_eval_ok=fast_eligible;return;}");
+        bodyCode.AppendLine("evalSlow();}");
+        foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.AppendLine($"vsrtl::Port {names[signal.Name]};");
+        bodyCode.Append($"{className}():vsrtl::Model(\"{top}\",{{");
+        // All signals carry two_state=true so Model::Model(), Model::put(), Port, and VPI agree on 2-state semantics.
+        bodyCode.AppendJoin(',', Signals.Select(s => $"{{\"{s.SourcePath ?? s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")},{(s.Signed ? "true" : "false")},true}}"));
+        bodyCode.Append($"}},{(CombinationalOnly ? -1 : SignalId(Clock!))})");
+        foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)})");
+        bodyCode.AppendLine("{");
+        if (hasFixedMemWrites)
+        {
+            for (int i = 0; i < Memories.Count; ++i)
+                bodyCode.AppendLine($"_vs_mptrs[{i}]=_vs_m{i};");
+        }
+        if (hasInit)
+        {
+            bodyCode.AppendLine($"assoc.resize({Memories.Count});mem={{");
+            bodyCode.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},word(0,0,0,{m.Width}))"));
+            bodyCode.AppendLine("};");
+            EmitInitialization(bodyCode);
+            bodyCode.AppendLine($"for(size_t i=0;i<s.size();++i)s[i]=two_state(s[i]);");
+            for (int i = 0; i < Memories.Count; ++i)
+                bodyCode.AppendLine($"for(int j=0;j<{Memories[i].Depth};++j)_vs_m{i}[j]=mem[{i}][j].v.limb[0];");
+            bodyCode.AppendLine("mem.clear();");
+        }
+        bodyCode.AppendLine("}\n};");
 
         var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
+        EmitDpiPrototypes(code, dpiCalls);
         code.AppendLine($"class {className} final : public vsrtl::Model {{");
         if (hasRuntimeLoops || hasInit) code.AppendLine("size_t execution_budget=20000;");
         if (!CombinationalOnly)
@@ -253,121 +398,8 @@ public sealed partial class RtlDesign
             code.AppendLine("vsrtl::w2::MemLog2<16> _vs_mlog;");
         }
         if (hasInit) code.AppendLine("std::vector<AssociativeStorage>assoc;");
-        code.AppendLine("inline void settle(){");
-        foreach (var step in SettledSteps)
-        {
-            int id = SignalId(Name(step.GetProperty("target")));
-            var rhs = step.GetProperty("value");
-            int vw = ExpressionWidth(rhs);
-            bool exactWidth = vw == Signals[id].Width && !(ExpressionSigned(rhs) && Signals[id].Width > vw);
-            code.AppendLine($"vsrtl::w2::store(s[{id}],{StoreWord2(Expression2(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
-        }
-        code.AppendLine("}\nvoid evaluate() override {");
-        if (hasRuntimeLoops) code.AppendLine("execution_budget=20000;");
-        if (canThrow)
-        {
-            code.Append($"auto saved_s=s;");
-            if (!CombinationalOnly) code.Append($"uint64_t saved_prev[{Signals.Count}];for(int i=0;i<{Signals.Count};++i)saved_prev[i]=_vs_prev[i];");
-            for (int i = 0; i < Memories.Count; ++i)
-                code.Append($"uint64_t saved_m{i}[{Memories[i].Depth}];for(int i=0;i<{Memories[i].Depth};++i)saved_m{i}[i]=_vs_m{i}[i];");
-            code.AppendLine("try{");
-        }
-        code.AppendLine("settle();");
-        if (!CombinationalOnly)
-        {
-            for (int p = 0; p < procs.Length; ++p)
-            {
-                string cond = string.Join("||", procs[p].GetProperty("events").EnumerateArray().Select(trigger =>
-                {
-                    int id = SignalId(trigger.GetProperty("signal").GetString()!);
-                    return $"vsrtl::w2::edge(_vs_prev[{id}],vsrtl::w2::to(s[{id}]),{(trigger.GetProperty("edge").GetString() == "posedge" ? "true" : "false")})";
-                }));
-                code.AppendLine($"const bool _vs_ev{p}={cond};");
-            }
-            string anyEv = string.Join("||", Enumerable.Range(0, procs.Length).Select(p => $"_vs_ev{p}"));
-            code.AppendLine($"if({anyEv}){{");
-            if (seqIds.Length > 0)
-                code.AppendLine(string.Concat(seqIds.Select(id => $"_vs_next[{id}]=vsrtl::w2::to(s[{id}]);")));
-            int unique = 0;
-            for (int p = 0; p < procs.Length; ++p)
-            {
-                if (procs.Length > 1) code.AppendLine($"if(_vs_ev{p}){{");
-                Statement2(code, procs[p].GetProperty("body"), ref unique, hasRuntimeLoops);
-                if (procs.Length > 1) code.AppendLine("}");
-            }
-            if (seqIds.Length > 0)
-                code.AppendLine(string.Concat(seqIds.Select(id => $"vsrtl::w2::store(s[{id}],_vs_next[{id}]);")));
-            if (hasFixedMemWrites)
-                code.AppendLine("_vs_mlog.commit(_vs_mptrs);");
-            code.AppendLine("settle();\n}");
-            foreach (int id in eventIds)
-                code.AppendLine($"_vs_prev[{id}]=vsrtl::w2::to(s[{id}]);");
-        }
-        if (canThrow)
-        {
-            code.Append("\n}catch(...){s=std::move(saved_s);");
-            if (!CombinationalOnly) code.Append($"for(int i=0;i<{Signals.Count};++i)_vs_prev[i]=saved_prev[i];");
-            for (int i = 0; i < Memories.Count; ++i)
-                code.Append($"for(int i=0;i<{Memories[i].Depth};++i)_vs_m{i}[i]=saved_m{i}[i];");
-            if (hasFixedMemWrites) code.Append("_vs_mlog.count=0;_vs_mlog.overflow.clear();");
-            code.AppendLine("throw;}");
-        }
-        code.AppendLine("}\nvoid saveExtraState(std::vector<uint8_t>& out) const override {");
-        code.AppendLine("out.clear();");
-        if (!CombinationalOnly)
-            code.AppendLine($"{{const auto* p=reinterpret_cast<const uint8_t*>(_vs_prev);out.insert(out.end(),p,p+sizeof(_vs_prev));}}");
-        for (int i = 0; i < Memories.Count; ++i)
-            code.AppendLine($"{{const auto* p=reinterpret_cast<const uint8_t*>(_vs_m{i});out.insert(out.end(),p,p+sizeof(_vs_m{i}));}}");
-        code.AppendLine("}\nvoid restoreExtraState(const uint8_t* data,size_t len) override {");
-        code.AppendLine("size_t off=0;");
-        if (!CombinationalOnly)
-            code.AppendLine("if(off+sizeof(_vs_prev)>len)throw std::runtime_error(\"checkpoint W2 state size mismatch\");std::memcpy(_vs_prev,data+off,sizeof(_vs_prev));off+=sizeof(_vs_prev);");
-        for (int i = 0; i < Memories.Count; ++i)
-            code.AppendLine($"if(off+sizeof(_vs_m{i})>len)throw std::runtime_error(\"checkpoint W2 memory size mismatch\");std::memcpy(_vs_m{i},data+off,sizeof(_vs_m{i}));off+=sizeof(_vs_m{i});");
-        code.AppendLine("if(off!=len)throw std::runtime_error(\"checkpoint W2 extra trailing bytes\");");
-        code.AppendLine("}");
-        if (Memories.Count > 0)
-        {
-            code.AppendLine("bool loadDerivedMemory(size_t mem_id,const std::string& path,bool hex,size_t start_addr,size_t end_addr,size_t& loaded) override {");
-            code.AppendLine("switch(mem_id){");
-            for (int i = 0; i < Memories.Count; ++i)
-                code.AppendLine($"case {i}: loaded=vsrtl::load_mem_file_flat(_vs_m{i},{Memories[i].Depth},{Memories[i].Width},path,hex,start_addr,end_addr);return true;");
-            code.AppendLine("default: return false;}}");
-        }
-        code.AppendLine("public:");
-        // Non-virtual inline fast-path lets GCC/Clang inline evaluate() directly into host loops.
-        code.AppendLine("inline void eval(){");
-        code.AppendLine("if(fast_eval_ok&&owner_thread==std::this_thread::get_id())[[likely]]{");
-        code.AppendLine("fast_eval_ok=false;fast_evaluating=true;fast_dirty=false;");
-        if (canThrow)
-            code.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_evaluating=false;fast_dirty=true;fast_eval_ok=fast_eligible;throw;}}");
-        else
-            code.AppendLine($"this->{className}::evaluate();");
-        code.AppendLine("fast_evaluating=false;fast_eval_ok=fast_eligible;return;}");
-        code.AppendLine("evalSlow();}");
-        foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.AppendLine($"vsrtl::Port {names[signal.Name]};");
-        code.Append($"{className}():vsrtl::Model(\"{top}\",{{");
-        // All signals carry two_state=true so Model::Model(), Model::put(), Port, and VPI agree on 2-state semantics.
-        code.AppendJoin(',', Signals.Select(s => $"{{\"{s.SourcePath ?? s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")},{(s.Signed ? "true" : "false")},true}}"));
-        code.Append($"}},{(CombinationalOnly ? -1 : SignalId(Clock!))})");
-        foreach (var signal in Signals.Where(s => s.Direction != "internal")) code.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)})");
-        code.AppendLine("{");
-        if (hasFixedMemWrites)
-        {
-            for (int i = 0; i < Memories.Count; ++i)
-                code.AppendLine($"_vs_mptrs[{i}]=_vs_m{i};");
-        }
-        if (hasInit)
-        {
-            code.AppendLine($"assoc.resize({Memories.Count});mem={{");
-            code.AppendJoin(',', Memories.Select(m => $"std::vector<W>({m.Depth},word(0,0,0,{m.Width}))"));
-            code.AppendLine("};");
-            EmitInitialization(code);
-            code.AppendLine($"for(size_t i=0;i<s.size();++i)s[i]=two_state(s[i]);");
-            for (int i = 0; i < Memories.Count; ++i)
-                code.AppendLine($"for(int j=0;j<{Memories[i].Depth};++j)_vs_m{i}[j]=mem[{i}][j].v.limb[0];");
-            code.AppendLine("mem.clear();");
-        }
-        return code.AppendLine("}\n};").ToString();
+        if (coverage is { Count: > 0 }) code.AppendLine($"uint64_t _vs_cov[{coverage.Count}]{{}};");
+        code.Append(bodyCode);
+        return code.ToString();
     }
 }

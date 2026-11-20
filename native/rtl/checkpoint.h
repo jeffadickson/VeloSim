@@ -45,6 +45,8 @@ inline uint64_t schema_hash(const std::string& model_name,
   uint64_t depth = m.size();
   h = fnv1a_update(h, &depth, sizeof(depth));
  }
+ int32_t max_bits = VSRTL_MAX_WORD_BITS;
+ h = fnv1a_update(h, &max_bits, sizeof(max_bits));
  return h;
 }
 
@@ -54,9 +56,9 @@ inline void append_bytes(std::vector<uint8_t>& buf, const void* src, size_t n) {
 }
 
 inline void append_word(std::vector<uint8_t>& buf, const W& w) {
- append_bytes(buf, w.v.limb.data(), sizeof(uint64_t) * 4);
- append_bytes(buf, w.x.limb.data(), sizeof(uint64_t) * 4);
- append_bytes(buf, w.z.limb.data(), sizeof(uint64_t) * 4);
+ append_bytes(buf, w.v.limb.data(), sizeof(uint64_t) * Bits::kLimbs);
+ append_bytes(buf, w.x.limb.data(), sizeof(uint64_t) * Bits::kLimbs);
+ append_bytes(buf, w.z.limb.data(), sizeof(uint64_t) * Bits::kLimbs);
  int32_t width = w.w;
  append_bytes(buf, &width, sizeof(width));
 }
@@ -70,12 +72,12 @@ inline bool read_bytes(const std::vector<uint8_t>& buf, size_t& pos, void* dst, 
 
 inline bool read_word(const std::vector<uint8_t>& buf, size_t& pos, W& out) noexcept {
  int32_t width = 0;
- if (!read_bytes(buf, pos, out.v.limb.data(), sizeof(uint64_t) * 4) ||
-     !read_bytes(buf, pos, out.x.limb.data(), sizeof(uint64_t) * 4) ||
-     !read_bytes(buf, pos, out.z.limb.data(), sizeof(uint64_t) * 4) ||
+ if (!read_bytes(buf, pos, out.v.limb.data(), sizeof(uint64_t) * Bits::kLimbs) ||
+     !read_bytes(buf, pos, out.x.limb.data(), sizeof(uint64_t) * Bits::kLimbs) ||
+     !read_bytes(buf, pos, out.z.limb.data(), sizeof(uint64_t) * Bits::kLimbs) ||
      !read_bytes(buf, pos, &width, sizeof(width)))
   return false;
- if (width < 1 || width > 256) return false;
+ if (width < 1 || width > VSRTL_MAX_WORD_BITS) return false;
  out.w = width;
  return true;
 }

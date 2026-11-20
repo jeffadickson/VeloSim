@@ -1,8 +1,8 @@
 // Decode the serialized constant payload without ExprEval's 64-bit numeric path.
 std::string constant_bits(const UHDM::constant* object,bool plain_decimal=false){
  using U=vsrtl::Bits;
- int width=plain_decimal?32:object->VpiSize();auto literal=object->VpiDecompile();if(width<1&&(literal=="'0"||literal=="'1"||literal=="'x"||literal=="'z"))width=1;need(width>=1&&width<=256,"constant width must be1..256");
- std::string raw(object->VpiValue());need(raw.size()<=512,"constant payload budget exceeded");
+ int width=plain_decimal?32:object->VpiSize();auto literal=object->VpiDecompile();if(width<1&&(literal=="'0"||literal=="'1"||literal=="'x"||literal=="'z"))width=1;need(width>=1&&width<=limits.max_word_bits,"constant width exceeds limit");
+ std::string raw(object->VpiValue());need(raw.size()<=size_t(limits.max_word_bits*2),"constant payload budget exceeded");
  auto colon=raw.find(':');need(colon!=std::string::npos,"constant payload tag required");auto tag=raw.substr(0,colon),value=raw.substr(colon+1);
  value.erase(std::remove(value.begin(),value.end(),'_'),value.end());need(!value.empty(),"empty constant payload");
  for(char& c:value)if(c>='A'&&c<='Z')c+=32;
