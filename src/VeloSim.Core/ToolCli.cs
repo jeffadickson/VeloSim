@@ -25,12 +25,19 @@ public static class ToolCli
     {
         if (args.Length > 0 && args[0] == "rtl-export")
         {
-            if (args.Length < 6) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--two-state]");
+            if (args.Length < 6) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--target cpp|csharp|rust] [--two-state]");
             var options = CliOptions.Parse(args, 2);
-            string? top = options.String("--top"), directory = options.String("--output-dir");
-            if (top is null || directory is null) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--two-state]");
+            string? top = options.String("--top"), directory = options.String("--output-dir"), targetText = options.String("--target");
+            if (top is null || directory is null) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--target cpp|csharp|rust] [--two-state]");
+            var target = (targetText ?? "cpp").ToLowerInvariant() switch
+            {
+                "cpp" or "c++" => RtlTargetLanguage.Cpp,
+                "csharp" or "cs" or "c#" => RtlTargetLanguage.CSharp,
+                "rust" or "rs" => RtlTargetLanguage.Rust,
+                _ => throw new ArgumentException("Unsupported rtl-export --target (expected cpp, csharp, or rust): " + targetText)
+            };
             var stateMode = options.Flag("--two-state") ? RtlStateMode.TwoState : RtlStateMode.FourState;
-            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode).ConfigureAwait(false)); return 0;
+            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target).ConfigureAwait(false)); return 0;
         }
         if (args.Length > 0 && args[0] == "fifo-differential")
         {
