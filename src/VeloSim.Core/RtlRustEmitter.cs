@@ -7,7 +7,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> RustPortNames()
     {
         var reserved = (
-            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model time time_inc default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint got_finish exit_code property_passes property_failures property_vacuous"
+            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model finish time time_inc default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint got_finish exit_code property_passes property_failures property_vacuous signals_info memories_info signal_by_name get_signal put_signal read_memory write_memory"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -553,6 +553,7 @@ public sealed partial class RtlDesign
         code.AppendLine("#![forbid(unsafe_code)]");
         code.AppendLine("#![allow(non_camel_case_types, non_snake_case, unused_variables, unused_mut, unused_parens, unused_imports, dead_code, clippy::all)]");
         code.AppendLine("pub mod runtime;");
+        code.AppendLine("pub use runtime::vpi;");
         code.AppendLine("use runtime::{checkpoint, w2, w64, MemLog2, MemLog64, PlusargStore, SplitMix64Rng, VcdSlot, W64};");
         code.AppendLine();
         code.AppendLine("#[derive(Clone)]");
@@ -965,6 +966,92 @@ public sealed partial class RtlDesign
             code.AppendLine("    #[inline(always)]");
             code.AppendLine("    pub fn try_eval(&mut self) -> Result<(), &'static str> { self.eval(); Ok(()) }");
         }
+        code.AppendLine("    #[inline(always)] pub fn finish(&mut self) { self.finished = true; }");
+        code.Append("    const VPI_SIGNALS: &'static [vpi::VpiSignalInfo] = &[");
+        code.AppendJoin(", ", Signals.Select((s, idx) =>
+        {
+            string dir = s.Direction == "input" ? "vpi::VpiDirection::Input" : s.Direction == "output" ? "vpi::VpiDirection::Output" : "vpi::VpiDirection::Internal";
+            return $"vpi::VpiSignalInfo {{ id: {idx}, name: {CppStringLiteral(s.SourcePath ?? s.Name)}, width: {s.Width}, direction: {dir}, is_signed: {(s.Signed ? "true" : "false")}, two_state: {(twoState || s.TwoState ? "true" : "false")} }}";
+        }));
+        code.AppendLine("];");
+        code.Append("    const VPI_MEMORIES: &'static [vpi::VpiMemoryInfo] = &[");
+        code.AppendJoin(", ", Memories.Select((m, idx) =>
+            $"vpi::VpiMemoryInfo {{ id: {idx}, name: {CppStringLiteral(m.Name)}, depth: {m.Depth}, width: {m.Width}, two_state: {(twoState || m.TwoState ? "true" : "false")} }}"));
+        code.AppendLine("];");
+        code.AppendLine("    pub fn signals_info() -> &'static [vpi::VpiSignalInfo] { Self::VPI_SIGNALS }");
+        code.AppendLine("    pub fn memories_info() -> &'static [vpi::VpiMemoryInfo] { Self::VPI_MEMORIES }");
+        code.AppendLine("    pub fn signal_by_name(&self, name: &str) -> Option<usize> { vpi::VpiModel::signal_by_name(self, name) }");
+        code.AppendLine("    pub fn get_signal(&self, id: usize) -> Result<W64, &'static str> {");
+        code.AppendLine("        match id {");
+        for (int i = 0; i < Signals.Count; ++i)
+            code.AppendLine(twoState ? $"            {i} => Ok(W64::lit(self.s{i}, {Signals[i].Width}))," : $"            {i} => Ok(self.s{i}),");
+        code.AppendLine("            _ => Err(\"invalid signal id\"),");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn put_signal(&mut self, id: usize, value: W64) -> Result<(), &'static str> {");
+        code.AppendLine("        if self.finished { return Err(\"model is finished\"); }");
+        code.AppendLine("        let sig = Self::VPI_SIGNALS.get(id).ok_or(\"invalid signal id\")?;");
+        code.AppendLine("        if sig.direction != vpi::VpiDirection::Input { return Err(\"only input ports may be deposited\"); }");
+        code.AppendLine("        if self.is_forced(id) { return Ok(()); }");
+        code.AppendLine("        match id {");
+        for (int i = 0; i < Signals.Count; ++i)
+        {
+            if (Signals[i].Direction != "input") continue;
+            if (twoState)
+                code.AppendLine($"            {i} => {{ self.s{i} = w2::resize(value.v & !(value.x | value.z), {Signals[i].Width}); Ok(()) }}");
+            else
+                code.AppendLine($"            {i} => {{ self.s{i} = {(Signals[i].TwoState ? $"w64::two_state(w64::resize(value, {Signals[i].Width}))" : $"w64::resize(value, {Signals[i].Width})")}; Ok(()) }}");
+        }
+        code.AppendLine("            _ => Err(\"only input ports may be deposited\"),");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn read_memory(&self, mem_id: usize, addr: usize) -> Result<W64, &'static str> {");
+        code.AppendLine("        match mem_id {");
+        for (int i = 0; i < Memories.Count; ++i)
+            code.AppendLine(twoState
+                ? $"            {i} => self.m{i}.get(addr).map(|&v| W64::lit(v, {Memories[i].Width})).ok_or(\"memory word address out of range\"),"
+                : $"            {i} => self.m{i}.get(addr).copied().ok_or(\"memory word address out of range\"),");
+        code.AppendLine("            _ => Err(\"memory word address out of range\"),");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn write_memory(&mut self, mem_id: usize, addr: usize, value: W64) -> Result<(), &'static str> {");
+        code.AppendLine("        if self.finished { return Err(\"model is finished\"); }");
+        code.AppendLine("        match mem_id {");
+        for (int i = 0; i < Memories.Count; ++i)
+            code.AppendLine(twoState
+                ? $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = w2::resize(value.v & !(value.x | value.z), {Memories[i].Width}); Ok(()) }}"
+                : $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = {(Memories[i].TwoState ? $"w64::two_state(w64::resize(value, {Memories[i].Width}))" : $"w64::resize(value, {Memories[i].Width})")}; Ok(()) }}");
+        code.AppendLine("            _ => Err(\"memory word address out of range\"),");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("}");
+        code.AppendLine();
+        code.AppendLine($"impl vpi::VpiModel for {structName} {{");
+        code.AppendLine($"    fn model_name(&self) -> &'static str {{ {CppStringLiteral(top)} }}");
+        code.AppendLine("    fn signals(&self) -> &'static [vpi::VpiSignalInfo] { Self::VPI_SIGNALS }");
+        code.AppendLine("    fn memories(&self) -> &'static [vpi::VpiMemoryInfo] { Self::VPI_MEMORIES }");
+        code.AppendLine("    fn get_signal(&self, id: usize) -> Result<W64, &'static str> { self.get_signal(id) }");
+        code.AppendLine("    fn put_signal(&mut self, id: usize, value: W64) -> Result<(), &'static str> { self.put_signal(id, value) }");
+        code.AppendLine("    fn force_signal_vpi(&mut self, id: usize, value: W64) -> Result<(), &'static str> {");
+        code.AppendLine("        if id >= Self::VPI_SIGNALS.len() { return Err(\"invalid signal id\"); }");
+        code.AppendLine("        self.force_signal(id, value);");
+        code.AppendLine("        Ok(())");
+        code.AppendLine("    }");
+        code.AppendLine("    fn release_signal_vpi(&mut self, id: usize) -> Result<(), &'static str> {");
+        code.AppendLine("        if id >= Self::VPI_SIGNALS.len() { return Err(\"invalid signal id\"); }");
+        code.AppendLine("        self.release_signal(id);");
+        code.AppendLine("        Ok(())");
+        code.AppendLine("    }");
+        code.AppendLine("    fn is_forced_vpi(&self, id: usize) -> bool { self.is_forced(id) }");
+        code.AppendLine("    fn read_memory(&self, mem_id: usize, addr: usize) -> Result<W64, &'static str> { self.read_memory(mem_id, addr) }");
+        code.AppendLine("    fn write_memory(&mut self, mem_id: usize, addr: usize, value: W64) -> Result<(), &'static str> { self.write_memory(mem_id, addr, value) }");
+        code.AppendLine("    fn time_vpi(&self) -> u64 { self.time() }");
+        code.AppendLine("    fn time_inc_vpi(&mut self, delta: u64) { self.time_inc(delta); }");
+        code.AppendLine("    fn eval_vpi(&mut self) -> Result<(), &'static str> { self.try_eval() }");
+        code.AppendLine("    fn final_vpi(&mut self) { self.final_model(); }");
+        code.AppendLine("    fn finish_vpi(&mut self) { self.finish(); }");
+        code.AppendLine("    fn got_finish_vpi(&self) -> bool { self.got_finish() }");
+        code.AppendLine("    fn plusargs_vpi(&self) -> &[String] { self.plusargs.list() }");
         code.AppendLine("}");
         return code.ToString();
     }
@@ -2321,6 +2408,7 @@ pub struct PlusargStore {
 
 impl PlusargStore {
     pub fn new() -> Self { Self { args: Vec::new() } }
+    pub fn list(&self) -> &[String] { &self.args }
     pub fn set<I, S>(&mut self, args: I) where I: IntoIterator<Item = S>, S: AsRef<str> {
         self.args.clear();
         for a in args { self.add(a.as_ref()); }
@@ -2547,5 +2635,5 @@ pub mod checkpoint {
         Ok((time, rng_state, sigs, prevs, mems))
     }
 }
-""";
+""" + EmitRustSafeVpiRuntime();
 }

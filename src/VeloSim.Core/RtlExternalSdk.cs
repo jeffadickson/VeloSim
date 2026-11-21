@@ -3,7 +3,7 @@ namespace VeloSim;
 
 public static class RtlExternalSdk
 {
-    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null, bool enableCoverage = false, int threads = 1)
+    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null, bool enableCoverage = false, int threads = 1, bool enableVpi = false)
     {
         if (threads is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(threads), "Thread count must be 1..64.");
         var effectiveLimits = limits ?? RtlDesignLimits.Bounded;
@@ -18,12 +18,13 @@ public static class RtlExternalSdk
         if (target == RtlTargetLanguage.CSharp)
         {
             if (threads > 1) throw new ArgumentException("Multi-threaded --threads > 1 export is currently supported only on the cpp target.");
+            if (enableVpi) throw new ArgumentException("C-ABI --vpi export is supported on cpp (built-in) and rust (--target rust --vpi) targets.");
             return await ExportCSharpAsync(design, json, top, directory, stateMode, token).ConfigureAwait(false);
         }
         if (target == RtlTargetLanguage.Rust)
         {
             if (threads > 1) throw new ArgumentException("Multi-threaded --threads > 1 export is currently supported only on the cpp target.");
-            return await ExportRustAsync(design, json, top, directory, stateMode, token).ConfigureAwait(false);
+            return await ExportRustAsync(design, json, top, directory, stateMode, enableVpi, token).ConfigureAwait(false);
         }
 
         string header = design.EmitModelHeader(top, stateMode, enableCoverage, threads);
@@ -170,7 +171,7 @@ public static class RtlExternalSdk
         return manifest;
     }
 
-    private static async Task<string> ExportRustAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, CancellationToken token)
+    private static async Task<string> ExportRustAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, bool enableVpi, CancellationToken token)
     {
         string libRs = design.EmitRustModel(top, stateMode);
         string runtimeRs = RtlDesign.EmitRustRuntime();
@@ -178,30 +179,57 @@ public static class RtlExternalSdk
         await File.WriteAllTextAsync(Path.Combine(directory, "src", "lib.rs"), libRs, token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory, "src", "runtime.rs"), runtimeRs, token).ConfigureAwait(false);
         string crateName = "velosim_" + top.ToLowerInvariant();
+        string workspaceSection = enableVpi ? "\n[workspace]\nmembers = [\"vpi_ffi\"]\n" : "";
         await File.WriteAllTextAsync(Path.Combine(directory, "Cargo.toml"), $"""
             [package]
             name = "{crateName}"
             version = "0.1.0"
             edition = "2021"
-
+            {workspaceSection}
             [profile.release]
             opt-level = 3
             codegen-units = 1
             """, token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        var inputPaths = new List<string> { "Cargo.toml", "src/lib.rs", "src/runtime.rs", "design.rtl.json", "README.md" };
+        if (enableVpi)
+        {
+            string? runtimeDir = null;
+            for (var parent = new DirectoryInfo(Environment.CurrentDirectory); parent is not null; parent = parent.Parent)
+                if (File.Exists(Path.Combine(parent.FullName, "native/rtl/vpi_user.h"))) { runtimeDir = Path.Combine(parent.FullName, "native/rtl"); break; }
+            if (runtimeDir is null) throw new IOException("Run rtl-export --target rust --vpi from a VeloSim checkout containing native/rtl/vpi_user.h.");
+            File.Copy(Path.Combine(runtimeDir, "vpi_user.h"), Path.Combine(directory, "vpi_user.h"));
+            Directory.CreateDirectory(Path.Combine(directory, "vpi_ffi", "src"));
+            await File.WriteAllTextAsync(Path.Combine(directory, "vpi_ffi", "Cargo.toml"), RtlDesign.EmitRustVpiFfiCargoToml(crateName), token).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(directory, "vpi_ffi", "build.rs"), RtlDesign.EmitRustVpiFfiBuildRs(), token).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(directory, "vpi_ffi", "src", "lib.rs"), RtlDesign.EmitRustVpiFfi(top), token).ConfigureAwait(false);
+            inputPaths.AddRange(["vpi_user.h", "vpi_ffi/Cargo.toml", "vpi_ffi/build.rs", "vpi_ffi/src/lib.rs"]);
+        }
+        string vpiReadme = enableVpi
+            ? $"""
+
+            ### VPI Support
+            - **100% Safe Rust VPI (`#![forbid(unsafe_code)]`):** Wrap `V{top}::new()` in `{crateName}::vpi::VpiSession` for safe signal/memory introspection and `StartOfSimulation`/`ValueChange`/`ReadWriteSynch`/`ReadOnlySynch`/`AfterDelay`/`EndOfSimulation` callbacks.
+            - **IEEE 1800 C-ABI VPI (`vpi_ffi/`):** Build the companion FFI crate (`cargo build --release --workspace`) to produce `lib{crateName}_vpi.so` (`cdylib`/`staticlib`/`rlib`) exporting `vpi_*` (ABI-compatible with `vpi_user.h`) and `VpiHost::load_vpi()` for `vlog_startup_routines` plugins / cocotb while keeping the core model crate strictly `#![forbid(unsafe_code)]`.
+            """
+            : $"""
+
+            ### Safe Rust VPI
+            Wrap `V{top}::new()` in `{crateName}::vpi::VpiSession` for 100% safe (`#![forbid(unsafe_code)]`) signal/memory introspection and simulation callbacks. Re-export with `--vpi` to also generate the opt-in IEEE 1800 C-ABI VPI FFI crate (`vpi_ffi/`).
+            """;
         await File.WriteAllTextAsync(Path.Combine(directory, "README.md"), $"""
             # VeloSim Rust model SDK (V{top})
 
             Zero-dependency, `#![forbid(unsafe_code)]` Rust 2021 crate targeting VeloSim's register-resident {(stateMode == RtlStateMode.TwoState ? "2-state (W2)" : "4-state (W64)")} engine.
             Build with:
-            cargo build --release
+            cargo build --release{(enableVpi ? " --workspace" : "")}
+            {vpiReadme}
             """, token).ConfigureAwait(false);
-        var inputPaths = new[] { "Cargo.toml", "src/lib.rs", "src/runtime.rs", "design.rtl.json", "README.md" };
         var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
         string manifest = Path.Combine(directory, "external-model.json");
         var names = design.RustPortNames();
         bool twoState = stateMode == RtlStateMode.TwoState;
-        string semantics = $"rust; {(twoState ? "two-state" : "four-state")}; {(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
+        string semantics = $"rust; {(twoState ? "two-state" : "four-state")}; {(enableVpi ? "vpi; " : "")}{(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
         var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
             design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
             inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
