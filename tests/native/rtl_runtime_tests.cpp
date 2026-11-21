@@ -2,6 +2,7 @@
 #include "../../native/rtl/vcd_trace.h"
 #include "../../native/rtl/checkpoint.h"
 #include "../../native/rtl/svdpi.h"
+#include "../../native/rtl/thread_pool.h"
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -402,6 +403,50 @@ int main(){
   check(w64::clog2(w64::lit(0,16)).v==0&&w64::clog2(w64::lit(1,16)).v==0&&w64::clog2(w64::lit(5,16)).v==3&&w64::clog2(w64::lit(256,16)).v==8);
   check(w2::countones(0b10100101ULL,8)==4&&w2::onehot(0x08ULL,8)==1&&w2::onehot(0x09ULL,8)==0&&w2::onehot0(0ULL,8)==1&&w2::isunknown(0xFFULL,8)==0);
   check(w2::clog2(0ULL,16)==0&&w2::clog2(1ULL,16)==0&&w2::clog2(2ULL,16)==1&&w2::clog2(5ULL,16)==3&&w2::clog2(256ULL,16)==8);
+
+  // Wave 4: IEEE 1800 Tables 6-1/6-2/6-3 4-state net resolution across W, W64, and W2.
+  const char* vals[4]={"0","1","x","z"};
+  const char wireTbl[4][4]={{'0','x','x','0'},{'x','1','x','1'},{'x','x','x','x'},{'0','1','x','z'}};
+  const char wandTbl[4][4]={{'0','0','0','0'},{'0','1','x','1'},{'0','x','x','x'},{'0','1','x','z'}};
+  const char worTbl [4][4]={{'0','1','x','0'},{'1','1','1','1'},{'x','1','x','x'},{'0','1','x','z'}};
+  for(int i=0;i<4;++i){
+   for(int j=0;j<4;++j){
+    W a=parse(vals[i]), b=parse(vals[j]);
+    check(text(resolve_net(0,{a,b},1))==std::string(1,wireTbl[i][j]));
+    check(text(resolve_net(1,{a,b},1))==std::string(1,wandTbl[i][j]));
+    check(text(resolve_net(2,{a,b},1))==std::string(1,worTbl[i][j]));
+    char exp0=wireTbl[i][j]=='z'?'0':wireTbl[i][j];
+    char exp1=wireTbl[i][j]=='z'?'1':wireTbl[i][j];
+    check(text(resolve_net(3,{a,b},1))==std::string(1,exp0));
+    check(text(resolve_net(4,{a,b},1))==std::string(1,exp1));
+    // Parity with w64
+    check(exact(w64::from(w64::resolve_net(0,{w64::to(a),w64::to(b)},1)),resolve_net(0,{a,b},1)));
+    check(exact(w64::from(w64::resolve_net(1,{w64::to(a),w64::to(b)},1)),resolve_net(1,{a,b},1)));
+    check(exact(w64::from(w64::resolve_net(2,{w64::to(a),w64::to(b)},1)),resolve_net(2,{a,b},1)));
+    check(exact(w64::from(w64::resolve_net(3,{w64::to(a),w64::to(b)},1)),resolve_net(3,{a,b},1)));
+    check(exact(w64::from(w64::resolve_net(4,{w64::to(a),w64::to(b)},1)),resolve_net(4,{a,b},1)));
+   }
+  }
+  // Multi-bit 3-driver resolution: Z yields, 0 vs 1 -> X, pull-up/down on undriven Z bits.
+  W d1=parse("01zz"), d2=parse("z1xz"), d3=parse("1zzz");
+  check(text(resolve_net(0,{d1,d2,d3},4))=="x1xz");
+  check(text(resolve_net(3,{d1,d2,d3},4))=="x1x0");
+  check(text(resolve_net(4,{d1,d2,d3},4))=="x1x1");
+  check(w2::resolve_net(1,{0xF0ULL,0x3CULL},8)==0x30ULL);
+  check(w2::resolve_net(2,{0xF0ULL,0x0FULL},8)==0xFFULL);
+
+  // Wave 4: deterministic ThreadPool::parallel_for + exception propagation.
+  {
+   ThreadPool pool(4);
+   check(pool.thread_count()==4);
+   std::vector<uint64_t> out(64,0);
+   pool.parallel_for(out.size(),[&](size_t idx){out[idx]=uint64_t(idx)*uint64_t(idx)+7ULL;});
+   for(size_t idx=0;idx<out.size();++idx)check(out[idx]==uint64_t(idx)*uint64_t(idx)+7ULL);
+   bool threw=false;
+   try{ pool.parallel_for(8,[](size_t idx){if(idx==5)throw std::runtime_error("worker boom");}); }
+   catch(const std::runtime_error&){ threw=true; }
+   check(threw);
+  }
  }
 }
 

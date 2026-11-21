@@ -23,6 +23,19 @@ public sealed partial class RtlDesign
             if (e.TryGetProperty("min", out var minEl) && !ExpressionFits64(minEl)) return false;
             return true;
         }
+        if (kind == "inside")
+        {
+            if (!ExpressionFits64(e.GetProperty("value"))) return false;
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    if (!ExpressionFits64(loEl) || !ExpressionFits64(hiEl)) return false;
+                }
+                else if (!ExpressionFits64(it)) return false;
+            }
+            return true;
+        }
         if (e.TryGetProperty("args", out var args))
         {
             foreach (var a in args.EnumerateArray())
@@ -45,10 +58,24 @@ public sealed partial class RtlDesign
                     if (!ExpressionFits64(match)) return false;
             }
         }
-        if (Kind(e) == "display" && e.TryGetProperty("args", out var dArgs))
+        if (Kind(e) is "display" or "fatal" && e.TryGetProperty("args", out var dArgs))
         {
             foreach (var da in dArgs.EnumerateArray())
                 if (!ExpressionFits64(da)) return false;
+        }
+        return true;
+    }
+
+    private bool VerificationFits64()
+    {
+        foreach (var cg in Covergroups)
+            foreach (var cp in cg.Points)
+                if (!ExpressionFits64(cp.Value)) return false;
+        foreach (var p in Properties)
+        {
+            if (p.DisableIff is { } dis && !ExpressionFits64(dis)) return false;
+            if (p.Antecedent is { } ant && !ExpressionFits64(ant)) return false;
+            if (!ExpressionFits64(p.Consequent)) return false;
         }
         return true;
     }
@@ -59,7 +86,7 @@ public sealed partial class RtlDesign
         if (Signals.Any(s => s.Width > 64)) return false;
         if (Memories.Any(m => m.Width > 64 || m.Associative || m.Queue || m.Dynamic || m.Dimensions is not null)) return false;
         if (SettledSteps.Any(step => !(Kind(step) == "blocking" && Kind(step.GetProperty("target")) == "ref"))) return false;
-        return SettledSteps.Append(Body).SelectMany(Statements).All(StatementFits64);
+        return VerificationFits64() && SettledSteps.Append(Body).SelectMany(Statements).All(StatementFits64);
     }
 
     private static string EmitConst64(string bits)
@@ -100,11 +127,66 @@ public sealed partial class RtlDesign
         if (kind == "indexedselect") return $"vsrtl::w64::selidx({Expression64(e.GetProperty("value"))},{Expression64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
         if (kind == "test_plusargs") return Extend($"vsrtl::w64::lit(testPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}),32)");
         if (kind == "urandom") return Extend("vsrtl::w64::lit(nextUrandom(),32)");
+        if (kind == "random") return Extend("vsrtl::w64::lit(uint32_t(nextRandom()),32)");
         if (kind == "urandom_range")
         {
             string maxExpr = $"uint32_t(({Expression64(e.GetProperty("max"))}).v)";
             string minExpr = e.TryGetProperty("min", out var minEl) ? $"uint32_t(({Expression64(minEl)}).v)" : "0u";
             return Extend($"vsrtl::w64::lit(nextUrandomRange({maxExpr},{minExpr}),32)");
+        }
+        if (kind == "resolve")
+        {
+            int nk = ParseNetKind(e.GetProperty("net").GetString()!);
+            int rw = Math.Max(context, ExpressionWidth(e));
+            string drivers = string.Join(",", e.GetProperty("args").EnumerateArray().Select(d => Expression64(d, rw)));
+            return Extend($"vsrtl::w64::resolve_net({nk},{{{drivers}}},{rw})");
+        }
+        if (kind == "inside")
+        {
+            var valEl = e.GetProperty("value");
+            bool vSigned = ExpressionSigned(valEl);
+            int vw = ExpressionWidth(valEl);
+            var parts = new List<string>();
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    int cw = Math.Max(vw, Math.Max(ExpressionWidth(loEl), ExpressionWidth(hiEl)));
+                    bool cs = vSigned && ExpressionSigned(loEl) && ExpressionSigned(hiEl);
+                    string cmp = cs ? "vsrtl::w64::scmp" : "vsrtl::w64::cmp";
+                    parts.Add($"vsrtl::w64::land({cmp}({Expression64(valEl, cw, cs)},{Expression64(loEl, cw, cs)},3),{cmp}({Expression64(valEl, cw, cs)},{Expression64(hiEl, cw, cs)},1))");
+                }
+                else
+                {
+                    int cw = Math.Max(vw, ExpressionWidth(it));
+                    bool cs = vSigned && ExpressionSigned(it);
+                    parts.Add($"vsrtl::w64::wildeq({Expression64(valEl, cw, cs)},{Expression64(it, cw, cs)})");
+                }
+            }
+            string acc = parts[0];
+            for (int i = 1; i < parts.Count; ++i) acc = $"vsrtl::w64::lor({acc},{parts[i]})";
+            return acc;
+        }
+        if (kind == "past")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            int ticks = e.TryGetProperty("ticks", out var tEl) ? tEl.GetInt32() : 1;
+            return Extend($"_vs_past_{sid}[{ticks - 1}]");
+        }
+        if (kind == "rose")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"vsrtl::w64::lit(uint64_t(vsrtl::w64::edge(vsrtl::w64::selbit(_vs_past_{sid}[0],vsrtl::w64::lit(0ULL,1)),vsrtl::w64::selbit(vsrtl::w64::to(s[{sid}]),vsrtl::w64::lit(0ULL,1)),true)),1)";
+        }
+        if (kind == "fell")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"vsrtl::w64::lit(uint64_t(vsrtl::w64::edge(vsrtl::w64::selbit(_vs_past_{sid}[0],vsrtl::w64::lit(0ULL,1)),vsrtl::w64::selbit(vsrtl::w64::to(s[{sid}]),vsrtl::w64::lit(0ULL,1)),false)),1)";
+        }
+        if (kind == "stable")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"vsrtl::w64::lit(uint64_t(vsrtl::w64::exact(vsrtl::w64::to(s[{sid}]),_vs_past_{sid}[0])),1)";
         }
         if (kind == "dpi_call")
         {
@@ -242,6 +324,26 @@ public sealed partial class RtlDesign
             case "finish":
                 code.AppendLine("finish();");
                 break;
+            case "fatal":
+            {
+                int fCode = e.TryGetProperty("code", out var fc) ? fc.GetInt32() : 1;
+                if (e.TryGetProperty("format", out var ff))
+                {
+                    string fmt = CppStringLiteral(ff.GetString()!);
+                    string argList = e.TryGetProperty("args", out var fa)
+                        ? string.Join(",", fa.EnumerateArray().Select(a => $"vsrtl::w64::from({Expression64(a)})"))
+                        : "";
+                    code.AppendLine($"fatal({fCode},vsrtl::format_display({fmt},{{{argList}}},false));");
+                }
+                else
+                {
+                    code.AppendLine($"fatal({fCode});");
+                }
+                break;
+            }
+            case "sample_covergroup":
+                code.AppendLine(EmitCppSampleCovergroupStmt(e, ex => Expression64(ex), true, false));
+                break;
             case "display":
             {
                 string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
@@ -315,7 +417,7 @@ public sealed partial class RtlDesign
         }
     }
 
-    private string EmitNarrow64ModelHeader(string top, IReadOnlyDictionary<string, string> names, int[] seqIds, bool hasFixedMemWrites, bool hasRuntimeLoops, bool canThrow, IReadOnlyList<(string Name, int ArgCount)> dpiCalls, bool enableCoverage)
+    private string EmitNarrow64ModelHeader(string top, IReadOnlyDictionary<string, string> names, int[] seqIds, bool hasFixedMemWrites, bool hasRuntimeLoops, bool canThrow, IReadOnlyList<(string Name, int ArgCount)> dpiCalls, bool enableCoverage, int threads = 1)
     {
         string className = "V" + top;
         bool hasInit = Statements(Initialization).Any(st => Kind(st) is not "block");
@@ -323,15 +425,35 @@ public sealed partial class RtlDesign
         var eventIds = EventSignals.Select(SignalId).ToArray();
         var coverage = enableCoverage ? new List<(string Id, string Kind)>() : null;
 
-        var bodyCode = new StringBuilder();
-        bodyCode.AppendLine("inline void settle(){");
-        foreach (var step in SettledSteps)
+        void EmitStep64(StringBuilder sb, JsonElement step)
         {
             int id = SignalId(Name(step.GetProperty("target")));
             var rhs = step.GetProperty("value");
             int vw = ExpressionWidth(rhs);
             bool exactWidth = vw == Signals[id].Width && !(ExpressionSigned(rhs) && Signals[id].Width > vw);
-            bodyCode.AppendLine($"vsrtl::w64::store(s[{id}],{StoreWord64(Expression64(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
+            sb.AppendLine($"vsrtl::w64::store(s[{id}],{StoreWord64(Expression64(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
+        }
+
+        var bodyCode = new StringBuilder();
+        bodyCode.AppendLine("inline void settle(){");
+        if (threads <= 1)
+        {
+            foreach (var step in SettledSteps) EmitStep64(bodyCode, step);
+        }
+        else
+        {
+            foreach (var level in SettledLevels)
+            {
+                if (level.Count < 2) { foreach (var step in level) EmitStep64(bodyCode, step); continue; }
+                bodyCode.AppendLine($"_vs_pool.parallel_for({level.Count},[&](size_t _lvl_i){{switch(_lvl_i){{");
+                for (int idx = 0; idx < level.Count; ++idx)
+                {
+                    bodyCode.Append($"case {idx}:{{");
+                    EmitStep64(bodyCode, level[idx]);
+                    bodyCode.AppendLine("}break;");
+                }
+                bodyCode.AppendLine("}});");
+            }
         }
         bodyCode.AppendLine("}\nvoid evaluate() override {");
         if (dpiCalls.Count > 0) bodyCode.AppendLine("struct _VsDpiScope{svScope prev;explicit _VsDpiScope(svScope s):prev(svSetScope(s)){}~_VsDpiScope(){svSetScope(prev);}} _vs_dpi_scope(static_cast<svScope>(this));");
@@ -341,6 +463,7 @@ public sealed partial class RtlDesign
             bodyCode.AppendLine($"auto saved_s=s;auto saved_mem=mem;vsrtl::w64::W64 saved_prev[{Signals.Count}];for(int i=0;i<{Signals.Count};++i)saved_prev[i]=_vs_prev[i];try{{");
         }
         bodyCode.AppendLine("settle();");
+        EmitCppPropertyEvaluation(bodyCode, ex => Expression64(ex), ex => $"vsrtl::w64::yes({ex})", sid => $"vsrtl::w64::to(s[{sid}])", (cid, edge) => $"vsrtl::w64::edge(_vs_pclk_{cid},vsrtl::w64::to(s[{cid}]),{(edge == "posedge" ? "true" : "false")})", true, false);
         for (int p = 0; p < procs.Length; ++p)
         {
             string cond = string.Join("||", procs[p].GetProperty("events").EnumerateArray().Select(trigger =>
@@ -401,18 +524,22 @@ public sealed partial class RtlDesign
         bodyCode.AppendLine($"_vs_prev[{SignalId(Clock!)}]=vsrtl::w64::lit(0ULL,1);");
         foreach (var signal in Signals.Where(s => s.TwoState && s.Width == 1))
             bodyCode.AppendLine($"_vs_prev[{SignalId(signal.Name)}]=vsrtl::w64::lit(0ULL,1);");
+        EmitCppCovergroupRegistration(bodyCode);
+        EmitCppPropertyInit(bodyCode, true, false);
         if (enableCoverage) bodyCode.AppendLine("enableToggleCoverage(true);");
         bodyCode.AppendLine("}\n};");
 
-        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
+        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\n" + (threads > 1 ? "#include \"thread_pool.h\"\n" : "") + "using namespace vsrtl;\n");
         EmitDpiPrototypes(code, dpiCalls);
         code.AppendLine($"class {className} final : public vsrtl::Model {{");
+        if (threads > 1) code.AppendLine($"vsrtl::ThreadPool _vs_pool{{{threads}}};");
         if (hasRuntimeLoops || hasInit) code.AppendLine("size_t execution_budget=20000;");
         code.AppendLine($"vsrtl::w64::W64 _vs_prev[{Signals.Count}];");
         code.AppendLine($"vsrtl::w64::W64 _vs_next[{Signals.Count}];");
         if (hasFixedMemWrites) code.AppendLine("vsrtl::w64::MemLog64<16> _vs_mlog;");
         if (hasInit) code.AppendLine("std::vector<AssociativeStorage>assoc;");
         if (coverage is { Count: > 0 }) code.AppendLine($"uint64_t _vs_cov[{coverage.Count}]{{}};");
+        EmitCppPropertyMembers(code, true, false);
         code.Append(bodyCode);
         return code.ToString();
     }

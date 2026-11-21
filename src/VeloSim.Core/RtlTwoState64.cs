@@ -18,7 +18,7 @@ public sealed partial class RtlDesign
         if (Signals.Any(s => s.Width > 64)) return false;
         if (Memories.Any(m => m.Width > 64 || m.Associative || m.Queue || m.Dynamic || m.Dimensions is not null)) return false;
         if (SettledSteps.Any(step => !(Kind(step) == "blocking" && Kind(step.GetProperty("target")) == "ref"))) return false;
-        return SettledSteps.Append(Body).SelectMany(Statements).All(StatementFits64);
+        return VerificationFits64() && SettledSteps.Append(Body).SelectMany(Statements).All(StatementFits64);
     }
 
     private static string EmitConst2(string bits)
@@ -68,11 +68,71 @@ public sealed partial class RtlDesign
         }
         if (kind == "test_plusargs") return Extend($"uint64_t(testPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}))");
         if (kind == "urandom") return Extend("uint64_t(nextUrandom())");
+        if (kind == "random") return Extend("uint64_t(uint32_t(nextRandom()))");
         if (kind == "urandom_range")
         {
             string maxExpr = $"uint32_t({Expression2(e.GetProperty("max"))})";
             string minExpr = e.TryGetProperty("min", out var minEl) ? $"uint32_t({Expression2(minEl)})" : "0u";
             return Extend($"uint64_t(nextUrandomRange({maxExpr},{minExpr}))");
+        }
+        if (kind == "resolve")
+        {
+            int nk = ParseNetKind(e.GetProperty("net").GetString()!);
+            int rw = Math.Max(context, ew);
+            string drivers = string.Join(",", e.GetProperty("args").EnumerateArray().Select(d => Expression2(d, rw)));
+            return Extend($"vsrtl::w2::resolve_net({nk},{{{drivers}}},{rw})");
+        }
+        if (kind == "inside")
+        {
+            var valEl = e.GetProperty("value");
+            bool vSigned = ExpressionSigned(valEl);
+            int vw = ExpressionWidth(valEl);
+            var parts = new List<string>();
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    int cw = Math.Max(vw, Math.Max(ExpressionWidth(loEl), ExpressionWidth(hiEl)));
+                    bool cs = vSigned && ExpressionSigned(loEl) && ExpressionSigned(hiEl);
+                    string loC = cs
+                        ? $"vsrtl::w2::scmp({Expression2(valEl, cw, true)},{Expression2(loEl, cw, true)},{cw},3)"
+                        : $"vsrtl::w2::cmp({Expression2(valEl, cw, false)},{Expression2(loEl, cw, false)},3)";
+                    string hiC = cs
+                        ? $"vsrtl::w2::scmp({Expression2(valEl, cw, true)},{Expression2(hiEl, cw, true)},{cw},1)"
+                        : $"vsrtl::w2::cmp({Expression2(valEl, cw, false)},{Expression2(hiEl, cw, false)},1)";
+                    parts.Add($"vsrtl::w2::land({loC},{hiC})");
+                }
+                else
+                {
+                    int cw = Math.Max(vw, ExpressionWidth(it));
+                    bool cs = vSigned && ExpressionSigned(it);
+                    parts.Add($"vsrtl::w2::eq({Expression2(valEl, cw, cs)},{Expression2(it, cw, cs)})");
+                }
+            }
+            string acc = parts[0];
+            for (int i = 1; i < parts.Count; ++i) acc = $"vsrtl::w2::lor({acc},{parts[i]})";
+            return acc;
+        }
+        if (kind == "past")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            int ticks = e.TryGetProperty("ticks", out var tEl) ? tEl.GetInt32() : 1;
+            return Extend($"_vs_past_{sid}[{ticks - 1}]");
+        }
+        if (kind == "rose")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"uint64_t(vsrtl::w2::edge(_vs_past_{sid}[0]&1ULL,vsrtl::w2::to(s[{sid}])&1ULL,true))";
+        }
+        if (kind == "fell")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"uint64_t(vsrtl::w2::edge(_vs_past_{sid}[0]&1ULL,vsrtl::w2::to(s[{sid}])&1ULL,false))";
+        }
+        if (kind == "stable")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"uint64_t(vsrtl::w2::to(s[{sid}])==_vs_past_{sid}[0])";
         }
         if (kind == "dpi_call")
         {
@@ -217,6 +277,26 @@ public sealed partial class RtlDesign
             case "finish":
                 code.AppendLine("finish();");
                 break;
+            case "fatal":
+            {
+                int fCode = e.TryGetProperty("code", out var fc) ? fc.GetInt32() : 1;
+                if (e.TryGetProperty("format", out var ff))
+                {
+                    string fmt = CppStringLiteral(ff.GetString()!);
+                    string argList = e.TryGetProperty("args", out var fa)
+                        ? string.Join(",", fa.EnumerateArray().Select(a => $"vsrtl::w2::from({Expression2(a)},{ExpressionWidth(a)})"))
+                        : "";
+                    code.AppendLine($"fatal({fCode},vsrtl::format_display({fmt},{{{argList}}},false));");
+                }
+                else
+                {
+                    code.AppendLine($"fatal({fCode});");
+                }
+                break;
+            }
+            case "sample_covergroup":
+                code.AppendLine(EmitCppSampleCovergroupStmt(e, ex => Expression2(ex), false, true));
+                break;
             case "display":
             {
                 string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
@@ -289,7 +369,7 @@ public sealed partial class RtlDesign
         }
     }
 
-    private string EmitTwoState64ModelHeader(string top, IReadOnlyDictionary<string, string> names, int[] seqIds, bool hasFixedMemWrites, bool hasRuntimeLoops, bool canThrow, IReadOnlyList<(string Name, int ArgCount)> dpiCalls, bool enableCoverage)
+    private string EmitTwoState64ModelHeader(string top, IReadOnlyDictionary<string, string> names, int[] seqIds, bool hasFixedMemWrites, bool hasRuntimeLoops, bool canThrow, IReadOnlyList<(string Name, int ArgCount)> dpiCalls, bool enableCoverage, int threads = 1)
     {
         string className = "V" + top;
         bool hasInit = Statements(Initialization).Any(st => Kind(st) is not "block");
@@ -299,15 +379,35 @@ public sealed partial class RtlDesign
         var eventIds = CombinationalOnly ? Array.Empty<int>() : EventSignals.Select(SignalId).ToArray();
         var coverage = enableCoverage ? new List<(string Id, string Kind)>() : null;
 
-        var bodyCode = new StringBuilder();
-        bodyCode.AppendLine("inline void settle(){");
-        foreach (var step in SettledSteps)
+        void EmitStep2(StringBuilder sb, JsonElement step)
         {
             int id = SignalId(Name(step.GetProperty("target")));
             var rhs = step.GetProperty("value");
             int vw = ExpressionWidth(rhs);
             bool exactWidth = vw == Signals[id].Width && !(ExpressionSigned(rhs) && Signals[id].Width > vw);
-            bodyCode.AppendLine($"vsrtl::w2::store(s[{id}],{StoreWord2(Expression2(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
+            sb.AppendLine($"vsrtl::w2::store(s[{id}],{StoreWord2(Expression2(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
+        }
+
+        var bodyCode = new StringBuilder();
+        bodyCode.AppendLine("inline void settle(){");
+        if (threads <= 1)
+        {
+            foreach (var step in SettledSteps) EmitStep2(bodyCode, step);
+        }
+        else
+        {
+            foreach (var level in SettledLevels)
+            {
+                if (level.Count < 2) { foreach (var step in level) EmitStep2(bodyCode, step); continue; }
+                bodyCode.AppendLine($"_vs_pool.parallel_for({level.Count},[&](size_t _lvl_i){{switch(_lvl_i){{");
+                for (int idx = 0; idx < level.Count; ++idx)
+                {
+                    bodyCode.Append($"case {idx}:{{");
+                    EmitStep2(bodyCode, level[idx]);
+                    bodyCode.AppendLine("}break;");
+                }
+                bodyCode.AppendLine("}});");
+            }
         }
         bodyCode.AppendLine("}\nvoid evaluate() override {");
         if (dpiCalls.Count > 0) bodyCode.AppendLine("struct _VsDpiScope{svScope prev;explicit _VsDpiScope(svScope s):prev(svSetScope(s)){}~_VsDpiScope(){svSetScope(prev);}} _vs_dpi_scope(static_cast<svScope>(this));");
@@ -321,6 +421,7 @@ public sealed partial class RtlDesign
             bodyCode.AppendLine("try{");
         }
         bodyCode.AppendLine("settle();");
+        EmitCppPropertyEvaluation(bodyCode, ex => Expression2(ex), ex => $"vsrtl::w2::yes({ex})", sid => $"vsrtl::w2::to(s[{sid}])", (cid, edge) => $"vsrtl::w2::edge(_vs_pclk_{cid},vsrtl::w2::to(s[{cid}]),{(edge == "posedge" ? "true" : "false")})", false, true);
         if (!CombinationalOnly)
         {
             for (int p = 0; p < procs.Length; ++p)
@@ -430,12 +531,15 @@ public sealed partial class RtlDesign
                 bodyCode.AppendLine($"for(int j=0;j<{Memories[i].Depth};++j)_vs_m{i}[j]=mem[{i}][j].v.limb[0];");
             bodyCode.AppendLine("mem.clear();");
         }
+        EmitCppCovergroupRegistration(bodyCode);
+        EmitCppPropertyInit(bodyCode, false, true);
         if (enableCoverage) bodyCode.AppendLine("enableToggleCoverage(true);");
         bodyCode.AppendLine("}\n};");
 
-        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
+        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\n" + (threads > 1 ? "#include \"thread_pool.h\"\n" : "") + "using namespace vsrtl;\n");
         EmitDpiPrototypes(code, dpiCalls);
         code.AppendLine($"class {className} final : public vsrtl::Model {{");
+        if (threads > 1) code.AppendLine($"vsrtl::ThreadPool _vs_pool{{{threads}}};");
         if (hasRuntimeLoops || hasInit) code.AppendLine("size_t execution_budget=20000;");
         if (!CombinationalOnly)
         {
@@ -451,6 +555,7 @@ public sealed partial class RtlDesign
         }
         if (hasInit) code.AppendLine("std::vector<AssociativeStorage>assoc;");
         if (coverage is { Count: > 0 }) code.AppendLine($"uint64_t _vs_cov[{coverage.Count}]{{}};");
+        EmitCppPropertyMembers(code, false, true);
         code.Append(bodyCode);
         return code.ToString();
     }

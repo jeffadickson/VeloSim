@@ -15,7 +15,7 @@ public sealed partial class RtlDesign
     internal bool CanUsePortable64(RtlStateMode stateMode)
     {
         if (Timed) return false;
-        if (CollectDpiCalls().Count > 0) return false;
+        if (CollectDpiCalls().Count > 0 || Covergroups.Count > 0) return false;
         bool hasBlocking = Statements(Body).Any(e => Kind(e) is "blocking" or "allocate" or "delete" or "queue_push" or "queue_pop" or "assoc_traverse");
         bool hasContainers = Memories.Any(m => m.Associative || m.Queue || m.Dynamic);
         bool useFastEvent = EventDriven && !hasBlocking && !hasContainers;
@@ -24,13 +24,13 @@ public sealed partial class RtlDesign
         if (Signals.Any(s => s.Width > 64)) return false;
         if (Memories.Any(m => m.Width > 64 || m.Associative || m.Queue || m.Dynamic || m.Dimensions is not null)) return false;
         if (SettledSteps.Any(step => !(Kind(step) == "blocking" && Kind(step.GetProperty("target")) == "ref"))) return false;
-        return SettledSteps.Append(Body).SelectMany(Statements).All(StatementFits64);
+        return VerificationFits64() && SettledSteps.Append(Body).SelectMany(Statements).All(StatementFits64);
     }
 
     internal IReadOnlyDictionary<string, string> CSharpPortNames()
     {
         var reserved = (
-            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange ForceSignal ReleaseSignal IsForced SaveCheckpoint RestoreCheckpoint W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO"
+            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -99,11 +99,66 @@ public sealed partial class RtlDesign
         if (kind == "indexedselect") return $"W64Ops.SelIdx({CsExpr64(e.GetProperty("value"))},{CsExpr64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
         if (kind == "test_plusargs") return Extend($"new W64(TestPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}),0UL,0UL,32)");
         if (kind == "urandom") return Extend("new W64(NextUrandom(),0UL,0UL,32)");
+        if (kind == "random") return Extend("new W64((uint)NextRandom(),0UL,0UL,32)");
         if (kind == "urandom_range")
         {
             string maxExpr = $"(uint)({CsExpr64(e.GetProperty("max"))}).V";
             string minExpr = e.TryGetProperty("min", out var minEl) ? $"(uint)({CsExpr64(minEl)}).V" : "0u";
             return Extend($"new W64(NextUrandomRange({maxExpr},{minExpr}),0UL,0UL,32)");
+        }
+        if (kind == "resolve")
+        {
+            int nk = ParseNetKind(e.GetProperty("net").GetString()!);
+            int rw = Math.Max(context, ExpressionWidth(e));
+            string drivers = string.Join(", ", e.GetProperty("args").EnumerateArray().Select(d => CsExpr64(d, rw)));
+            return Extend($"W64Ops.ResolveNet({nk}, [{drivers}], {rw})");
+        }
+        if (kind == "inside")
+        {
+            var valEl = e.GetProperty("value");
+            bool vSigned = ExpressionSigned(valEl);
+            int vw = ExpressionWidth(valEl);
+            var parts = new List<string>();
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    int cw = Math.Max(vw, Math.Max(ExpressionWidth(loEl), ExpressionWidth(hiEl)));
+                    bool cs = vSigned && ExpressionSigned(loEl) && ExpressionSigned(hiEl);
+                    string cmp = cs ? "W64Ops.SCmp" : "W64Ops.Cmp";
+                    parts.Add($"W64Ops.LAnd({cmp}({CsExpr64(valEl, cw, cs)},{CsExpr64(loEl, cw, cs)},3),{cmp}({CsExpr64(valEl, cw, cs)},{CsExpr64(hiEl, cw, cs)},1))");
+                }
+                else
+                {
+                    int cw = Math.Max(vw, ExpressionWidth(it));
+                    bool cs = vSigned && ExpressionSigned(it);
+                    parts.Add($"W64Ops.WildEq({CsExpr64(valEl, cw, cs)},{CsExpr64(it, cw, cs)})");
+                }
+            }
+            string acc = parts[0];
+            for (int i = 1; i < parts.Count; ++i) acc = $"W64Ops.LOr({acc},{parts[i]})";
+            return acc;
+        }
+        if (kind == "past")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            int ticks = e.TryGetProperty("ticks", out var tEl) ? tEl.GetInt32() : 1;
+            return Extend($"_past_{sid}[{ticks - 1}]");
+        }
+        if (kind == "rose")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"new W64(W64Ops.Edge(W64Ops.SelBit(_past_{sid}[0],new W64(0UL,0UL,0UL,1)),W64Ops.SelBit(_s{sid},new W64(0UL,0UL,0UL,1)),true)?1UL:0UL,0UL,0UL,1)";
+        }
+        if (kind == "fell")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"new W64(W64Ops.Edge(W64Ops.SelBit(_past_{sid}[0],new W64(0UL,0UL,0UL,1)),W64Ops.SelBit(_s{sid},new W64(0UL,0UL,0UL,1)),false)?1UL:0UL,0UL,0UL,1)";
+        }
+        if (kind == "stable")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"new W64(W64Ops.Exact(_s{sid},_past_{sid}[0])?1UL:0UL,0UL,0UL,1)";
         }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ExpressionWidth(e));
@@ -168,11 +223,71 @@ public sealed partial class RtlDesign
         }
         if (kind == "test_plusargs") return Extend($"(ulong)TestPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)})");
         if (kind == "urandom") return Extend("(ulong)NextUrandom()");
+        if (kind == "random") return Extend("(ulong)(uint)NextRandom()");
         if (kind == "urandom_range")
         {
             string maxExpr = $"(uint)({CsExpr2(e.GetProperty("max"))})";
             string minExpr = e.TryGetProperty("min", out var minEl) ? $"(uint)({CsExpr2(minEl)})" : "0u";
             return Extend($"(ulong)NextUrandomRange({maxExpr},{minExpr})");
+        }
+        if (kind == "resolve")
+        {
+            int nk = ParseNetKind(e.GetProperty("net").GetString()!);
+            int rw = Math.Max(context, ew);
+            string drivers = string.Join(", ", e.GetProperty("args").EnumerateArray().Select(d => CsExpr2(d, rw)));
+            return Extend($"W2Ops.ResolveNet({nk}, [{drivers}], {rw})");
+        }
+        if (kind == "inside")
+        {
+            var valEl = e.GetProperty("value");
+            bool vSigned = ExpressionSigned(valEl);
+            int vw = ExpressionWidth(valEl);
+            var parts = new List<string>();
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    int cw = Math.Max(vw, Math.Max(ExpressionWidth(loEl), ExpressionWidth(hiEl)));
+                    bool cs = vSigned && ExpressionSigned(loEl) && ExpressionSigned(hiEl);
+                    string loC = cs
+                        ? $"W2Ops.SCmp({CsExpr2(valEl, cw, true)},{CsExpr2(loEl, cw, true)},{cw},3)"
+                        : $"W2Ops.Cmp({CsExpr2(valEl, cw, false)},{CsExpr2(loEl, cw, false)},3)";
+                    string hiC = cs
+                        ? $"W2Ops.SCmp({CsExpr2(valEl, cw, true)},{CsExpr2(hiEl, cw, true)},{cw},1)"
+                        : $"W2Ops.Cmp({CsExpr2(valEl, cw, false)},{CsExpr2(hiEl, cw, false)},1)";
+                    parts.Add($"W2Ops.LAnd({loC},{hiC})");
+                }
+                else
+                {
+                    int cw = Math.Max(vw, ExpressionWidth(it));
+                    bool cs = vSigned && ExpressionSigned(it);
+                    parts.Add($"W2Ops.Eq({CsExpr2(valEl, cw, cs)},{CsExpr2(it, cw, cs)})");
+                }
+            }
+            string acc = parts[0];
+            for (int i = 1; i < parts.Count; ++i) acc = $"W2Ops.LOr({acc},{parts[i]})";
+            return acc;
+        }
+        if (kind == "past")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            int ticks = e.TryGetProperty("ticks", out var tEl) ? tEl.GetInt32() : 1;
+            return Extend($"_past_{sid}[{ticks - 1}]");
+        }
+        if (kind == "rose")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"(W2Ops.Edge(_past_{sid}[0]&1UL,_s{sid}&1UL,true)?1UL:0UL)";
+        }
+        if (kind == "fell")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"(W2Ops.Edge(_past_{sid}[0]&1UL,_s{sid}&1UL,false)?1UL:0UL)";
+        }
+        if (kind == "stable")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"(_s{sid}==_past_{sid}[0]?1UL:0UL)";
         }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ew);
@@ -340,6 +455,23 @@ public sealed partial class RtlDesign
             case "finish":
                 code.AppendLine("_finished = true;");
                 break;
+            case "fatal":
+            {
+                int fCode = e.TryGetProperty("code", out var fc) ? fc.GetInt32() : 1;
+                if (e.TryGetProperty("format", out var ff))
+                {
+                    string fmt = CppStringLiteral(ff.GetString()!);
+                    string argList = e.TryGetProperty("args", out var fa)
+                        ? string.Join(", ", fa.EnumerateArray().Select(a => twoState ? $"new W64({CsExpr2(a)},0UL,0UL,{ExpressionWidth(a)})" : CsExpr64(a)))
+                        : "";
+                    code.AppendLine($"Fatal({fCode}, W64Ops.FormatDisplay({fmt}, [{argList}], false));");
+                }
+                else
+                {
+                    code.AppendLine($"Fatal({fCode});");
+                }
+                break;
+            }
             case "display":
             {
                 string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
@@ -453,21 +585,38 @@ public sealed partial class RtlDesign
         if (hasRuntimeLoops) code.AppendLine("    private int _budget = 20000;");
         code.AppendLine("    private ulong _time;");
         code.AppendLine("    private bool _finished = false;");
+        code.AppendLine("    private int _exitCode = 0;");
         code.AppendLine("    private VcdWriter? _vcd;");
         code.AppendLine("    private readonly PlusargStore _plusargs = new();");
         code.AppendLine("    private SplitMix64Rng _rng = new();");
         code.AppendLine($"    private Dictionary<int, {wordType}>? _forced;");
         code.AppendLine("    public bool GotFinish => _finished;");
+        code.AppendLine("    public int ExitCode => _exitCode;");
+        code.AppendLine("    public void Fatal(int code, string message = \"\") { _exitCode = code; _finished = true; throw new InvalidOperationException(string.IsNullOrEmpty(message) ? $\"RTL $fatal({code})\" : $\"RTL $fatal({code}): {message}\"); }");
         code.AppendLine("    public Action<string>? DisplaySink { get; set; }");
         code.AppendLine("    private void EmitDisplay(string text) { if (DisplaySink is not null) DisplaySink(text); else Console.Write(text); }");
         code.AppendLine("    public void SetPlusargs(IEnumerable<string> args) => _plusargs.Set(args);");
         code.AppendLine("    public void AddPlusarg(string arg) => _plusargs.Add(arg);");
         code.AppendLine("    public uint TestPlusargs(string prefix) => _plusargs.Test(prefix);");
         code.AppendLine("    public uint ValuePlusargs(string spec, ref W64 output) => _plusargs.Value(spec, ref output);");
-        code.AppendLine("    public void SetRandomSeed(ulong seed) => _rng.State = seed;");
+        code.AppendLine("    public void SetRandomSeed(ulong seed) => _rng.SetSeed(seed);");
         code.AppendLine("    public ulong RandomSeed => _rng.State;");
         code.AppendLine("    public uint NextUrandom() => _rng.NextU32();");
         code.AppendLine("    public uint NextUrandomRange(uint maxVal, uint minVal = 0u) => _rng.NextRange(maxVal, minVal);");
+        code.AppendLine("    public int NextRandom() => _rng.NextRandom();");
+        if (Properties.Count > 0)
+        {
+            code.AppendLine($"    public ulong[] PropertyPasses {{ get; }} = new ulong[{Properties.Count}];");
+            code.AppendLine($"    public ulong[] PropertyFailures {{ get; }} = new ulong[{Properties.Count}];");
+            code.AppendLine($"    public ulong[] PropertyVacuous {{ get; }} = new ulong[{Properties.Count}];");
+            for (int i = 0; i < Properties.Count; ++i)
+                if (Properties[i].Delay > 0)
+                    code.AppendLine($"    private readonly bool[] _propPipe_{i} = new bool[{Properties[i].Delay}];");
+        }
+        foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
+            code.AppendLine($"    private readonly {wordType}[] _past_{sid} = new {wordType}[{depth}];");
+        foreach (int cid in PropertyClockSignalIds())
+            code.AppendLine($"    private {wordType} _pclk_{cid};");
         code.AppendLine("    public bool IsForced(int signalId) => _forced is not null && _forced.ContainsKey(signalId);");
         code.AppendLine("    public void ForceSignal(int signalId, W64 value)");
         code.AppendLine("    {");
@@ -534,6 +683,14 @@ public sealed partial class RtlDesign
             if (!twoState)
                 code.AppendLine($"        Array.Fill(_m{i}, {(mem.TwoState ? $"new W64(0UL,0UL,0UL,{mem.Width})" : $"W64Ops.Unknown({mem.Width})")});");
         }
+        foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
+        {
+            var sig = Signals[sid];
+            string initVal = twoState ? "0UL" : (sig.TwoState ? $"new W64(0UL,0UL,0UL,{sig.Width})" : $"W64Ops.Unknown({sig.Width})");
+            code.AppendLine($"        Array.Fill(_past_{sid}, {initVal});");
+        }
+        foreach (int cid in PropertyClockSignalIds())
+            code.AppendLine(twoState ? $"        _pclk_{cid} = 0UL;" : $"        _pclk_{cid} = new W64(0UL,0UL,0UL,1);");
         if (hasFixedMemWrites)
         {
             code.Append("        _mems = [");
@@ -674,6 +831,63 @@ public sealed partial class RtlDesign
         code.AppendLine("        if (_forced is { Count: > 0 }) ApplyForces();");
         code.AppendLine("        Settle();");
         code.AppendLine("        if (_forced is { Count: > 0 }) ApplyForces();");
+        if (Properties.Count > 0 || PastDepths.Count > 0)
+        {
+            for (int i = 0; i < Properties.Count; ++i)
+            {
+                var p = Properties[i];
+                int cid = SignalId(p.Clock);
+                string edgeCond = twoState
+                    ? $"W2Ops.Edge(_pclk_{cid}, _s{cid}, {(p.Edge == "posedge" ? "true" : "false")})"
+                    : $"W64Ops.Edge(_pclk_{cid}, _s{cid}, {(p.Edge == "posedge" ? "true" : "false")})";
+                code.AppendLine($"        if ({edgeCond}) {{");
+                if (p.DisableIff is { } dis)
+                {
+                    string disCond = twoState ? $"W2Ops.Yes({CsExpr2(dis)})" : $"W64Ops.Yes({CsExpr64(dis)})";
+                    code.AppendLine($"            if ({disCond}) {{");
+                    if (p.Delay > 0) code.AppendLine($"                Array.Clear(_propPipe_{i});");
+                    code.AppendLine("            } else {");
+                }
+                string antCond = p.Antecedent is { } ant
+                    ? (twoState ? $"W2Ops.Yes({CsExpr2(ant)})" : $"W64Ops.Yes({CsExpr64(ant)})")
+                    : "true";
+                string consCond = twoState ? $"W2Ops.Yes({CsExpr2(p.Consequent)})" : $"W64Ops.Yes({CsExpr64(p.Consequent)})";
+                string failMsg = CppStringLiteral(string.IsNullOrEmpty(p.Message) ? $"SVA property '{p.Name}' failed" : $"SVA property '{p.Name}' failed: {p.Message}");
+                if (p.Delay == 0)
+                {
+                    code.AppendLine($"            if ({antCond}) {{ if ({consCond}) {{ ++PropertyPasses[{i}]; }} else {{ ++PropertyFailures[{i}]; {(p.Kind == "assert" ? $"throw new InvalidOperationException({failMsg});" : "")} }} }}");
+                    if (p.Kind != "cover") code.AppendLine($"            else {{ ++PropertyVacuous[{i}]; }}");
+                }
+                else
+                {
+                    code.AppendLine($"            if (_propPipe_{i}[{p.Delay - 1}]) {{ if ({consCond}) {{ ++PropertyPasses[{i}]; }} else {{ ++PropertyFailures[{i}]; {(p.Kind == "assert" ? $"throw new InvalidOperationException({failMsg});" : "")} }} }}");
+                    for (int k = p.Delay - 1; k > 0; --k)
+                        code.AppendLine($"            _propPipe_{i}[{k}] = _propPipe_{i}[{k - 1}];");
+                    code.AppendLine($"            bool _ant_{i} = {antCond}; _propPipe_{i}[0] = _ant_{i};");
+                    if (p.Kind != "cover") code.AppendLine($"            if (!_ant_{i}) ++PropertyVacuous[{i}];");
+                }
+                if (p.DisableIff is not null) code.AppendLine("            }");
+                code.AppendLine("        }");
+            }
+            if (PastDepths.Count > 0)
+            {
+                int pastCid = Clock is not null ? SignalId(Clock) : SignalId(Properties[0].Clock);
+                string pastEdge = Properties.FirstOrDefault(p => SignalId(p.Clock) == pastCid)?.Edge ?? "posedge";
+                string pEdge = twoState
+                    ? $"W2Ops.Edge(_pclk_{pastCid}, _s{pastCid}, {(pastEdge == "posedge" ? "true" : "false")})"
+                    : $"W64Ops.Edge(_pclk_{pastCid}, _s{pastCid}, {(pastEdge == "posedge" ? "true" : "false")})";
+                code.AppendLine($"        if ({pEdge}) {{");
+                foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
+                {
+                    for (int k = depth - 1; k > 0; --k)
+                        code.AppendLine($"            _past_{sid}[{k}] = _past_{sid}[{k - 1}];");
+                    code.AppendLine($"            _past_{sid}[0] = _s{sid};");
+                }
+                code.AppendLine("        }");
+            }
+            foreach (int cid in PropertyClockSignalIds())
+                code.AppendLine($"        _pclk_{cid} = _s{cid};");
+        }
         if (!CombinationalOnly)
         {
             for (int p = 0; p < procs.Length; ++p)
@@ -1170,6 +1384,54 @@ public static class W64Ops
         if (x <= 1UL) return new W64(0UL, 0UL, 0UL, 32);
         return new W64((ulong)(64 - BitOperations.LeadingZeroCount(x - 1UL)), 0UL, 0UL, 32);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 ResolvePair(W64 aIn, W64 bIn, int netKind, int w)
+    {
+        ulong m = Mask(w);
+        W64 a = aIn.W == w ? aIn : Resize(aIn, w);
+        W64 b = bIn.W == w ? bIn : Resize(bIn, w);
+        ulong va = a.V & m, xa = a.X & m, za = a.Z & m;
+        ulong vb = b.V & m, xb = b.X & m, zb = b.Z & m;
+        ulong a0 = ~(va | xa | za) & m;
+        ulong b0 = ~(vb | xb | zb) & m;
+        ulong zOut = za & zb;
+        ulong vOut, o0;
+        if (netKind == 1)
+        {
+            o0 = (a0 | b0) & m;
+            vOut = (~o0) & ((va & (vb | zb)) | (za & vb)) & m;
+        }
+        else if (netKind == 2)
+        {
+            vOut = (va | vb) & m;
+            o0 = (~vOut) & ((a0 & (b0 | zb)) | (za & b0)) & m;
+        }
+        else
+        {
+            vOut = ((va & (vb | zb)) | (za & vb)) & m;
+            o0 = ((a0 & (b0 | zb)) | (za & b0)) & m;
+        }
+        ulong xOut = ~(zOut | vOut | o0) & m;
+        return new W64(vOut, xOut, zOut, w);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 ResolveFinalize(W64 acc, int netKind)
+    {
+        ulong m = Mask(acc.W);
+        if (netKind == 3) return new W64(acc.V, acc.X, 0UL, acc.W);
+        if (netKind == 4) return new W64((acc.V | acc.Z) & m, acc.X, 0UL, acc.W);
+        return acc;
+    }
+
+    public static W64 ResolveNet(int netKind, ReadOnlySpan<W64> drivers, int w)
+    {
+        if (drivers.Length == 0) return ResolveFinalize(new W64(0UL, 0UL, Mask(w), w), netKind);
+        W64 acc = drivers[0].W == w ? drivers[0] : Resize(drivers[0], w);
+        for (int i = 1; i < drivers.Length; ++i) acc = ResolvePair(acc, drivers[i], netKind, w);
+        return ResolveFinalize(acc, netKind);
+    }
 }
 
 public static class W2Ops
@@ -1347,6 +1609,22 @@ public static class W2Ops
         if (isSigned && w > 0 && ((a >> (w - 1)) & 1UL) != 0) return 0U;
         if (a > 20000UL) throw new InvalidOperationException("runtime repeat count exceeds budget");
         return (uint)a;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong ResolvePair(ulong a, ulong b, int netKind, int w)
+    {
+        ulong m = Mask(w);
+        return (netKind == 1 ? (a & b) : (a | b)) & m;
+    }
+
+    public static ulong ResolveNet(int netKind, ReadOnlySpan<ulong> drivers, int w)
+    {
+        ulong m = Mask(w);
+        if (drivers.Length == 0) return netKind == 4 ? m : 0UL;
+        ulong acc = drivers[0] & m;
+        for (int i = 1; i < drivers.Length; ++i) acc = ResolvePair(acc, drivers[i], netKind, w);
+        return acc;
     }
 }
 
@@ -1604,7 +1882,14 @@ public sealed class PlusargStore
 public struct SplitMix64Rng
 {
     public ulong State;
-    public SplitMix64Rng() { State = 0x9E3779B97F4A7C15UL; }
+    public uint LcgState;
+    public SplitMix64Rng() { State = 0x9E3779B97F4A7C15UL; LcgState = 0x9E3779B9u; }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SetSeed(ulong seed)
+    {
+        State = seed;
+        LcgState = (uint)(seed ^ (seed >> 32));
+    }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public uint NextU32()
     {
@@ -1622,6 +1907,12 @@ public struct SplitMix64Rng
         uint r = NextU32();
         if (span >= 0x100000000UL) return r;
         return (uint)(minVal + (r % span));
+    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int NextRandom()
+    {
+        LcgState = unchecked(69069u * LcgState + 1u);
+        return unchecked((int)LcgState);
     }
 }
 

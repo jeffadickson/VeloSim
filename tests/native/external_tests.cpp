@@ -158,5 +158,53 @@ int main(int argc,char** argv){try{
   vpi_free_object(w2); vpi_free_object(mh);
   mm.final();
  }
+ // Wave 4: functional covergroups (bins/ranges/default/ignore/illegal/cross), SVA property stats, $fatal exitCode, and $random LCG.
+ {
+  struct CovModel final : vsrtl::Model {
+   void evaluate() override {}
+   CovModel():vsrtl::Model("covtop",{{"clk",1,vpiInput}},0){}
+  };
+  CovModel cm;
+  cm.setRandomSeed(0x12345678ULL);
+  int32_t r1=cm.nextRandom(), r2=cm.nextRandom();
+  check(r1!=r2);
+  cm.setRandomSeed(0x12345678ULL);
+  check(cm.nextRandom()==r1 && cm.nextRandom()==r2);
+
+  vsrtl::CovergroupSpec spec;
+  spec.name="cg_bus";
+  spec.points.push_back({"op",{
+   {"zero",0,0,false,false,false,0},
+   {"mid",1,3,false,false,false,0},
+   {"ign",4,4,false,true,false,0},
+   {"bad",7,7,false,false,true,0},
+   {"other",0,0,true,false,false,0}
+  }});
+  spec.points.push_back({"mode",{
+   {"m0",0,0,false,false,false,0},
+   {"m1",1,1,false,false,false,0}
+  }});
+  spec.crosses.push_back({"op_x_mode",0,1,{}});
+  size_t cgId=cm.registerCovergroup(std::move(spec));
+  cm.sampleCovergroup(cgId,{0,0},{true,true}); // zero x m0
+  cm.sampleCovergroup(cgId,{2,1},{true,true}); // mid x m1
+  cm.sampleCovergroup(cgId,{4,0},{true,true}); // ignored op -> no op hit, no cross hit
+  cm.sampleCovergroup(cgId,{6,0},{true,true}); // default(other) x m0
+  bool illegalCaught=false;
+  try{ cm.sampleCovergroup(cgId,{7,0},{true,true}); }catch(const std::runtime_error&){ illegalCaught=true; }
+  check(illegalCaught);
+  const auto& cg=cm.covergroups().at(cgId);
+  check(cg.samples==5);
+  check(cg.points[0].bins[0].hits==1 && cg.points[0].bins[1].hits==1 && cg.points[0].bins[2].hits==0 && cg.points[0].bins[4].hits==1);
+  check(cg.crosses[0].hits[0*2+0]==1 && cg.crosses[0].hits[1*2+1]==1 && cg.crosses[0].hits[4*2+0]==1);
+
+  size_t pid=cm.registerProperty("p_req_ack","assert");
+  cm.recordPropertyVacuous(pid); cm.recordPropertyPass(pid); cm.recordPropertyPass(pid);
+  check(cm.propertyStats()[pid].passes==2 && cm.propertyStats()[pid].vacuous==1 && cm.propertyStats()[pid].failures==0);
+
+  bool fatalCaught=false;
+  try{ cm.fatal(42,"boom"); }catch(const std::runtime_error&){ fatalCaught=true; }
+  check(fatalCaught && cm.gotFinish() && cm.exitCode()==42);
+ }
  std::cout<<"external interface tests pass\n";return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

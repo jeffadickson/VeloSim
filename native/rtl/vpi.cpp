@@ -174,9 +174,13 @@ struct Model::State {
  std::unordered_map<size_t,W> forced;
  std::vector<std::string> plusargs;
  uint64_t rngState=0x9E3779B97F4A7C15ULL;
+ uint32_t lcgState=0x9E3779B9u;
+ int exitCode=0;
  bool toggleCoverageEnabled=false;
  std::vector<bool> toggleInitialized;
  std::vector<Bits> togglePrev0, togglePrev1, toggleRise, toggleFall;
+ std::vector<CovergroupSpec> covergroups;
+ std::vector<PropertyStat> properties;
  VcdWriter vcd;
  std::function<void(const std::string&)> displaySink;
 
@@ -251,10 +255,18 @@ void Model::timeInc(uint64_t delta){checkThread();if(fast_evaluating||state->eva
  if(delta)fast_dirty=true;
 }
 bool Model::gotFinish() const{checkThread();return state->finished||state->finishRequested;}
+int Model::exitCode() const{checkThread();return state->exitCode;}
 bool Model::evalNeeded() const{checkThread();return !gotFinish()&&fast_dirty;}
 bool Model::started() const{checkThread();return state->started;}
 void Model::requestEval(){checkThread();if(gotFinish())throw std::runtime_error("finished model evaluation request");state->requested=true;fast_dirty=true;}
 void Model::finish(){checkThread();state->finishRequested=true;refreshFastFlags();}
+void Model::fatal(int code,const std::string& message){
+ checkThread();
+ state->exitCode=code;
+ state->finishRequested=true;
+ refreshFastFlags();
+ throw std::runtime_error(message.empty()?("RTL $fatal("+std::to_string(code)+")"):("RTL $fatal("+std::to_string(code)+"): "+message));
+}
 void Model::evalSlow(){
  checkThread();if(fast_evaluating||state->evaluating||gotFinish())throw std::runtime_error("reentrant or finished model evaluation");
  if(!state->hasCallbacks&&state->pending.empty()){
@@ -348,7 +360,7 @@ uint32_t Model::valuePlusargs(const std::string& spec,W& out) const{
  }
  return 0u;
 }
-void Model::setRandomSeed(uint64_t seed){checkThread();state->rngState=seed;}
+void Model::setRandomSeed(uint64_t seed){checkThread();state->rngState=seed;state->lcgState=static_cast<uint32_t>(seed^(seed>>32));}
 uint64_t Model::randomSeed() const{checkThread();return state->rngState;}
 uint32_t Model::nextUrandom(){
  checkThread();
@@ -365,6 +377,11 @@ uint32_t Model::nextUrandomRange(uint32_t max_val,uint32_t min_val){
  uint32_t r=nextUrandom();
  if(span>=0x100000000ULL)return r;
  return static_cast<uint32_t>(min_val+(uint64_t(r)%span));
+}
+int32_t Model::nextRandom(){
+ checkThread();
+ state->lcgState=static_cast<uint32_t>(69069u*state->lcgState+1u);
+ return static_cast<int32_t>(state->lcgState);
 }
 void Model::forceSignal(size_t id,W value){
  checkThread();
@@ -411,6 +428,76 @@ std::vector<ToggleCoverage> Model::toggleCoverage() const{
  }
  return out;
 }
+size_t Model::registerCovergroup(CovergroupSpec spec){
+ checkThread();
+ for(auto& cr:spec.crosses){
+  if(cr.cp_a>=spec.points.size()||cr.cp_b>=spec.points.size())
+   throw std::out_of_range("invalid coverpoint index in cross specification");
+  cr.hits.assign(spec.points[cr.cp_a].bins.size()*spec.points[cr.cp_b].bins.size(),0);
+ }
+ state->covergroups.push_back(std::move(spec));
+ return state->covergroups.size()-1;
+}
+void Model::sampleCovergroup(size_t cg_id,const std::vector<uint64_t>& values,const std::vector<bool>& known){
+ checkThread();
+ if(cg_id>=state->covergroups.size())throw std::out_of_range("invalid covergroup id");
+ auto& cg=state->covergroups[cg_id];
+ if(values.size()!=cg.points.size()||known.size()!=cg.points.size())
+  throw std::invalid_argument("covergroup sample arity mismatch");
+ ++cg.samples;
+ std::vector<int64_t> matched(cg.points.size(),-1);
+ for(size_t pi=0;pi<cg.points.size();++pi){
+  if(!known[pi])continue;
+  uint64_t val=values[pi];
+  auto& bins=cg.points[pi].bins;
+  // Pass 1: check illegal_bins and ignore_bins first (IEEE 1800 §19.5.4/19.5.5).
+  bool ignored=false;
+  for(size_t bi=0;bi<bins.size();++bi){
+   const auto& b=bins[bi];
+   if(b.is_default)continue;
+   if(val>=b.lo&&val<=b.hi){
+    if(b.is_illegal)throw std::runtime_error("illegal_bins hit in covergroup '"+cg.name+"."+cg.points[pi].name+"."+b.name+"' value="+std::to_string(val));
+    if(b.is_ignore){ignored=true;break;}
+   }
+  }
+  if(ignored)continue;
+  // Pass 2: match explicit/range bins.
+  int64_t defaultIdx=-1;
+  bool anyHit=false;
+  for(size_t bi=0;bi<bins.size();++bi){
+   auto& b=bins[bi];
+   if(b.is_ignore||b.is_illegal)continue;
+   if(b.is_default){if(defaultIdx<0)defaultIdx=int64_t(bi);continue;}
+   if(val>=b.lo&&val<=b.hi){
+    ++b.hits;
+    if(matched[pi]<0)matched[pi]=int64_t(bi);
+    anyHit=true;
+   }
+  }
+  if(!anyHit&&defaultIdx>=0){
+   ++bins[size_t(defaultIdx)].hits;
+   matched[pi]=defaultIdx;
+  }
+ }
+ for(auto& cr:cg.crosses){
+  int64_t a=matched[cr.cp_a],b=matched[cr.cp_b];
+  if(a>=0&&b>=0){
+   size_t cols=cg.points[cr.cp_b].bins.size();
+   size_t idx=size_t(a)*cols+size_t(b);
+   if(idx<cr.hits.size())++cr.hits[idx];
+  }
+ }
+}
+const std::vector<CovergroupSpec>& Model::covergroups() const{checkThread();return state->covergroups;}
+size_t Model::registerProperty(std::string name,std::string kind){
+ checkThread();
+ state->properties.push_back(PropertyStat{std::move(name),std::move(kind),0,0,0});
+ return state->properties.size()-1;
+}
+void Model::recordPropertyPass(size_t prop_id){checkThread();if(prop_id<state->properties.size())++state->properties[prop_id].passes;}
+void Model::recordPropertyFail(size_t prop_id){checkThread();if(prop_id<state->properties.size())++state->properties[prop_id].failures;}
+void Model::recordPropertyVacuous(size_t prop_id){checkThread();if(prop_id<state->properties.size())++state->properties[prop_id].vacuous;}
+const std::vector<PropertyStat>& Model::propertyStats() const{checkThread();return state->properties;}
 void Model::writeCoverageJson(const std::string& path) const{
  checkThread();
  auto pts=coveragePoints();
@@ -431,7 +518,60 @@ void Model::writeCoverageJson(const std::string& path) const{
      <<",\"rise_hex\":\""<<bitsHex(togs[i].rise,togs[i].width)<<"\",\"fall_hex\":\""<<bitsHex(togs[i].fall,togs[i].width)
      <<"\",\"rise_hits\":"<<popcountBits(togs[i].rise)<<",\"fall_hits\":"<<popcountBits(togs[i].fall)<<'}';
  }
- out<<"]}\n";
+ out<<']';
+ if(!state->covergroups.empty()){
+  out<<",\"covergroups\":[";
+  for(size_t gi=0;gi<state->covergroups.size();++gi){
+   if(gi)out<<',';
+   const auto& cg=state->covergroups[gi];
+   out<<"{\"name\":\""<<jsonEscape(cg.name)<<"\",\"samples\":"<<cg.samples<<",\"coverpoints\":[";
+   for(size_t pi=0;pi<cg.points.size();++pi){
+    if(pi)out<<',';
+    const auto& cp=cg.points[pi];
+    out<<"{\"name\":\""<<jsonEscape(cp.name)<<"\",\"bins\":[";
+    for(size_t bi=0;bi<cp.bins.size();++bi){
+     if(bi)out<<',';
+     const auto& b=cp.bins[bi];
+     out<<"{\"name\":\""<<jsonEscape(b.name)<<"\",\"lo\":"<<b.lo<<",\"hi\":"<<b.hi
+        <<",\"default\":"<<(b.is_default?"true":"false")<<",\"ignore\":"<<(b.is_ignore?"true":"false")
+        <<",\"illegal\":"<<(b.is_illegal?"true":"false")<<",\"hits\":"<<b.hits<<'}';
+    }
+    out<<"]}";
+   }
+   out<<"],\"crosses\":[";
+   for(size_t ci=0;ci<cg.crosses.size();++ci){
+    if(ci)out<<',';
+    const auto& cr=cg.crosses[ci];
+    const auto& ba=cg.points[cr.cp_a].bins;
+    const auto& bb=cg.points[cr.cp_b].bins;
+    out<<"{\"name\":\""<<jsonEscape(cr.name)<<"\",\"cp_a\":\""<<jsonEscape(cg.points[cr.cp_a].name)
+       <<"\",\"cp_b\":\""<<jsonEscape(cg.points[cr.cp_b].name)<<"\",\"bins\":[";
+    bool first=true;
+    for(size_t ai=0;ai<ba.size();++ai){
+     for(size_t bi=0;bi<bb.size();++bi){
+      if(!first)out<<',';
+      first=false;
+      size_t idx=ai*bb.size()+bi;
+      out<<"{\"a\":\""<<jsonEscape(ba[ai].name)<<"\",\"b\":\""<<jsonEscape(bb[bi].name)<<"\",\"hits\":"<<(idx<cr.hits.size()?cr.hits[idx]:0)<<'}';
+     }
+    }
+    out<<"]}";
+   }
+   out<<"]}";
+  }
+  out<<']';
+ }
+ if(!state->properties.empty()){
+  out<<",\"properties\":[";
+  for(size_t i=0;i<state->properties.size();++i){
+   if(i)out<<',';
+   const auto& p=state->properties[i];
+   out<<"{\"name\":\""<<jsonEscape(p.name)<<"\",\"kind\":\""<<jsonEscape(p.kind)
+      <<"\",\"passes\":"<<p.passes<<",\"failures\":"<<p.failures<<",\"vacuous\":"<<p.vacuous<<'}';
+  }
+  out<<']';
+ }
+ out<<"}\n";
  if(!out)throw std::runtime_error("failed writing coverage file: "+path);
 }
 void Model::loadVpi(const std::string& path){

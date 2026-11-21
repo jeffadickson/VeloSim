@@ -1203,9 +1203,26 @@ inline constexpr uint64_t clog2(uint64_t a, int w) noexcept {
  while (v) { v >>= 1; ++c; }
  return c;
 }
+inline constexpr uint64_t resolve_pair(uint64_t a, uint64_t b, int net_kind, int w) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ if (net_kind == 1) return (a & b) & m; // wand
+ return (a | b) & m;                    // wire / wor / tri0 / tri1 (2-state has no Z)
+}
+inline constexpr uint64_t resolve_net(int net_kind, std::initializer_list<uint64_t> drivers, int w) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ auto it = drivers.begin();
+ if (it == drivers.end()) return net_kind == 4 ? m : 0ULL;
+ uint64_t acc = (*it) & m;
+ for (++it; it != drivers.end(); ++it) acc = resolve_pair(acc, *it, net_kind, w);
+ return acc;
+}
 } // namespace vsrtl::w2
 
 namespace vsrtl {
+
+// IEEE 1800-2017 Tables 6-1/6-2/6-3 net resolution kinds:
+// 0 = wire/tri, 1 = wand/triand, 2 = wor/trior, 3 = tri0 (pull-down), 4 = tri1 (pull-up).
+enum class NetKind : int { Wire = 0, Wand = 1, Wor = 2, Tri0 = 3, Tri1 = 4 };
 
 inline void check_assert(const W& cond, const char* msg) {
  if (!yes(cond)) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
@@ -1238,6 +1255,46 @@ inline W clog2(const W& a) noexcept {
  while (bool(v)) { v >>= 1; ++c; }
  return W{Bits(c), Bits(), Bits(), 32};
 }
+inline W resolve_pair(const W& a_in, const W& b_in, int net_kind, int w) {
+ const W a = a_in.w == w ? a_in : resize(a_in, w);
+ const W b = b_in.w == w ? b_in : resize(b_in, w);
+ const Bits m = mask_unchecked(w);
+ const Bits va = a.v & m, xa = a.x & m, za = a.z & m;
+ const Bits vb = b.v & m, xb = b.x & m, zb = b.z & m;
+ const Bits a0 = ~(va | xa | za) & m;
+ const Bits b0 = ~(vb | xb | zb) & m;
+ const Bits z_out = za & zb;
+ Bits v_out, o0;
+ if (net_kind == 1) { // wand / triand: 0 dominates
+  o0 = (a0 | b0) & m;
+  v_out = (~o0) & ((va & (vb | zb)) | (za & vb)) & m;
+ } else if (net_kind == 2) { // wor / trior: 1 dominates
+  v_out = (va | vb) & m;
+  o0 = (~v_out) & ((a0 & (b0 | zb)) | (za & b0)) & m;
+ } else { // wire / tri / tri0 / tri1
+  v_out = ((va & (vb | zb)) | (za & vb)) & m;
+  o0 = ((a0 & (b0 | zb)) | (za & b0)) & m;
+ }
+ const Bits x_out = ~(z_out | v_out | o0) & m;
+ return W{v_out, x_out, z_out, w};
+}
+inline W resolve_finalize(W acc, int net_kind) noexcept {
+ const Bits m = mask_unchecked(acc.w);
+ if (net_kind == 3) { // tri0: undriven Z pulls to 0
+  acc.z = Bits();
+ } else if (net_kind == 4) { // tri1: undriven Z pulls to 1
+  acc.v = (acc.v | acc.z) & m;
+  acc.z = Bits();
+ }
+ return acc;
+}
+inline W resolve_net(int net_kind, std::initializer_list<W> drivers, int w) {
+ auto it = drivers.begin();
+ if (it == drivers.end()) return resolve_finalize(W{Bits(), Bits(), mask_unchecked(w), w}, net_kind);
+ W acc = it->w == w ? *it : resize(*it, w);
+ for (++it; it != drivers.end(); ++it) acc = resolve_pair(acc, *it, net_kind, w);
+ return resolve_finalize(acc, net_kind);
+}
 
 namespace w64 {
 inline void check_assert(W64 cond, const char* msg) {
@@ -1266,6 +1323,42 @@ inline constexpr W64 clog2(W64 a) noexcept {
  uint64_t v = x - 1, c = 0;
  while (v) { v >>= 1; ++c; }
  return W64{c, 0, 0, 32};
+}
+inline constexpr W64 resolve_pair(W64 a_in, W64 b_in, int net_kind, int w) noexcept {
+ const uint64_t m = mask64_unchecked(w);
+ const W64 a = a_in.w == w ? a_in : resize(a_in, w);
+ const W64 b = b_in.w == w ? b_in : resize(b_in, w);
+ const uint64_t va = a.v & m, xa = a.x & m, za = a.z & m;
+ const uint64_t vb = b.v & m, xb = b.x & m, zb = b.z & m;
+ const uint64_t a0 = ~(va | xa | za) & m;
+ const uint64_t b0 = ~(vb | xb | zb) & m;
+ const uint64_t z_out = za & zb;
+ uint64_t v_out = 0, o0 = 0;
+ if (net_kind == 1) {
+  o0 = (a0 | b0) & m;
+  v_out = (~o0) & ((va & (vb | zb)) | (za & vb)) & m;
+ } else if (net_kind == 2) {
+  v_out = (va | vb) & m;
+  o0 = (~v_out) & ((a0 & (b0 | zb)) | (za & b0)) & m;
+ } else {
+  v_out = ((va & (vb | zb)) | (za & vb)) & m;
+  o0 = ((a0 & (b0 | zb)) | (za & b0)) & m;
+ }
+ const uint64_t x_out = ~(z_out | v_out | o0) & m;
+ return W64{v_out, x_out, z_out, w};
+}
+inline constexpr W64 resolve_finalize(W64 acc, int net_kind) noexcept {
+ const uint64_t m = mask64_unchecked(acc.w);
+ if (net_kind == 3) acc.z = 0;
+ else if (net_kind == 4) { acc.v = (acc.v | acc.z) & m; acc.z = 0; }
+ return acc;
+}
+inline constexpr W64 resolve_net(int net_kind, std::initializer_list<W64> drivers, int w) noexcept {
+ auto it = drivers.begin();
+ if (it == drivers.end()) return resolve_finalize(W64{0, 0, mask64_unchecked(w), w}, net_kind);
+ W64 acc = it->w == w ? *it : resize(*it, w);
+ for (++it; it != drivers.end(); ++it) acc = resolve_pair(acc, *it, net_kind, w);
+ return resolve_finalize(acc, net_kind);
 }
 } // namespace w64
 

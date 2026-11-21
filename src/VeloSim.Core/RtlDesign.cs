@@ -62,7 +62,7 @@ public sealed partial class RtlDesign
         Limits = limits;
         if (json.Length > limits.MaxIrBytes) throw new IrValidationException("RTL IR too large.");
         using var document = JsonDocument.Parse(json); var root = document.RootElement;
-        JsonShape.Fields(root, ["format", "signals", "memories", "continuous", "clock", "body"], ["combinational", "initialization", "timed", "time_precision", "named_events"]);
+        JsonShape.Fields(root, ["format", "signals", "memories", "continuous", "clock", "body"], ["combinational", "initialization", "timed", "time_precision", "named_events", "covergroups", "properties"]);
         if (root.GetProperty("format").GetString() != "velosim.rtl.v1") throw new IrValidationException("Unsupported RTL IR.");
         Signals = root.GetProperty("signals").EnumerateArray().Select(e => { JsonShape.Fields(e, ["name", "width", "direction"], ["path", "signed", "two_state"]); return new RtlSignal(Name(e), e.GetProperty("width").GetInt32(), e.GetProperty("direction").GetString()!, e.TryGetProperty("path", out var path) ? path.GetString() : null, e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("two_state",out var two)&&two.GetBoolean()); }).ToArray();
         Memories = root.GetProperty("memories").EnumerateArray().Select(ParseMemory).ToArray();
@@ -85,6 +85,7 @@ public sealed partial class RtlDesign
         if (root.TryGetProperty("time_precision", out _)) throw new IrValidationException("Time precision requires explicit-time processes.");
         if (root.TryGetProperty("named_events", out _)) throw new IrValidationException("Named events require explicit-time processes.");
         if (CombinationalOnly && (Kind(Body) != "block" || Body.GetProperty("items").GetArrayLength() != 0)) throw new IrValidationException("Clockless designs require an empty sequential body.");
+        ValidateCovergroups(root);
         ValidateStatement(Body, sequential, 0); _ = StatementCost(Body);
         if (EventDriven && Kind(Body) == "parallel" && Body.GetProperty("items").EnumerateArray().Any(p => Kind(p) != "process")) throw new IrValidationException("Explicit and implicit event processes cannot be mixed.");
         var continuous = root.GetProperty("continuous").EnumerateArray().Select(e => e.Clone()).ToList(); if (continuous.Count > limits.MaxContinuous) throw new IrValidationException("Too many continuous assignments.");
@@ -100,6 +101,7 @@ public sealed partial class RtlDesign
         Initialization = root.TryGetProperty("initialization",out var initialization) ? initialization.Clone() : Element("{\"kind\":\"block\",\"items\":[]}");
         var initialWriters=ValidateInitialization(combWriters);
         if (Signals.Any(s => s.Direction != "input" && !sequential.Contains(s.Name) && !combWriters.Contains(s.Name) && !initialWriters.Contains(s.Name))) throw new IrValidationException("Undriven non-input signals are unsupported; net/variable initialization must not be guessed.");
+        ValidateProperties(root);
         Continuous = sorted.AsReadOnly(); ValidateBlockingIsolation(); Json = json;
     }
     /// <summary>Parses the bounded IR and rejects unsupported, malformed or conflicting execution contracts.</summary>
@@ -130,7 +132,7 @@ public sealed partial class RtlDesign
             if (string.IsNullOrEmpty(prefix) || prefix.Length > 256) throw new IrValidationException("Invalid $test$plusargs prefix.");
             return RecordWidth(32);
         }
-        if (kind == "urandom")
+        if (kind is "urandom" or "random")
         {
             JsonShape.Fields(e, ["kind"]);
             return RecordWidth(32);
@@ -141,6 +143,51 @@ public sealed partial class RtlDesign
             ValidateExpression(e.GetProperty("max"), depth + 1);
             if (e.TryGetProperty("min", out var minEl)) ValidateExpression(minEl, depth + 1);
             return RecordWidth(32);
+        }
+        if (kind == "resolve")
+        {
+            JsonShape.Fields(e, ["kind", "net", "args"]);
+            _ = ParseNetKind(e.GetProperty("net").GetString()!);
+            var drv = e.GetProperty("args").EnumerateArray().ToArray();
+            if (drv.Length is < 1 or > 64) throw new IrValidationException("Resolved net requires 1..64 drivers.");
+            int maxW = drv.Max(d => ValidateExpression(d, depth + 1));
+            return RecordWidth(maxW);
+        }
+        if (kind == "inside")
+        {
+            JsonShape.Fields(e, ["kind", "value", "items"]);
+            ValidateExpression(e.GetProperty("value"), depth + 1);
+            var items = e.GetProperty("items").EnumerateArray().ToArray();
+            if (items.Length is < 1 or > 128) throw new IrValidationException("inside requires 1..128 set/range items.");
+            foreach (var it in items)
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    JsonShape.Fields(it, ["lo", "hi"]);
+                    ValidateExpression(loEl, depth + 1);
+                    ValidateExpression(hiEl, depth + 1);
+                }
+                else
+                {
+                    ValidateExpression(it, depth + 1);
+                }
+            }
+            return 1;
+        }
+        if (kind == "past")
+        {
+            JsonShape.Fields(e, ["kind", "signal"], ["ticks"]);
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            int ticks = e.TryGetProperty("ticks", out var tEl) ? tEl.GetInt32() : 1;
+            RecordPastRequirement(sid, ticks);
+            return RecordWidth(Signals[sid].Width);
+        }
+        if (kind is "rose" or "fell" or "stable")
+        {
+            JsonShape.Fields(e, ["kind", "signal"]);
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            RecordPastRequirement(sid, 1);
+            return 1;
         }
         if (kind == "dpi_call")
         {
@@ -165,11 +212,25 @@ public sealed partial class RtlDesign
     private IEnumerable<string> References(JsonElement e)
     {
         if (Kind(e) is "ref" or "size") yield return Name(e);
+        else if (Kind(e) is "past" or "rose" or "fell" or "stable") yield return e.GetProperty("signal").GetString()!;
         // A memory access reads storage as well as address expressions; isolation needs both identities.
         else if (Kind(e) is "index" or "exists") { yield return Name(e); foreach(var index in MemoryIndices(e))foreach (var n in References(index)) yield return n; }
         else if (Kind(e) is "bitselect" or "partselect" or "indexedselect") { foreach (var n in References(e.GetProperty("value"))) yield return n; if (e.TryGetProperty("index", out var index)) foreach (var n in References(index)) yield return n; if (e.TryGetProperty("base", out var basis)) foreach (var n in References(basis)) yield return n; }
         else if (Kind(e)=="convert") { foreach(var n in References(e.GetProperty("value")))yield return n; }
         else if (Kind(e)=="urandom_range") { foreach(var n in References(e.GetProperty("max"))) yield return n; if (e.TryGetProperty("min", out var minEl)) foreach (var n in References(minEl)) yield return n; }
+        else if (Kind(e)=="inside")
+        {
+            foreach (var n in References(e.GetProperty("value"))) yield return n;
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    foreach (var n in References(loEl)) yield return n;
+                    foreach (var n in References(hiEl)) yield return n;
+                }
+                else foreach (var n in References(it)) yield return n;
+            }
+        }
         else if (e.TryGetProperty("args", out var args)) foreach (var a in args.EnumerateArray()) foreach (var n in References(a)) yield return n;
     }
     private void ValidateStatement(JsonElement e, HashSet<string> writers, int depth)
@@ -262,6 +323,21 @@ public sealed partial class RtlDesign
                 JsonShape.Fields(e, ["kind"], ["code"]);
                 if (e.TryGetProperty("code", out var codeEl)) _ = codeEl.GetInt32();
                 break;
+            case "fatal":
+                JsonShape.Fields(e, ["kind"], ["code", "format", "args"]);
+                if (e.TryGetProperty("code", out var fCodeEl)) _ = fCodeEl.GetInt32();
+                if (e.TryGetProperty("format", out var fFmtEl) && fFmtEl.GetString()!.Length > 1024)
+                    throw new IrValidationException("Fatal format exceeds 1024 characters.");
+                if (e.TryGetProperty("args", out var fArgsEl))
+                {
+                    if (fArgsEl.GetArrayLength() > 32) throw new IrValidationException("Fatal supports at most 32 arguments.");
+                    foreach (var fa in fArgsEl.EnumerateArray()) ValidateExpression(fa, depth + 1);
+                }
+                break;
+            case "sample_covergroup":
+                JsonShape.Fields(e, ["kind", "name"]);
+                _ = CovergroupId(e.GetProperty("name").GetString()!);
+                break;
             case "display":
                 JsonShape.Fields(e, ["kind", "format"], ["args", "newline"]);
                 if (e.GetProperty("format").GetString()!.Length > 1024) throw new IrValidationException("Display format exceeds 1024 characters.");
@@ -347,13 +423,14 @@ public sealed partial class RtlDesign
     private static string TargetOwner(JsonElement target) => Kind(target) is "bitselect" or "partselect" or "indexedselect" ? Name(target.GetProperty("value")) : Name(target);
     private int ExpressionWidth(JsonElement e) => Kind(e) switch
     {
-        "size" or "exists" or "countones" or "clog2" or "test_plusargs" or "urandom" or "urandom_range"=>32,"convert" or "dpi_call"=>e.GetProperty("width").GetInt32(), "ref" => Signals[SignalId(Name(e))].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
-        "bitselect" => 1, "partselect" => e.GetProperty("left").GetInt32() - e.GetProperty("right").GetInt32() + 1, "indexedselect" => e.GetProperty("width").GetInt32(),
+        "size" or "exists" or "countones" or "clog2" or "test_plusargs" or "urandom" or "urandom_range" or "random"=>32,"convert" or "dpi_call"=>e.GetProperty("width").GetInt32(), "ref" => Signals[SignalId(Name(e))].Width, "past" => Signals[SignalId(e.GetProperty("signal").GetString()!)].Width, "index" => Memories[MemoryId(Name(e))].Width, "const" => e.GetProperty("bits").GetString()!.Length,
+        "bitselect" or "inside" or "rose" or "fell" or "stable" => 1, "partselect" => e.GetProperty("left").GetInt32() - e.GetProperty("right").GetInt32() + 1, "indexedselect" => e.GetProperty("width").GetInt32(),
+        "resolve" => e.GetProperty("args").EnumerateArray().Max(ExpressionWidth),
         var kind when Scalar(kind) => 1, "shl" or "shr" or "ashr" => ExpressionWidth(e.GetProperty("args")[0]), "cond" => e.GetProperty("args").EnumerateArray().Skip(1).Max(ExpressionWidth), "concat" => e.GetProperty("args").EnumerateArray().Sum(ExpressionWidth), _ => e.GetProperty("args").EnumerateArray().Max(ExpressionWidth)
     };
     private bool ExpressionSigned(JsonElement e) => Kind(e) switch
     {
-        "size" or "exists"=>true,"countones" or "clog2" or "test_plusargs" or "urandom" or "urandom_range"=>false,"convert"=>e.GetProperty("signed").GetBoolean(), "dpi_call"=>e.TryGetProperty("signed",out var ds)&&ds.GetBoolean(), "ref"=>Signals[SignalId(Name(e))].Signed,"index"=>Memories[MemoryId(Name(e))].Signed,
+        "size" or "exists" or "random"=>true,"countones" or "clog2" or "test_plusargs" or "urandom" or "urandom_range" or "resolve" or "inside" or "rose" or "fell" or "stable"=>false,"convert"=>e.GetProperty("signed").GetBoolean(), "dpi_call"=>e.TryGetProperty("signed",out var ds)&&ds.GetBoolean(), "ref"=>Signals[SignalId(Name(e))].Signed,"past"=>Signals[SignalId(e.GetProperty("signal").GetString()!)].Signed,"index"=>Memories[MemoryId(Name(e))].Signed,
         "const"=>e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),"castsigned"=>true,
         "castunsigned" or "bitselect" or "partselect" or "indexedselect" or "concat"=>false,
         var k when Scalar(k)=>false,"shl" or "shr" or "ashr"=>ExpressionSigned(e.GetProperty("args")[0]),
@@ -513,11 +590,66 @@ public sealed partial class RtlDesign
         if (kind == "indexedselect") return $"select_indexed({Expression(e.GetProperty("value"))},{Expression(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
         if (kind == "test_plusargs") return Extend($"word(testPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}),0,0,32)");
         if (kind == "urandom") return Extend("word(nextUrandom(),0,0,32)");
+        if (kind == "random") return Extend("word(uint32_t(nextRandom()),0,0,32)");
         if (kind == "urandom_range")
         {
             string maxExpr = $"uint32_t({Expression(e.GetProperty("max"))}.v.limb[0])";
             string minExpr = e.TryGetProperty("min", out var minEl) ? $"uint32_t({Expression(minEl)}.v.limb[0])" : "0u";
             return Extend($"word(nextUrandomRange({maxExpr},{minExpr}),0,0,32)");
+        }
+        if (kind == "resolve")
+        {
+            int nk = ParseNetKind(e.GetProperty("net").GetString()!);
+            int rw = Math.Max(context, ExpressionWidth(e));
+            string drivers = string.Join(",", e.GetProperty("args").EnumerateArray().Select(d => Expression(d, rw)));
+            return Extend($"resolve_net({nk},{{{drivers}}},{rw})");
+        }
+        if (kind == "inside")
+        {
+            var valEl = e.GetProperty("value");
+            bool vSigned = ExpressionSigned(valEl);
+            int vw = ExpressionWidth(valEl);
+            var parts = new List<string>();
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    int cw = Math.Max(vw, Math.Max(ExpressionWidth(loEl), ExpressionWidth(hiEl)));
+                    bool cs = vSigned && ExpressionSigned(loEl) && ExpressionSigned(hiEl);
+                    string cmp = cs ? "signed_compare" : "compare";
+                    parts.Add($"logical_and({cmp}({Expression(valEl, cw, cs)},{Expression(loEl, cw, cs)},3),{cmp}({Expression(valEl, cw, cs)},{Expression(hiEl, cw, cs)},1))");
+                }
+                else
+                {
+                    int cw = Math.Max(vw, ExpressionWidth(it));
+                    bool cs = vSigned && ExpressionSigned(it);
+                    parts.Add($"wildeq({Expression(valEl, cw, cs)},{Expression(it, cw, cs)})");
+                }
+            }
+            string acc = parts[0];
+            for (int i = 1; i < parts.Count; ++i) acc = $"logical_or({acc},{parts[i]})";
+            return acc;
+        }
+        if (kind == "past")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            int ticks = e.TryGetProperty("ticks", out var tEl) ? tEl.GetInt32() : 1;
+            return Extend($"_vs_past_{sid}[{ticks - 1}]");
+        }
+        if (kind == "rose")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"W{{uint64_t(edge_event(select_bit(_vs_past_{sid}[0],lit(0ULL,1)),select_bit(s[{sid}],lit(0ULL,1)),true)),0,0,1}}";
+        }
+        if (kind == "fell")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"W{{uint64_t(edge_event(select_bit(_vs_past_{sid}[0],lit(0ULL,1)),select_bit(s[{sid}],lit(0ULL,1)),false)),0,0,1}}";
+        }
+        if (kind == "stable")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"W{{uint64_t(exact(s[{sid}],_vs_past_{sid}[0])),0,0,1}}";
         }
         if (kind == "dpi_call")
         {
@@ -576,8 +708,9 @@ public sealed partial class RtlDesign
         roots.SelectMany(Statements).Any(e => Kind(e) is "while" or "do" or "runtime_repeat");
     private bool CanEvaluateThrow()
     {
+        if (Properties.Any(p => p.Kind == "assert") || Covergroups.Count > 0) return true;
         var allStmts = SettledSteps.Append(Body).SelectMany(Statements).ToArray();
-        if (allStmts.Any(e => Kind(e) is "while" or "do" or "runtime_repeat" or "allocate" or "queue_push" or "queue_pop" or "assoc_traverse" or "assert")) return true;
+        if (allStmts.Any(e => Kind(e) is "while" or "do" or "runtime_repeat" or "allocate" or "queue_push" or "queue_pop" or "assoc_traverse" or "assert" or "fatal" or "sample_covergroup")) return true;
         if (Memories.Any(m => m.Associative || m.Queue || m.Dynamic)) return true;
         foreach (var st in allStmts)
         {
@@ -664,6 +797,26 @@ public sealed partial class RtlDesign
                 break;
             case "finish":
                 code.AppendLine("finish();");
+                break;
+            case "fatal":
+            {
+                int fCode = e.TryGetProperty("code", out var fc) ? fc.GetInt32() : 1;
+                if (e.TryGetProperty("format", out var ff))
+                {
+                    string fmt = CppStringLiteral(ff.GetString()!);
+                    string argList = e.TryGetProperty("args", out var fa)
+                        ? string.Join(",", fa.EnumerateArray().Select(a => Expression(a)))
+                        : "";
+                    code.AppendLine($"fatal({fCode},vsrtl::format_display({fmt},{{{argList}}},false));");
+                }
+                else
+                {
+                    code.AppendLine($"fatal({fCode});");
+                }
+                break;
+            }
+            case "sample_covergroup":
+                code.AppendLine(EmitCppSampleCovergroupStmt(e, ex => Expression(ex), false, false));
                 break;
             case "display":
             {
@@ -784,7 +937,7 @@ public sealed partial class RtlDesign
     }
     public IReadOnlyDictionary<string, string> ExternalPortNames()
     {
-        var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part select_indexed deposit_indexed parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index execution_budget execution_step repeat_count array_index dynamic_allocate dynamic_read queue_push queue_pop queue_delete queue_write assoc_read assoc_write assoc_delete assoc_exists assoc_traverse assoc_find assoc_key assoc localAssoc nextAssoc AssociativeStorage lit lit256 lit512 MemLog wildeq wildneq casez_match casex_match coveragePoints writeCoverageJson CoveragePoint openVcd openVcdGz dumpVcd closeVcd setPlusargs addPlusarg plusargs testPlusargs valuePlusargs setRandomSeed randomSeed nextUrandom nextUrandomRange forceSignal releaseSignal isForced enableToggleCoverage toggleCoverage ToggleCoverage memoryCount memoryDepth memoryWidth readMemoryWord writeMemoryWord countones onehot onehot0 isunknown clog2").Split(' ').ToHashSet(StringComparer.Ordinal);
+        var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish fatal exitCode evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part select_indexed deposit_indexed parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index execution_budget execution_step repeat_count array_index dynamic_allocate dynamic_read queue_push queue_pop queue_delete queue_write assoc_read assoc_write assoc_delete assoc_exists assoc_traverse assoc_find assoc_key assoc localAssoc nextAssoc AssociativeStorage lit lit256 lit512 MemLog wildeq wildneq casez_match casex_match coveragePoints writeCoverageJson CoveragePoint openVcd openVcdGz dumpVcd closeVcd setPlusargs addPlusarg plusargs testPlusargs valuePlusargs setRandomSeed randomSeed nextUrandom nextUrandomRange nextRandom forceSignal releaseSignal isForced enableToggleCoverage toggleCoverage ToggleCoverage memoryCount memoryDepth memoryWidth readMemoryWord writeMemoryWord countones onehot onehot0 isunknown clog2 resolve_pair resolve_finalize resolve_net NetKind registerCovergroup sampleCovergroup covergroups registerProperty recordPropertyPass recordPropertyFail recordPropertyVacuous propertyStats ThreadPool").Split(' ').ToHashSet(StringComparer.Ordinal);
         reserved.UnionWith("scheduler eventsPending nextTimeSlot execute engine frame candidate nextS nextMem drives HdlScheduler".Split(' '));
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal); var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var signal in Signals.Where(s => s.Direction != "internal"))
@@ -795,9 +948,10 @@ public sealed partial class RtlDesign
         }
         return result;
     }
-    public string EmitModelHeader(string top, RtlStateMode stateMode = RtlStateMode.FourState, bool enableCoverage = false)
+    public string EmitModelHeader(string top, RtlStateMode stateMode = RtlStateMode.FourState, bool enableCoverage = false, int threads = 1)
     {
         if (!Identifier(top) || ("V" + top).Contains("__", StringComparison.Ordinal)) throw new ArgumentException("Invalid external model top name.", nameof(top));
+        if (threads is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(threads), "Thread count must be 1..64.");
         if (Timed)
         {
             if (stateMode == RtlStateMode.TwoState)
@@ -827,10 +981,10 @@ public sealed partial class RtlDesign
         {
             if (!CanUseTwoState64(useFastEvent))
                 throw new IrValidationException("Two-state mode currently supports non-timed <=64-bit event-driven and combinational designs without dynamic, queue, associative, or multidimensional arrays.");
-            return EmitTwoState64ModelHeader(top, names, seqIds, hasFixedMemWrites, hasRuntimeLoops, canThrow, dpiCalls, enableCoverage);
+            return EmitTwoState64ModelHeader(top, names, seqIds, hasFixedMemWrites, hasRuntimeLoops, canThrow, dpiCalls, enableCoverage, threads);
         }
         if (CanUseNarrow64(useFastEvent))
-            return EmitNarrow64ModelHeader(top, names, seqIds, hasFixedMemWrites, hasRuntimeLoops, canThrow, dpiCalls, enableCoverage);
+            return EmitNarrow64ModelHeader(top, names, seqIds, hasFixedMemWrites, hasRuntimeLoops, canThrow, dpiCalls, enableCoverage, threads);
 
         bool hasInit = Statements(Initialization).Any(st => Kind(st) is not "block");
         bool needsAssoc = !useFastEvent || hasInit || Memories.Any(m => m.Associative);
@@ -838,7 +992,7 @@ public sealed partial class RtlDesign
 
         var bodyCode = new StringBuilder();
         bodyCode.AppendLine("inline void settle(){");
-        EmitSettle(bodyCode, coverage);
+        EmitSettle(bodyCode, coverage, threads);
         bodyCode.AppendLine("}\nvoid evaluate() override {");
         if (dpiCalls.Count > 0) bodyCode.AppendLine("struct _VsDpiScope{svScope prev;explicit _VsDpiScope(svScope s):prev(svSetScope(s)){}~_VsDpiScope(){svSetScope(prev);}} _vs_dpi_scope(static_cast<svScope>(this));");
         if (hasRuntimeLoops || !useFastEvent || SettledSteps.Any(st => !(Kind(st) == "blocking" && Kind(st.GetProperty("target")) == "ref"))) bodyCode.AppendLine("execution_budget=20000;");
@@ -846,6 +1000,7 @@ public sealed partial class RtlDesign
         {
             bodyCode.AppendLine($"auto saved_s=s;auto saved_mem=mem;{(needsAssoc?"auto saved_assoc=assoc;":"")}W saved_events[{Signals.Count}];for(int i=0;i<{Signals.Count};++i)saved_events[i]=previous_events[i];{(!CombinationalOnly&&!EventDriven?"auto saved_clock=previous_clock;":"")}try{{");
         }
+        EmitCppPropertyEvaluation(bodyCode, ex => Expression(ex), ex => $"yes({ex})", sid => $"s[{sid}]", (cid, edge) => $"edge_event(_vs_pclk_{cid},s[{cid}],{(edge == "posedge" ? "true" : "false")})", false, false);
         if (CombinationalOnly) bodyCode.AppendLine("settle();");
         else if (useFastEvent) EmitFastEventEvaluation(bodyCode, seqIds, hasFixedMemWrites, hasRuntimeLoops, coverage);
         else if (EventDriven) EventEvaluation(bodyCode, coverage);
@@ -873,12 +1028,15 @@ public sealed partial class RtlDesign
         bodyCode.AppendLine($"for(int i=0;i<{Signals.Count};++i)previous_events[i]=unknown(1);");
         if(!CombinationalOnly)bodyCode.AppendLine($"previous_events[{SignalId(Clock!)}]=lit(0ULL,1);");
         foreach(var signal in Signals.Where(s=>s.TwoState&&s.Width==1))bodyCode.AppendLine($"previous_events[{SignalId(signal.Name)}]=lit(0ULL,1);");
+        EmitCppCovergroupRegistration(bodyCode);
+        EmitCppPropertyInit(bodyCode, false, false);
         if (enableCoverage) bodyCode.AppendLine("enableToggleCoverage(true);");
         bodyCode.AppendLine("}\n};");
 
-        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\nusing namespace vsrtl;\n");
+        var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\n" + (threads > 1 ? "#include \"thread_pool.h\"\n" : "") + "using namespace vsrtl;\n");
         EmitDpiPrototypes(code, dpiCalls);
         code.AppendLine($"class {className} final : public vsrtl::Model {{");
+        if (threads > 1) code.AppendLine($"vsrtl::ThreadPool _vs_pool{{{threads}}};");
         if (!CombinationalOnly && !EventDriven) code.AppendLine("bool previous_clock=false;");
         code.AppendLine("size_t execution_budget=20000;");
         code.AppendLine($"W previous_events[{Signals.Count}];");
@@ -886,6 +1044,7 @@ public sealed partial class RtlDesign
         if (hasFixedMemWrites) code.AppendLine("MemLog<16> _vs_mlog;");
         if (needsAssoc) code.AppendLine("std::vector<AssociativeStorage>assoc;");
         if (coverage is { Count: > 0 }) code.AppendLine($"uint64_t _vs_cov[{coverage.Count}]{{}};");
+        EmitCppPropertyMembers(code, false, false);
         code.Append(bodyCode);
         return code.ToString();
     }
