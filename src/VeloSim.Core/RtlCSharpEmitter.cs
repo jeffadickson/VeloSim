@@ -30,7 +30,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> CSharpPortNames()
     {
         var reserved = (
-            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint W4 W4Ops MemLog4 W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO"
+            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Finish Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs Plusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal GotFinish ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint ModelName Signals Memories SignalByName GetSignal PutSignal ReadMemory WriteMemory W4 W4Ops MemLog4 W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO IVpiModel VpiDirection VpiSignalInfo VpiMemoryInfo VpiCbReason VpiCbHandle VpiCbEvent VpiLookup VpiContext VpiSession"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -635,7 +635,7 @@ public sealed partial class RtlDesign
         code.AppendLine("using System.Runtime.CompilerServices;");
         code.AppendLine($"namespace {@namespace};");
         code.AppendLine();
-        code.AppendLine($"public sealed class {className}");
+        code.AppendLine($"public sealed class {className} : IVpiModel");
         code.AppendLine("{");
         if (hasRuntimeLoops) code.AppendLine("    private int _budget = 20000;");
         code.AppendLine("    private ulong _time;");
@@ -647,6 +647,8 @@ public sealed partial class RtlDesign
         code.AppendLine($"    private Dictionary<int, {wordType}>? _forced;");
         code.AppendLine("    private bool _hasForces;");
         code.AppendLine("    public bool GotFinish => _finished;");
+        code.AppendLine("    public void Finish() => _finished = true;");
+        code.AppendLine("    public IReadOnlyList<string> Plusargs => _plusargs.List;");
         code.AppendLine("    public int ExitCode => _exitCode;");
         code.AppendLine("    public void Fatal(int code, string message = \"\") { _exitCode = code; _finished = true; throw new InvalidOperationException(string.IsNullOrEmpty(message) ? $\"RTL $fatal({code})\" : $\"RTL $fatal({code}): {message}\"); }");
         code.AppendLine("    public Action<string>? DisplaySink { get; set; }");
@@ -1012,6 +1014,73 @@ public sealed partial class RtlDesign
             EmitEvalBody(withForces: false);
             code.AppendLine("    }");
         }
+        code.AppendLine($"    public string ModelName => {CppStringLiteral(top)};");
+        code.Append("    private static readonly VpiSignalInfo[] s_vpiSignals = [");
+        code.AppendJoin(", ", Signals.Select((s, idx) =>
+        {
+            string dir = s.Direction == "input" ? "VpiDirection.Input" : s.Direction == "output" ? "VpiDirection.Output" : "VpiDirection.Internal";
+            return $"new VpiSignalInfo({idx}, {CppStringLiteral(s.SourcePath ?? s.Name)}, {s.Width}, {dir}, {(s.Signed ? "true" : "false")}, {(twoState || s.TwoState ? "true" : "false")})";
+        }));
+        code.AppendLine("];");
+        code.Append("    private static readonly VpiMemoryInfo[] s_vpiMemories = [");
+        code.AppendJoin(", ", Memories.Select((m, idx) =>
+            $"new VpiMemoryInfo({idx}, {CppStringLiteral(m.Name)}, {m.Depth}, {m.Width}, {(twoState || m.TwoState ? "true" : "false")})"));
+        code.AppendLine("];");
+        code.AppendLine("    public IReadOnlyList<VpiSignalInfo> Signals => s_vpiSignals;");
+        code.AppendLine("    public IReadOnlyList<VpiMemoryInfo> Memories => s_vpiMemories;");
+        code.AppendLine("    public int SignalByName(string name) => VpiLookup.SignalByName(ModelName, s_vpiSignals, name);");
+        code.AppendLine("    public W64 GetSignal(int id) => id switch");
+        code.AppendLine("    {");
+        for (int i = 0; i < Signals.Count; ++i)
+            code.AppendLine(twoState ? $"        {i} => new W64(_s{i}, 0UL, 0UL, {Signals[i].Width})," : $"        {i} => _s{i}.ToW64({Signals[i].Width}),");
+        code.AppendLine("        _ => throw new ArgumentOutOfRangeException(nameof(id), \"Invalid signal id.\")");
+        code.AppendLine("    };");
+        code.AppendLine("    public void PutSignal(int id, W64 value)");
+        code.AppendLine("    {");
+        code.AppendLine("        if (_finished) throw new InvalidOperationException(\"Model is finished.\");");
+        code.AppendLine("        if ((uint)id >= (uint)s_vpiSignals.Length) throw new ArgumentOutOfRangeException(nameof(id), \"Invalid signal id.\");");
+        code.AppendLine("        if (s_vpiSignals[id].Direction != VpiDirection.Input) throw new InvalidOperationException(\"Only input ports may be deposited.\");");
+        code.AppendLine("        if (IsForced(id)) return;");
+        code.AppendLine("        switch (id)");
+        code.AppendLine("        {");
+        for (int i = 0; i < Signals.Count; ++i)
+        {
+            if (Signals[i].Direction != "input") continue;
+            string m = CsMaskHex(Signals[i].Width);
+            if (twoState)
+                code.AppendLine($"            case {i}: _s{i} = value.V & ~(value.X | value.Z) & {m}; break;");
+            else
+                code.AppendLine($"            case {i}: _s{i} = {(Signals[i].TwoState ? $"new W4(value.V & ~(value.X | value.Z) & {m}, 0UL)" : $"W4.FromW64(in value, {m})")}; break;");
+        }
+        code.AppendLine("            default: throw new InvalidOperationException(\"Only input ports may be deposited.\");");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("    public W64 ReadMemory(int memId, int addr)");
+        code.AppendLine("    {");
+        code.AppendLine("        switch (memId)");
+        code.AppendLine("        {");
+        for (int i = 0; i < Memories.Count; ++i)
+            code.AppendLine(twoState
+                ? $"            case {i}: if ((uint)addr >= (uint)_m{i}.Length) throw new ArgumentOutOfRangeException(nameof(addr)); return new W64(_m{i}[addr], 0UL, 0UL, {Memories[i].Width});"
+                : $"            case {i}: if ((uint)addr >= (uint)_m{i}.Length) throw new ArgumentOutOfRangeException(nameof(addr)); return _m{i}[addr].ToW64({Memories[i].Width});");
+        code.AppendLine("            default: throw new ArgumentOutOfRangeException(nameof(memId), \"Invalid memory id.\");");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("    public void WriteMemory(int memId, int addr, W64 value)");
+        code.AppendLine("    {");
+        code.AppendLine("        if (_finished) throw new InvalidOperationException(\"Model is finished.\");");
+        code.AppendLine("        switch (memId)");
+        code.AppendLine("        {");
+        for (int i = 0; i < Memories.Count; ++i)
+        {
+            string m = CsMaskHex(Memories[i].Width);
+            code.AppendLine(twoState
+                ? $"            case {i}: if ((uint)addr >= (uint)_m{i}.Length) throw new ArgumentOutOfRangeException(nameof(addr)); _m{i}[addr] = value.V & ~(value.X | value.Z) & {m}; break;"
+                : $"            case {i}: if ((uint)addr >= (uint)_m{i}.Length) throw new ArgumentOutOfRangeException(nameof(addr)); _m{i}[addr] = {(Memories[i].TwoState ? $"new W4(value.V & ~(value.X | value.Z) & {m}, 0UL)" : $"W4.FromW64(in value, {m})")}; break;");
+        }
+        code.AppendLine("            default: throw new ArgumentOutOfRangeException(nameof(memId), \"Invalid memory id.\");");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
         code.AppendLine("}");
         return code.ToString();
     }
@@ -2338,6 +2407,7 @@ public sealed class VcdWriter : IDisposable
 public sealed class PlusargStore
 {
     private readonly List<string> _args = new();
+    public IReadOnlyList<string> List => _args;
     public void Set(IEnumerable<string> args)
     {
         _args.Clear();
@@ -2539,5 +2609,5 @@ public static class CheckpointIO
         return (time, rngState, sigs, prevs, mems);
     }
 }
-""";
+""" + EmitCSharpSafeVpiRuntime();
 }

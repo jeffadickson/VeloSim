@@ -9,6 +9,7 @@ public sealed class Net11AndDafnyAuditTests
     private static readonly string[] RequiredDafnyModules =
     [
         "formal/dafny/FourStateResolution.dfy",
+        "formal/dafny/FourStateW4Equivalence.dfy",
         "formal/dafny/DagLevelizer.dfy",
         "formal/dafny/SvaDelayPipeline.dfy",
         "formal/dafny/CoverageMergeInvariants.dfy"

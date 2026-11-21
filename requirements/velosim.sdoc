@@ -1513,6 +1513,8 @@ RELATIONS:
 - TYPE: File
   VALUE: formal/dafny/FourStateResolution.dfy
 - TYPE: File
+  VALUE: formal/dafny/FourStateW4Equivalence.dfy
+- TYPE: File
   VALUE: formal/dafny/DagLevelizer.dfy
 - TYPE: File
   VALUE: formal/dafny/SvaDelayPipeline.dfy
@@ -1532,3 +1534,61 @@ RELATIONS:
   VALUE: src/VeloSim.Core/RtlCombinational.cs
 - TYPE: File
   VALUE: tests/VeloSim.Tests/Net11AndDafnyAuditTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-W4-PACKED-001
+STATUS: Active
+TITLE: Formally verified 16-byte IEEE 1800 aval/bval 4-state engine and C++/C# zero-overhead fast paths
+STATEMENT: >>>
+VeloSim's narrow 64-bit C++ and C# targets shall eliminate per-cycle abstraction overhead while preserving 100% public API compatibility: C++ models shall use flat inline signal/memory arrays with lazy base-model synchronization, direct vsrtl::Port slot pointers, stack rollback snapshots, and fast TLS owner verification; C# models shall store internal 4-state words in a 16-byte IEEE 1800 aval/bval struct (W4) promoted into two 64-bit CPU registers by RyuJIT, emit direct masked 2-state expressions, keep NBA next-state variables in stack locals, split forced-signal evaluation behind a single boolean guard, and pack SVA shift registers into a 64-bit bitmask. The exact bijection and operator homomorphism between W4(aval, bval) and canonical 3-plane 4-state words shall be machine-verified in formal/dafny/FourStateW4Equivalence.dfy.
+<<<
+COMMENT: >>>
+Verified with Dafny 4.11.0 (21 additional proof obligations, 88 total across 5 modules, 0 errors, 0 warnings) and apples-to-apples multi-target benchmarks (C++, Rust, C#, Verilator 5.055) confirming bit-for-bit identical checksums.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: formal/dafny/FourStateW4Equivalence.dfy
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+
+[REQUIREMENT]
+UID: VS-RTL-VPI-MULTI-001
+STATUS: Active
+TITLE: Cross-target Safe and IEEE 1800 C-ABI VPI across C++, Rust, and C#
+STATEMENT: >>>
+VeloSim shall support VPI introspection, force/release, memory word access, and all six IEEE 1800 callback reasons (StartOfSimulation, ValueChange, ReadWriteSynch, ReadOnlySynch, AfterDelay, EndOfSimulation) across all three exported targets (C++, Rust, and C#). Rust and C# models shall always include a zero-unsafe, zero-overhead safe VPI session API (VpiModel/VpiSession and IVpiModel/VpiSession<T>) without adding fields to the hot model struct/class, and shall support opt-in IEEE 1800 C-ABI VPI export via rtl-export --vpi generating an isolated companion FFI crate/project (vpi_ffi/) ABI-compatible with vpi_user.h that dynamically loads compiled C/C++ vlog_startup_routines VPI plugins while keeping the core model crate/assembly strictly safe (#![forbid(unsafe_code)] in Rust; no unsafe blocks in C#).
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/vpi_user.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustVpiEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpVpiEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/ToolCli.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/CliOptions.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlRustVpiTests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCSharpVpiTests.cs
+

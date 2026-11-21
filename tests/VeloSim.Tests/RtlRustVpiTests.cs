@@ -571,23 +571,6 @@ public sealed class RtlRustVpiTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
-    [Test]
-    public async Task CSharpTargetRejectsCAbiVpiFlagFailClosed()
-    {
-        string root = Path.Combine(Path.GetTempPath(), "velosim-cs-vpi-err-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        try
-        {
-            string irPath = Path.Combine(root, "vpi_dut.rtl.json");
-            await File.WriteAllTextAsync(irPath, VpiDutIr);
-            var err = new StringWriter();
-            int code = await ToolCli.RunAsync(["rtl-export", irPath, "--top", "vpi_dut", "--output-dir", Path.Combine(root, "sdk"), "--target", "csharp", "--vpi"], new StringWriter(), err);
-            Assert.That(code, Is.Not.Zero);
-            Assert.That(err.ToString(), Does.Contain("--vpi"));
-        }
-        finally { Directory.Delete(root, recursive: true); }
-    }
-
     private static bool ToolExists(string name)
     {
         try
