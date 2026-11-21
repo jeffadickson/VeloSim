@@ -18,8 +18,7 @@ public static class RtlExternalSdk
         if (target == RtlTargetLanguage.CSharp)
         {
             if (threads > 1) throw new ArgumentException("Multi-threaded --threads > 1 export is currently supported only on the cpp target.");
-            if (enableVpi) throw new ArgumentException("C-ABI --vpi export is supported on cpp (built-in) and rust (--target rust --vpi) targets.");
-            return await ExportCSharpAsync(design, json, top, directory, stateMode, token).ConfigureAwait(false);
+            return await ExportCSharpAsync(design, json, top, directory, stateMode, enableVpi, token).ConfigureAwait(false);
         }
         if (target == RtlTargetLanguage.Rust)
         {
@@ -128,7 +127,7 @@ public static class RtlExternalSdk
         return manifest;
     }
 
-    private static async Task<string> ExportCSharpAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, CancellationToken token)
+    private static async Task<string> ExportCSharpAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, bool enableVpi, CancellationToken token)
     {
         string modelCs = design.EmitCSharpModel(top, stateMode);
         string runtimeCs = RtlDesign.EmitCSharpRuntime();
@@ -137,7 +136,8 @@ public static class RtlExternalSdk
         string csprojFile = "V" + top + ".csproj";
         await File.WriteAllTextAsync(Path.Combine(directory, modelFile), modelCs, token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory, "VeloSimRuntime.cs"), runtimeCs, token).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(directory, csprojFile), """
+        string excludeFfi = enableVpi ? "\n  <ItemGroup>\n    <Compile Remove=\"vpi_ffi/**\" />\n  </ItemGroup>" : "";
+        await File.WriteAllTextAsync(Path.Combine(directory, csprojFile), $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
                 <TargetFramework>net11.0</TargetFramework>
@@ -147,26 +147,53 @@ public static class RtlExternalSdk
                 <AnalysisLevel>11.0</AnalysisLevel>
                 <Deterministic>true</Deterministic>
                 <OptimizationPreference>Speed</OptimizationPreference>
-              </PropertyGroup>
+              </PropertyGroup>{excludeFfi}
             </Project>
             """, token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        var inputPaths = new List<string> { modelFile, "VeloSimRuntime.cs", csprojFile, "design.rtl.json", "README.md" };
+        if (enableVpi)
+        {
+            string? runtimeDir = null;
+            for (var parent = new DirectoryInfo(Environment.CurrentDirectory); parent is not null; parent = parent.Parent)
+                if (File.Exists(Path.Combine(parent.FullName, "native/rtl/vpi_user.h"))) { runtimeDir = Path.Combine(parent.FullName, "native/rtl"); break; }
+            if (runtimeDir is null) throw new IOException("Run rtl-export --target csharp --vpi from a VeloSim checkout containing native/rtl/vpi_user.h.");
+            File.Copy(Path.Combine(runtimeDir, "vpi_user.h"), Path.Combine(directory, "vpi_user.h"));
+            Directory.CreateDirectory(Path.Combine(directory, "vpi_ffi"));
+            string ffiProj = $"V{top}.VpiFfi.csproj";
+            await File.WriteAllTextAsync(Path.Combine(directory, "vpi_ffi", ffiProj), RtlDesign.EmitCSharpVpiFfiCsproj(top), token).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(directory, "vpi_ffi", "VpiFfiHost.cs"), RtlDesign.EmitCSharpVpiFfiHost(top), token).ConfigureAwait(false);
+            await File.WriteAllTextAsync(Path.Combine(directory, "vpi_ffi", "velosim_vpi_trampoline.c"), RtlDesign.EmitCSharpVpiTrampolineC(), token).ConfigureAwait(false);
+            inputPaths.AddRange(["vpi_user.h", $"vpi_ffi/{ffiProj}", "vpi_ffi/VpiFfiHost.cs", "vpi_ffi/velosim_vpi_trampoline.c"]);
+        }
+        string vpiReadme = enableVpi
+            ? $"""
+
+            ### VPI Support
+            - **100% Safe Managed C# VPI:** Wrap `new V{top}()` in `VpiSession<V{top}>` for safe signal/memory introspection and `StartOfSimulation`/`ValueChange`/`ReadWriteSynch`/`ReadOnlySynch`/`AfterDelay`/`EndOfSimulation` callbacks with zero `unsafe` code.
+            - **IEEE 1800 C-ABI VPI (`vpi_ffi/`):** Compile `vpi_ffi/velosim_vpi_trampoline.c` (`gcc -shared -fPIC -O2 -I. vpi_ffi/velosim_vpi_trampoline.c -ldl -o libvelosim_vpi_trampoline.so`) and reference `vpi_ffi/V{top}.VpiFfi.csproj` to load C/C++/PLI/cocotb `vlog_startup_routines` plugins via `VpiFfiHost.LoadVpi()` while keeping `V{top}.csproj` 100% safe managed C#.
+            """
+            : $"""
+
+            ### Safe Managed C# VPI
+            Wrap `new V{top}()` in `VpiSession<V{top}>` for 100% safe signal/memory introspection and simulation callbacks. Re-export with `--vpi` to also generate the opt-in IEEE 1800 C-ABI VPI FFI host (`vpi_ffi/`).
+            """;
         await File.WriteAllTextAsync(Path.Combine(directory, "README.md"), $"""
             # VeloSim C# model SDK (V{top})
 
-            Zero-dependency .NET 11 library targeting VeloSim's register-resident {(stateMode == RtlStateMode.TwoState ? "2-state (W2)" : "4-state (W64)")} engine.
+            Zero-dependency .NET 11 library targeting VeloSim's register-resident {(stateMode == RtlStateMode.TwoState ? "2-state (W2)" : "4-state (16-byte W4)")} engine.
             Reference `{csprojFile}` from your C# testbench or build with:
             dotnet build {csprojFile} -c Release
+            {vpiReadme}
             """, token).ConfigureAwait(false);
-        var inputPaths = new[] { modelFile, "VeloSimRuntime.cs", csprojFile, "design.rtl.json", "README.md" };
         var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
         string manifest = Path.Combine(directory, "external-model.json");
         var names = design.CSharpPortNames();
         bool twoState = stateMode == RtlStateMode.TwoState;
-        string semantics = $"csharp; {(twoState ? "two-state" : "four-state")}; {(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
+        string semantics = $"csharp; {(twoState ? "two-state" : "four-state")}; {(enableVpi ? "vpi; " : "")}{(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
         var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
             design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
-            inputs.Select(input => new ExternalInputContract(Path.GetFileName(input.Path), input.Sha256)).ToArray());
+            inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
         await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
         return manifest;
     }
