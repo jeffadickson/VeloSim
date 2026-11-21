@@ -25,10 +25,10 @@ public static class ToolCli
     {
         if (args.Length > 0 && args[0] == "rtl-export")
         {
-            if (args.Length < 6) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--target cpp|csharp|rust] [--two-state]");
+            if (args.Length < 6) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--target cpp|csharp|rust] [--two-state] [--vpi]");
             var options = CliOptions.Parse(args, 2);
             string? top = options.String("--top"), directory = options.String("--output-dir"), targetText = options.String("--target");
-            if (top is null || directory is null) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--target cpp|csharp|rust] [--two-state]");
+            if (top is null || directory is null) throw new ArgumentException("Usage: rtl-export <design.rtl.json> --top <name> --output-dir <empty-directory> [--target cpp|csharp|rust] [--two-state] [--vpi]");
             var target = (targetText ?? "cpp").ToLowerInvariant() switch
             {
                 "cpp" or "c++" => RtlTargetLanguage.Cpp,
@@ -39,8 +39,9 @@ public static class ToolCli
             var stateMode = options.Flag("--two-state") ? RtlStateMode.TwoState : RtlStateMode.FourState;
             var limits = options.Flag("--large-design") ? RtlDesignLimits.Large : RtlDesignLimits.Bounded;
             bool enableCoverage = options.Flag("--coverage");
+            bool enableVpi = options.Flag("--vpi");
             int threads = options.Int("--threads", 1);
-            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage, threads).ConfigureAwait(false)); return 0;
+            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage, threads, enableVpi).ConfigureAwait(false)); return 0;
         }
         if (args.Length > 0 && args[0] == "coverage-merge")
         {
