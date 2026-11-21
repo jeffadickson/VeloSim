@@ -86,11 +86,11 @@ public static class RtlCoverageMerge
         string? modelName = null;
         var points = new Dictionary<(string Id, string Kind), PointAcc>();
         var pointOrder = new List<(string Id, string Kind)>();
-        var toggles = new Dictionary<string, ToggleAcc>(StringComparer.Ordinal);
+        Dictionary<string, ToggleAcc> toggles = [with(StringComparer.Ordinal)];
         var toggleOrder = new List<string>();
-        var covergroups = new Dictionary<string, CovergroupAcc>(StringComparer.Ordinal);
+        Dictionary<string, CovergroupAcc> covergroups = [with(StringComparer.Ordinal)];
         var covergroupOrder = new List<string>();
-        var properties = new Dictionary<string, PropertyAcc>(StringComparer.Ordinal);
+        Dictionary<string, PropertyAcc> properties = [with(StringComparer.Ordinal)];
         var propertyOrder = new List<string>();
 
         int fileIndex = 0;
@@ -151,7 +151,7 @@ public static class RtlCoverageMerge
 
             if (root.TryGetProperty("covergroups", out var cgsEl))
             {
-                var seenCgs = new HashSet<string>(StringComparer.Ordinal);
+                HashSet<string> seenCgs = [with(StringComparer.Ordinal)];
                 foreach (var cgEl in cgsEl.EnumerateArray())
                 {
                     string cgName = cgEl.GetProperty("name").GetString() ?? "";

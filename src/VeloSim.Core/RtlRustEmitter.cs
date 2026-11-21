@@ -303,7 +303,7 @@ public sealed partial class RtlDesign
         };
     }
 
-    private string RsStore(string val, RtlSignal signal, bool twoState, int exprWidth = -1)
+    private static string RsStore(string val, RtlSignal signal, bool twoState, int exprWidth = -1)
     {
         if (twoState) return exprWidth == signal.Width ? val : $"w2::resize({val},{signal.Width})";
         return signal.TwoState
