@@ -209,7 +209,10 @@ struct Model::State {
  }
 };
 void Model::applyForces() noexcept {
+ if (state->forced.empty()) return;
+ syncToBase();
  for (const auto& [id, val] : state->forced) s[id] = val;
+ syncFromBase();
 }
 void Model::refreshFastFlags() noexcept {
  fast_port_ok = !state->finished && !state->finishRequested && !state->readOnly && !state->dispatching && state->forced.empty();
@@ -220,7 +223,7 @@ void Model::notifyCallbackStateChanged(bool active) noexcept {
  if (active) state->hasCallbacks = true;
  refreshFastFlags();
 }
-Model::Model(std::string name,std::vector<Signal> signals,int clock,int abi):state(std::make_unique<State>()),owner_thread(state->owner){
+Model::Model(std::string name,std::vector<Signal> signals,int clock,int abi):state(std::make_unique<State>()),owner_thread(state->owner),fast_thread_tag(localThreadTag()){
  if(abi!=2||name.empty()||signals.empty()||signals.size()>65536||clock < -1||(clock >= 0 && (size_t(clock)>=signals.size()||signals[clock].width!=1||signals[clock].direction!=vpiInput)))throw std::invalid_argument("invalid external model interface");
  state->name=std::move(name);state->names.reserve(signals.size());s.reserve(signals.size());
  for(auto sig:signals){if(!sig.name||!*sig.name||sig.width<1||sig.width>VSRTL_MAX_WORD_BITS||(sig.direction!=vpiInput&&sig.direction!=vpiOutput&&sig.direction!=vpiNoDirection))throw std::invalid_argument("invalid external signal");if(std::find(state->names.begin(),state->names.end(),sig.name)!=state->names.end())throw std::invalid_argument("duplicate external signal");state->names.emplace_back(sig.name);s.push_back(sig.two_state?word(0,0,0,sig.width):unknown(sig.width));}
@@ -244,8 +247,8 @@ void Model::checkThread() const{if(state->owner!=std::this_thread::get_id())thro
 std::weak_ptr<int> Model::lifetime() const{return state->life;}
 const std::string& Model::name() const{return state->name;}
 const std::vector<Signal>& Model::signals() const{return state->signals;}
-W Model::get(size_t id) const{checkThread();return s.at(id);}
-void Model::put(size_t id,W value){checkThread();if(state->finished||state->finishRequested||state->readOnly)throw std::runtime_error("model is finished or in read-only callback");if(state->signals.at(id).direction!=vpiInput)throw std::runtime_error("only input ports may be deposited");value=word(value.v,value.x,value.z,state->signals[id].width);if(state->signals[id].two_state)value=two_state(value);if(state->forced.count(id)){fast_dirty=true;return;}if(state->dispatching){state->pending[id]=value;refreshFastFlags();}else s.at(id)=value;fast_dirty=true;}
+W Model::get(size_t id) const{checkThread();syncToBase();return s.at(id);}
+void Model::put(size_t id,W value){checkThread();if(state->finished||state->finishRequested||state->readOnly)throw std::runtime_error("model is finished or in read-only callback");if(state->signals.at(id).direction!=vpiInput)throw std::runtime_error("only input ports may be deposited");value=word(value.v,value.x,value.z,state->signals[id].width);if(state->signals[id].two_state)value=two_state(value);if(state->forced.count(id)){fast_dirty=true;return;}if(state->dispatching){state->pending[id]=value;refreshFastFlags();}else{syncToBase();s.at(id)=value;syncFromBase();}fast_dirty=true;}
 void Model::useVpi(){checkThread();current=this;currentLife=state->life;}
 uint64_t Model::time() const{checkThread();return state->now;}
 void Model::timeInc(uint64_t delta){checkThread();if(fast_evaluating||state->evaluating||gotFinish()||delta>UINT64_MAX-state->now)throw std::runtime_error("invalid time advance");state->now+=delta;
@@ -272,10 +275,10 @@ void Model::evalSlow(){
  if(!state->hasCallbacks&&state->pending.empty()){
   state->started=true;state->evaluating=true;state->requested=false;fast_dirty=false;refreshFastFlags();
   try{
-   for(const auto& [id,val]:state->forced)s[id]=val;
+   if(!state->forced.empty()){syncToBase();for(const auto& [id,val]:state->forced)s[id]=val;syncFromBase();}
    evaluate();
-   for(const auto& [id,val]:state->forced)s[id]=val;
-   state->recordToggles(s);
+   if(!state->forced.empty()){syncToBase();for(const auto& [id,val]:state->forced)s[id]=val;syncFromBase();}
+   if(state->toggleCoverageEnabled){syncToBase();state->recordToggles(s);}
   }catch(...){state->evaluating=false;fast_dirty=true;refreshFastFlags();throw;}
   state->evaluating=false;fast_dirty=!state->pending.empty()||state->requested;refreshFastFlags();return;
  }
@@ -291,10 +294,14 @@ void Model::evalSlow(){
  state->dispatching=false;refreshFastFlags();
  if(state->finishRequested){state->evaluating=false;refreshFastFlags();return;}
  list=callbacks(*this); // Include value callbacks registered by simulation-start or delay callbacks.
+ syncToBase();
  for(auto [id,w]:state->pending)if(!state->forced.count(id))s[id]=w;state->pending.clear();fast_dirty=false;
  for(const auto& [id,val]:state->forced)s[id]=val;
+ syncFromBase();
  evaluate();
+ syncToBase();
  for(const auto& [id,val]:state->forced)s[id]=val;
+ if(!state->forced.empty())syncFromBase();
  state->recordToggles(s);
  // Snapshot changed values before any callback can queue a new drive.
  std::vector<Handle*> changed;for(auto h:list)if(h->active&&h->cb.reason==cbValueChange){auto w=get(signal(h->cb.obj).id);if(!exact(w,h->previous)){h->previous=w;changed.push_back(h);}}
@@ -311,10 +318,10 @@ void Model::evalSlow(){
 void Model::final(){checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("reentrant final()");if(state->finished)return;Activation active(*this);state->finished=true;state->evaluating=true;state->readOnly=true;refreshFastFlags();try{if(state->hasCallbacks)for(auto h:callbacks(*this))if(h->cb.reason==cbEndOfSimulation){invoke(*h);h->active=false;}state->vcd.close();state->evaluating=false;state->readOnly=false;refreshFastFlags();}catch(...){state->vcd.close();state->evaluating=false;state->readOnly=false;refreshFastFlags();throw;}}
 void Model::openVcd(const std::string& path,const std::string& timescale,const std::vector<std::string>& filter_prefixes){checkThread();state->vcd.open(path,state->name,state->signals,timescale,false,filter_prefixes);}
 void Model::openVcdGz(const std::string& path,const std::string& timescale,const std::vector<std::string>& filter_prefixes){checkThread();state->vcd.open(path,state->name,state->signals,timescale,true,filter_prefixes);}
-void Model::dumpVcd(){checkThread();state->vcd.dump(state->now,s);}
+void Model::dumpVcd(){checkThread();syncToBase();state->vcd.dump(state->now,s);}
 void Model::closeVcd(){checkThread();state->vcd.close();}
-void Model::saveCheckpoint(const std::string& path) const{checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot save checkpoint during evaluation");std::vector<uint8_t> extra;saveExtraState(extra);checkpoint::save(path,state->name,state->signals,state->now,s,mem,extra);}
-void Model::restoreCheckpoint(const std::string& path){checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot restore checkpoint during evaluation");uint64_t nextNow=state->now;auto nextS=s;auto nextMem=mem;std::vector<uint8_t> extra;checkpoint::load(path,state->name,state->signals,nextNow,nextS,nextMem,extra);restoreExtraState(extra.data(),extra.size());state->now=nextNow;s=std::move(nextS);mem=std::move(nextMem);state->pending.clear();fast_dirty=true;refreshFastFlags();}
+void Model::saveCheckpoint(const std::string& path) const{checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot save checkpoint during evaluation");syncToBase();std::vector<uint8_t> extra;saveExtraState(extra);checkpoint::save(path,state->name,state->signals,state->now,s,mem,extra);}
+void Model::restoreCheckpoint(const std::string& path){checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot restore checkpoint during evaluation");uint64_t nextNow=state->now;auto nextS=s;auto nextMem=mem;std::vector<uint8_t> extra;checkpoint::load(path,state->name,state->signals,nextNow,nextS,nextMem,extra);restoreExtraState(extra.data(),extra.size());state->now=nextNow;s=std::move(nextS);mem=std::move(nextMem);syncFromBase();state->pending.clear();fast_dirty=true;refreshFastFlags();}
 size_t Model::loadMemoryHex(size_t mem_id,const std::string& path,size_t start_addr,size_t end_addr){checkThread();size_t loaded=0;if(loadDerivedMemory(mem_id,path,true,start_addr,end_addr,loaded))return loaded;if(mem_id>=mem.size()||mem[mem_id].empty())throw std::out_of_range("invalid memory id for loadMemoryHex");return load_mem_file(mem[mem_id],mem[mem_id][0].w,path,true,start_addr,end_addr);}
 size_t Model::loadMemoryBin(size_t mem_id,const std::string& path,size_t start_addr,size_t end_addr){checkThread();size_t loaded=0;if(loadDerivedMemory(mem_id,path,false,start_addr,end_addr,loaded))return loaded;if(mem_id>=mem.size()||mem[mem_id].empty())throw std::out_of_range("invalid memory id for loadMemoryBin");return load_mem_file(mem[mem_id],mem[mem_id][0].w,path,false,start_addr,end_addr);}
 W Model::readMemoryWord(size_t mem_id,size_t addr) const{checkThread();if(mem_id>=mem.size()||addr>=mem[mem_id].size())throw std::out_of_range("memory word address out of range");return mem[mem_id][addr];}
@@ -389,8 +396,10 @@ void Model::forceSignal(size_t id,W value){
  if(id>=state->signals.size())throw std::out_of_range("invalid signal id for forceSignal");
  value=word(value.v,value.x,value.z,state->signals[id].width);
  if(state->signals[id].two_state)value=two_state(value);
+ syncToBase();
  state->forced[id]=value;
  s[id]=value;
+ syncFromBase();
  fast_dirty=true;
  refreshFastFlags();
 }
@@ -407,6 +416,7 @@ void Model::enableToggleCoverage(bool enabled){
  checkThread();
  state->toggleCoverageEnabled=enabled;
  if(enabled){
+  syncToBase();
   state->toggleInitialized.assign(s.size(),false);
   state->togglePrev0.assign(s.size(),Bits(0));
   state->togglePrev1.assign(s.size(),Bits(0));
