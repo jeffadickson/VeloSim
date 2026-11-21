@@ -142,7 +142,9 @@ public static class RtlExternalSdk
                 <TargetFramework>net11.0</TargetFramework>
                 <ImplicitUsings>disable</ImplicitUsings>
                 <Nullable>enable</Nullable>
-                <LangVersion>latest</LangVersion>
+                <LangVersion>15.0</LangVersion>
+                <AnalysisLevel>11.0</AnalysisLevel>
+                <Deterministic>true</Deterministic>
                 <OptimizationPreference>Speed</OptimizationPreference>
               </PropertyGroup>
             </Project>

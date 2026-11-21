@@ -4,6 +4,8 @@ namespace VeloSim;
 
 public sealed partial class RtlDesign
 {
+    private static readonly string[] CombinationalExprFields = ["value", "condition", "count"];
+
     // Each step owns complete words. The DAG settles once in dependency order;
     // a procedural block is never retriggered by its own blocking writes.
     private IReadOnlyList<JsonElement> SettledSteps { get; set; } = [];
@@ -19,21 +21,21 @@ public sealed partial class RtlDesign
             if(blocks.ValueKind!=JsonValueKind.Array || blocks.GetArrayLength()>Limits.MaxContinuous) throw new IrValidationException($"Combinational block count must be 0..{Limits.MaxContinuous}.");
             foreach(var block in blocks.EnumerateArray())
             {
-                var owned=new HashSet<string>(StringComparer.Ordinal);
+                HashSet<string> owned = [with(StringComparer.Ordinal)];
                 ValidateStatement(block,owned,2); _=StatementCost(block);
-                var assigned=new HashSet<string>(StringComparer.Ordinal);
+                HashSet<string> assigned = [with(StringComparer.Ordinal)];
                 ValidateCombFlow(block,owned,assigned);
                 if(!owned.SetEquals(assigned)) throw new IrValidationException("Combinational destinations require assignment on every path.");
                 steps.Add(block.Clone());
             }
         }
-        foreach(var step in steps.Where(e=>Kind(e)=="blocking")){var owned=TargetLeaves(step.GetProperty("target")).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);ValidateCombFlow(step,owned,new(StringComparer.Ordinal));}
+        foreach(var step in steps.Where(e=>Kind(e)=="blocking")){var owned=TargetLeaves(step.GetProperty("target")).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);ValidateCombFlow(step,owned,[with(StringComparer.Ordinal)]);}
         if(steps.Sum(StatementCost)>Limits.MaxNodes)throw new IrValidationException("Expanded combinational statement budget exceeded.");
-        var owners=new Dictionary<string,int>(StringComparer.Ordinal);
+        Dictionary<string,int> owners = [with(StringComparer.Ordinal)];
         var writes=steps.Select(step=>Statements(step).Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal)).ToArray();
         for(int i=0;i<steps.Count;i++) foreach(var word in writes[i])
             if(sequential.Contains(word)||!owners.TryAdd(word,i))throw new IrValidationException("Conflicting combinational writer.");
-        var reads=steps.Select(step=>Statements(step).SelectMany(e=>new[]{"value","condition","count"}.Where(n=>e.TryGetProperty(n,out var v)&&v.ValueKind==JsonValueKind.Object).SelectMany(n=>References(e.GetProperty(n)))).ToHashSet(StringComparer.Ordinal)).ToArray();
+        var reads=steps.Select(step=>Statements(step).SelectMany(e=>CombinationalExprFields.Where(n=>e.TryGetProperty(n,out var v)&&v.ValueKind==JsonValueKind.Object).SelectMany(n=>References(e.GetProperty(n)))).ToHashSet(StringComparer.Ordinal)).ToArray();
         foreach(var read in reads)if(read.Intersect(EventSignals.Append(Clock)).Any())throw new IrValidationException("Clock-dependent combinational logic is outside the race-free subset.");
         var pending=Enumerable.Range(0,steps.Count).ToHashSet();var ordered=new List<JsonElement>();var levels=new List<IReadOnlyList<JsonElement>>();
         while(pending.Count>0)

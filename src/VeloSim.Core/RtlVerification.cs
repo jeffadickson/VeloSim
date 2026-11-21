@@ -3,7 +3,37 @@ using System.Text.Json;
 
 namespace VeloSim;
 
-public sealed record RtlCoverBin(string Name, ulong Lo, ulong Hi, bool IsDefault, bool IsIgnore, bool IsIllegal);
+public sealed record RtlValueRangeBin(ulong Lo, ulong Hi);
+public sealed record RtlDefaultBin;
+public sealed record RtlIgnoreBin(ulong Lo, ulong Hi);
+public sealed record RtlIllegalBin(ulong Lo, ulong Hi);
+
+/// <summary>Finite mutually exclusive coverpoint bin semantics; C# 15 checks consumer switches for exhaustiveness.</summary>
+public union RtlCoverBinSpec(RtlValueRangeBin, RtlDefaultBin, RtlIgnoreBin, RtlIllegalBin);
+
+public sealed record RtlCoverBin(string Name, RtlCoverBinSpec Spec)
+{
+    public ulong Lo => Spec switch
+    {
+        RtlValueRangeBin r => r.Lo,
+        RtlIgnoreBin ig => ig.Lo,
+        RtlIllegalBin il => il.Lo,
+        RtlDefaultBin => 0UL
+    };
+
+    public ulong Hi => Spec switch
+    {
+        RtlValueRangeBin r => r.Hi,
+        RtlIgnoreBin ig => ig.Hi,
+        RtlIllegalBin il => il.Hi,
+        RtlDefaultBin => 0UL
+    };
+
+    public bool IsDefault => Spec is RtlDefaultBin;
+    public bool IsIgnore => Spec is RtlIgnoreBin;
+    public bool IsIllegal => Spec is RtlIllegalBin;
+}
+
 public sealed record RtlCoverpoint(string Name, JsonElement Value, IReadOnlyList<RtlCoverBin> Bins);
 public sealed record RtlCoverCross(string Name, int CpA, int CpB);
 public sealed record RtlCovergroup(string Name, IReadOnlyList<RtlCoverpoint> Points, IReadOnlyList<RtlCoverCross> Crosses);
@@ -23,7 +53,7 @@ public sealed partial class RtlDesign
     public IReadOnlyList<RtlCovergroup> Covergroups { get; private set; } = [];
     public IReadOnlyList<RtlProperty> Properties { get; private set; } = [];
     internal Dictionary<int, int> PastDepths { get; } = [];
-    private readonly Dictionary<string, int> covergroupIds = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> covergroupIds = [with(StringComparer.Ordinal)];
 
     internal int CovergroupId(string name) =>
         covergroupIds.TryGetValue(name, out int id) ? id : throw new IrValidationException("Unknown RTL covergroup: " + name);
@@ -60,7 +90,7 @@ public sealed partial class RtlDesign
             var cpsEl = cgEl.GetProperty("coverpoints");
             if (cpsEl.ValueKind != JsonValueKind.Array || cpsEl.GetArrayLength() is < 1 or > 32)
                 throw new IrValidationException("Covergroup requires 1..32 coverpoints.");
-            var cpNames = new Dictionary<string, int>(StringComparer.Ordinal);
+            Dictionary<string, int> cpNames = [with(StringComparer.Ordinal)];
             var points = new List<RtlCoverpoint>();
             foreach (var cpEl in cpsEl.EnumerateArray())
             {
@@ -74,7 +104,7 @@ public sealed partial class RtlDesign
                 var binsEl = cpEl.GetProperty("bins");
                 if (binsEl.ValueKind != JsonValueKind.Array || binsEl.GetArrayLength() is < 1 or > 128)
                     throw new IrValidationException("Coverpoint requires 1..128 bins.");
-                var binNames = new HashSet<string>(StringComparer.Ordinal);
+                HashSet<string> binNames = [with(StringComparer.Ordinal)];
                 var bins = new List<RtlCoverBin>();
                 foreach (var bEl in binsEl.EnumerateArray())
                 {
@@ -89,9 +119,14 @@ public sealed partial class RtlDesign
                         throw new IrValidationException("Default coverpoint bin cannot also be ignore or illegal.");
                     if (isIgn && isIll)
                         throw new IrValidationException("Coverpoint bin cannot be both ignore and illegal.");
-                    ulong lo = 0, hi = 0;
-                    if (!isDef)
+                    RtlCoverBinSpec spec;
+                    if (isDef)
                     {
+                        spec = new RtlDefaultBin();
+                    }
+                    else
+                    {
+                        ulong lo, hi;
                         if (bEl.TryGetProperty("value", out var singleVal))
                         {
                             lo = hi = singleVal.GetUInt64();
@@ -102,8 +137,11 @@ public sealed partial class RtlDesign
                             hi = bEl.GetProperty("hi").GetUInt64();
                             if (lo > hi) throw new IrValidationException("Coverpoint bin range requires lo <= hi.");
                         }
+                        spec = isIgn ? new RtlIgnoreBin(lo, hi)
+                            : isIll ? new RtlIllegalBin(lo, hi)
+                            : new RtlValueRangeBin(lo, hi);
                     }
-                    bins.Add(new RtlCoverBin(bName, lo, hi, isDef, isIgn, isIll));
+                    bins.Add(new RtlCoverBin(bName, spec));
                 }
                 points.Add(new RtlCoverpoint(cpName, valEl, bins));
             }
@@ -112,7 +150,7 @@ public sealed partial class RtlDesign
             {
                 if (crArr.ValueKind != JsonValueKind.Array || crArr.GetArrayLength() > 32)
                     throw new IrValidationException("Covergroup supports 0..32 crosses.");
-                var crNames = new HashSet<string>(StringComparer.Ordinal);
+                HashSet<string> crNames = [with(StringComparer.Ordinal)];
                 foreach (var crEl in crArr.EnumerateArray())
                 {
                     JsonShape.Fields(crEl, ["name", "a", "b"]);
@@ -136,7 +174,7 @@ public sealed partial class RtlDesign
         if (!root.TryGetProperty("properties", out var arr)) return;
         if (arr.ValueKind != JsonValueKind.Array || arr.GetArrayLength() > 128)
             throw new IrValidationException("Property count must be 0..128.");
-        var names = new HashSet<string>(StringComparer.Ordinal);
+        HashSet<string> names = [with(StringComparer.Ordinal)];
         var list = new List<RtlProperty>();
         foreach (var pEl in arr.EnumerateArray())
         {
@@ -201,7 +239,16 @@ public sealed partial class RtlDesign
                 code.Append("{vsrtl::CoverpointSpec _cp;");
                 code.Append($"_cp.name={CppStringLiteral(cp.Name)};");
                 foreach (var b in cp.Bins)
-                    code.Append($"_cp.bins.push_back({{{CppStringLiteral(b.Name)},{b.Lo}ULL,{b.Hi}ULL,{(b.IsDefault ? "true" : "false")},{(b.IsIgnore ? "true" : "false")},{(b.IsIllegal ? "true" : "false")},0ULL}});");
+                {
+                    (ulong lo, ulong hi, string isDef, string isIgn, string isIll) = b.Spec switch
+                    {
+                        RtlValueRangeBin r => (r.Lo, r.Hi, "false", "false", "false"),
+                        RtlDefaultBin => (0UL, 0UL, "true", "false", "false"),
+                        RtlIgnoreBin ig => (ig.Lo, ig.Hi, "false", "true", "false"),
+                        RtlIllegalBin il => (il.Lo, il.Hi, "false", "false", "true")
+                    };
+                    code.Append($"_cp.bins.push_back({{{CppStringLiteral(b.Name)},{lo}ULL,{hi}ULL,{isDef},{isIgn},{isIll},0ULL}});");
+                }
                 code.AppendLine("_cg.points.push_back(std::move(_cp));}");
             }
             foreach (var cr in cg.Crosses)

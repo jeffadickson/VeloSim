@@ -1499,6 +1499,36 @@ RELATIONS:
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
 
-
-
-
+[REQUIREMENT]
+UID: VS-FORMAL-DAFNY-001
+STATUS: Active
+TITLE: Machine-checked Dafny formal verification suite and .NET 11 / C# 15 audit
+STATEMENT: >>>
+VeloSim shall maintain machine-checked Dafny formal specifications under formal/dafny/ proving core Waves 1-4 algorithmic invariants without assume or {:axiom} bypasses: IEEE 1800 4-state net resolution and wildcard equality (FourStateResolution.dfy), combinational DAG levelization hazard freedom, commutation and fail-closed cycle rejection (DagLevelizer.dfy), bounded concurrent SVA shift-register temporal tracking and disable_iff gating (SvaDelayPipeline.dfy), and fail-closed coverage merge commutativity, associativity, monotonicity and IEEE 1800 coverpoint sampling priority (CoverageMergeInvariants.dfy). Exported C# model SDKs shall pin net11.0, C# 15.0, AnalysisLevel 11.0 and Deterministic builds compiling cleanly under TreatWarningsAsErrors, and mutually exclusive coverpoint bin kinds shall be represented with a compiler-checked C# 15 union (RtlCoverBinSpec).
+<<<
+COMMENT: >>>
+Verified with Dafny 4.11.0 and Z3 4.15.5 (67 verified proof obligations, 0 errors, 0 warnings). Proof boundaries between the formal models and C++/C#/Rust implementations are documented explicitly in docs/dafny-verification.md, and Waves 1-4 .NET 11 / C# 15 audit findings are recorded in docs/csharp-modernization.md.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: formal/dafny/FourStateResolution.dfy
+- TYPE: File
+  VALUE: formal/dafny/DagLevelizer.dfy
+- TYPE: File
+  VALUE: formal/dafny/SvaDelayPipeline.dfy
+- TYPE: File
+  VALUE: formal/dafny/CoverageMergeInvariants.dfy
+- TYPE: File
+  VALUE: docs/dafny-verification.md
+- TYPE: File
+  VALUE: docs/csharp-modernization.md
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlVerification.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCoverageMerge.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCombinational.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/Net11AndDafnyAuditTests.cs
