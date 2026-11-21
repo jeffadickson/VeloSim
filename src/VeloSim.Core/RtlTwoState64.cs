@@ -44,7 +44,7 @@ public sealed partial class RtlDesign
         int ew = ExpressionWidth(e);
         bool signed = forceSigned ?? ExpressionSigned(e);
         string Extend(string value) => signed && context > ew ? $"vsrtl::w2::sresize({value},{ew},{context})" : value;
-        if (kind == "ref") return Extend($"vsrtl::w2::to(s[{SignalId(Name(e))}])");
+        if (kind == "ref") return Extend($"_vs_s[{SignalId(Name(e))}]");
         if (kind == "const") return Extend(EmitConst2(e.GetProperty("bits").GetString()!));
         if (kind == "index")
         {
@@ -79,7 +79,10 @@ public sealed partial class RtlDesign
         {
             int nk = ParseNetKind(e.GetProperty("net").GetString()!);
             int rw = Math.Max(context, ew);
-            string drivers = string.Join(",", e.GetProperty("args").EnumerateArray().Select(d => Expression2(d, rw)));
+            var drvEls = e.GetProperty("args").EnumerateArray().ToArray();
+            if (drvEls.Length == 2)
+                return Extend($"vsrtl::w2::resolve_pair({Expression2(drvEls[0], rw)},{Expression2(drvEls[1], rw)},{nk},{rw})");
+            string drivers = string.Join(",", drvEls.Select(d => Expression2(d, rw)));
             return Extend($"vsrtl::w2::resolve_net({nk},{{{drivers}}},{rw})");
         }
         if (kind == "inside")
@@ -122,17 +125,17 @@ public sealed partial class RtlDesign
         if (kind == "rose")
         {
             int sid = SignalId(e.GetProperty("signal").GetString()!);
-            return $"uint64_t(vsrtl::w2::edge(_vs_past_{sid}[0]&1ULL,vsrtl::w2::to(s[{sid}])&1ULL,true))";
+            return $"uint64_t(vsrtl::w2::edge(_vs_past_{sid}[0]&1ULL,_vs_s[{sid}]&1ULL,true))";
         }
         if (kind == "fell")
         {
             int sid = SignalId(e.GetProperty("signal").GetString()!);
-            return $"uint64_t(vsrtl::w2::edge(_vs_past_{sid}[0]&1ULL,vsrtl::w2::to(s[{sid}])&1ULL,false))";
+            return $"uint64_t(vsrtl::w2::edge(_vs_past_{sid}[0]&1ULL,_vs_s[{sid}]&1ULL,false))";
         }
         if (kind == "stable")
         {
             int sid = SignalId(e.GetProperty("signal").GetString()!);
-            return $"uint64_t(vsrtl::w2::to(s[{sid}])==_vs_past_{sid}[0])";
+            return $"uint64_t(_vs_s[{sid}]==_vs_past_{sid}[0])";
         }
         if (kind == "dpi_call")
         {
@@ -385,8 +388,10 @@ public sealed partial class RtlDesign
             var rhs = step.GetProperty("value");
             int vw = ExpressionWidth(rhs);
             bool exactWidth = vw == Signals[id].Width && !(ExpressionSigned(rhs) && Signals[id].Width > vw);
-            sb.AppendLine($"vsrtl::w2::store(s[{id}],{StoreWord2(Expression2(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)});");
+            sb.AppendLine($"_vs_s[{id}]={StoreWord2(Expression2(rhs, Signals[id].Width), Signals[id], exactWidth ? Signals[id].Width : -1)};");
         }
+
+        bool canReenter = dpiCalls.Count > 0 || Statements(Body).Any(st => Kind(st) is "display" or "finish" or "fatal" or "force" or "release");
 
         var bodyCode = new StringBuilder();
         bodyCode.AppendLine("inline void settle(){");
@@ -409,19 +414,23 @@ public sealed partial class RtlDesign
                 bodyCode.AppendLine("}});");
             }
         }
+        bodyCode.AppendLine("}\nvoid syncToBase() const override {");
+        bodyCode.AppendLine($"for(size_t i=0;i<{Signals.Count};++i)vsrtl::w2::store(s[i],_vs_s[i]);");
+        bodyCode.AppendLine("}\nvoid syncFromBase() override {");
+        bodyCode.AppendLine($"for(size_t i=0;i<{Signals.Count};++i)_vs_s[i]=vsrtl::w2::to(s[i]);");
         bodyCode.AppendLine("}\nvoid evaluate() override {");
         if (dpiCalls.Count > 0) bodyCode.AppendLine("struct _VsDpiScope{svScope prev;explicit _VsDpiScope(svScope s):prev(svSetScope(s)){}~_VsDpiScope(){svSetScope(prev);}} _vs_dpi_scope(static_cast<svScope>(this));");
         if (hasRuntimeLoops) bodyCode.AppendLine("execution_budget=20000;");
         if (canThrow)
         {
-            bodyCode.Append($"auto saved_s=s;");
-            if (!CombinationalOnly) bodyCode.Append($"uint64_t saved_prev[{Signals.Count}];for(int i=0;i<{Signals.Count};++i)saved_prev[i]=_vs_prev[i];");
+            bodyCode.Append($"uint64_t saved_s[{Signals.Count}];std::memcpy(saved_s,_vs_s,sizeof(_vs_s));");
+            if (!CombinationalOnly) bodyCode.Append($"uint64_t saved_prev[{Signals.Count}];std::memcpy(saved_prev,_vs_prev,sizeof(_vs_prev));");
             for (int i = 0; i < Memories.Count; ++i)
-                bodyCode.Append($"uint64_t saved_m{i}[{Memories[i].Depth}];for(int i=0;i<{Memories[i].Depth};++i)saved_m{i}[i]=_vs_m{i}[i];");
+                bodyCode.Append($"uint64_t saved_m{i}[{Memories[i].Depth}];std::memcpy(saved_m{i},_vs_m{i},sizeof(_vs_m{i}));");
             bodyCode.AppendLine("try{");
         }
         bodyCode.AppendLine("settle();");
-        EmitCppPropertyEvaluation(bodyCode, ex => Expression2(ex), ex => $"vsrtl::w2::yes({ex})", sid => $"vsrtl::w2::to(s[{sid}])", (cid, edge) => $"vsrtl::w2::edge(_vs_pclk_{cid},vsrtl::w2::to(s[{cid}]),{(edge == "posedge" ? "true" : "false")})", false, true);
+        EmitCppPropertyEvaluation(bodyCode, ex => Expression2(ex), ex => $"vsrtl::w2::yes({ex})", sid => $"_vs_s[{sid}]", (cid, edge) => $"vsrtl::w2::edge(_vs_pclk_{cid},_vs_s[{cid}],{(edge == "posedge" ? "true" : "false")})", false, true);
         if (!CombinationalOnly)
         {
             for (int p = 0; p < procs.Length; ++p)
@@ -429,14 +438,14 @@ public sealed partial class RtlDesign
                 string cond = string.Join("||", procs[p].GetProperty("events").EnumerateArray().Select(trigger =>
                 {
                     int id = SignalId(trigger.GetProperty("signal").GetString()!);
-                    return $"vsrtl::w2::edge(_vs_prev[{id}],vsrtl::w2::to(s[{id}]),{(trigger.GetProperty("edge").GetString() == "posedge" ? "true" : "false")})";
+                    return $"vsrtl::w2::edge(_vs_prev[{id}],_vs_s[{id}],{(trigger.GetProperty("edge").GetString() == "posedge" ? "true" : "false")})";
                 }));
                 bodyCode.AppendLine($"const bool _vs_ev{p}={cond};");
             }
             string anyEv = string.Join("||", Enumerable.Range(0, procs.Length).Select(p => $"_vs_ev{p}"));
             bodyCode.AppendLine($"if({anyEv}){{");
             if (seqIds.Length > 0)
-                bodyCode.AppendLine(string.Concat(seqIds.Select(id => $"_vs_next[{id}]=vsrtl::w2::to(s[{id}]);")));
+                bodyCode.AppendLine(string.Concat(seqIds.Select(id => $"_vs_next[{id}]=_vs_s[{id}];")));
             int unique = 0;
             for (int p = 0; p < procs.Length; ++p)
             {
@@ -445,19 +454,19 @@ public sealed partial class RtlDesign
                 if (procs.Length > 1) bodyCode.AppendLine("}");
             }
             if (seqIds.Length > 0)
-                bodyCode.AppendLine(string.Concat(seqIds.Select(id => $"vsrtl::w2::store(s[{id}],_vs_next[{id}]);")));
+                bodyCode.AppendLine(string.Concat(seqIds.Select(id => $"_vs_s[{id}]=_vs_next[{id}];")));
             if (hasFixedMemWrites)
                 bodyCode.AppendLine("_vs_mlog.commit(_vs_mptrs);");
             bodyCode.AppendLine("settle();\n}");
             foreach (int id in eventIds)
-                bodyCode.AppendLine($"_vs_prev[{id}]=vsrtl::w2::to(s[{id}]);");
+                bodyCode.AppendLine($"_vs_prev[{id}]=_vs_s[{id}];");
         }
         if (canThrow)
         {
-            bodyCode.Append("\n}catch(...){s=std::move(saved_s);");
-            if (!CombinationalOnly) bodyCode.Append($"for(int i=0;i<{Signals.Count};++i)_vs_prev[i]=saved_prev[i];");
+            bodyCode.Append("\n}catch(...){std::memcpy(_vs_s,saved_s,sizeof(_vs_s));");
+            if (!CombinationalOnly) bodyCode.Append("std::memcpy(_vs_prev,saved_prev,sizeof(_vs_prev));");
             for (int i = 0; i < Memories.Count; ++i)
-                bodyCode.Append($"for(int i=0;i<{Memories[i].Depth};++i)_vs_m{i}[i]=saved_m{i}[i];");
+                bodyCode.Append($"std::memcpy(_vs_m{i},saved_m{i},sizeof(_vs_m{i}));");
             if (hasFixedMemWrites) bodyCode.Append("_vs_mlog.count=0;_vs_mlog.overflow.clear();");
             bodyCode.AppendLine("throw;}");
         }
@@ -500,21 +509,34 @@ public sealed partial class RtlDesign
         EmitCoveragePointsOverride(bodyCode, coverage);
         // Non-virtual inline fast-path lets GCC/Clang inline evaluate() directly into host loops.
         bodyCode.AppendLine("inline void eval(){");
-        bodyCode.AppendLine("if(fast_eval_ok&&owner_thread==std::this_thread::get_id())[[likely]]{");
-        bodyCode.AppendLine("fast_eval_ok=false;fast_evaluating=true;fast_dirty=false;");
-        if (canThrow)
-            bodyCode.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_evaluating=false;fast_dirty=true;fast_eval_ok=fast_eligible;throw;}}");
+        bodyCode.AppendLine("if(fast_eval_ok&&isOwnerThreadFast())[[likely]]{");
+        if (!canReenter)
+        {
+            bodyCode.AppendLine("fast_dirty=false;");
+            if (canThrow)
+                bodyCode.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_dirty=true;throw;}}");
+            else
+                bodyCode.AppendLine($"this->{className}::evaluate();");
+            bodyCode.AppendLine("return;}");
+        }
         else
-            bodyCode.AppendLine($"this->{className}::evaluate();");
-        bodyCode.AppendLine("fast_evaluating=false;if(!fast_eligible)[[unlikely]]applyForces();fast_eval_ok=fast_eligible;return;}");
+        {
+            bodyCode.AppendLine("fast_eval_ok=false;fast_evaluating=true;fast_dirty=false;");
+            if (canThrow)
+                bodyCode.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_evaluating=false;fast_dirty=true;fast_eval_ok=fast_eligible;throw;}}");
+            else
+                bodyCode.AppendLine($"this->{className}::evaluate();");
+            bodyCode.AppendLine("fast_evaluating=false;if(!fast_eligible)[[unlikely]]applyForces();fast_eval_ok=fast_eligible;return;}");
+        }
         bodyCode.AppendLine("evalSlow();}");
         foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.AppendLine($"vsrtl::Port {names[signal.Name]};");
         bodyCode.Append($"{className}():vsrtl::Model(\"{top}\",{{");
         // All signals carry two_state=true so Model::Model(), Model::put(), Port, and VPI agree on 2-state semantics.
         bodyCode.AppendJoin(',', Signals.Select(s => $"{{\"{s.SourcePath ?? s.Name}\",{s.Width},{(s.Direction == "input" ? "vpiInput" : s.Direction == "output" ? "vpiOutput" : "vpiNoDirection")},{(s.Signed ? "true" : "false")},true}}"));
         bodyCode.Append($"}},{(CombinationalOnly ? -1 : SignalId(Clock!))})");
-        foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)})");
+        foreach (var signal in Signals.Where(s => s.Direction != "internal")) bodyCode.Append($",{names[signal.Name]}(*this,{SignalId(signal.Name)},&_vs_s[{SignalId(signal.Name)}])");
         bodyCode.AppendLine("{");
+        bodyCode.AppendLine("initFastThreadTag();");
         if (hasFixedMemWrites)
         {
             for (int i = 0; i < Memories.Count; ++i)
@@ -531,6 +553,7 @@ public sealed partial class RtlDesign
                 bodyCode.AppendLine($"for(int j=0;j<{Memories[i].Depth};++j)_vs_m{i}[j]=mem[{i}][j].v.limb[0];");
             bodyCode.AppendLine("mem.clear();");
         }
+        bodyCode.AppendLine("syncFromBase();");
         EmitCppCovergroupRegistration(bodyCode);
         EmitCppPropertyInit(bodyCode, false, true);
         if (enableCoverage) bodyCode.AppendLine("enableToggleCoverage(true);");
@@ -541,6 +564,7 @@ public sealed partial class RtlDesign
         code.AppendLine($"class {className} final : public vsrtl::Model {{");
         if (threads > 1) code.AppendLine($"vsrtl::ThreadPool _vs_pool{{{threads}}};");
         if (hasRuntimeLoops || hasInit) code.AppendLine("size_t execution_budget=20000;");
+        code.AppendLine($"uint64_t _vs_s[{Signals.Count}]{{}};");
         if (!CombinationalOnly)
         {
             code.AppendLine($"uint64_t _vs_prev[{Signals.Count}]{{}};");

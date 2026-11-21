@@ -1010,6 +1010,10 @@ inline W64 read(const std::vector<W>& m, W64 index, int w) noexcept {
  if ((index.x | index.z) || index.v >= m.size()) return unknown(w);
  return to(m[size_t(index.v)]);
 }
+inline W64 read_flat(const W64* m, size_t depth, W64 index, int w) noexcept {
+ if ((index.x | index.z) || index.v >= depth) return unknown(w);
+ return m[size_t(index.v)];
+}
 struct MemWrite64 { uint16_t mem_id; uint32_t index; W64 value; };
 template <size_t InlineCap = 16>
 struct MemLog64 {
@@ -1028,6 +1032,15 @@ struct MemLog64 {
    store(mem[e.mem_id][e.index], e.value);
   }
   for (const auto& e : overflow) store(mem[e.mem_id][e.index], e.value);
+  count = 0;
+  if (!overflow.empty()) overflow.clear();
+ }
+ inline void commit_flat(W64** mems) noexcept {
+  for (size_t i = 0; i < count; ++i) {
+   const auto& e = inline_buf[i];
+   mems[e.mem_id][e.index] = e.value;
+  }
+  for (const auto& e : overflow) mems[e.mem_id][e.index] = e.value;
   count = 0;
   if (!overflow.empty()) overflow.clear();
  }
@@ -1447,6 +1460,15 @@ inline size_t load_mem_file_flat(uint64_t* mem, size_t depth, int width, const s
  for (size_t i = 0; i < depth; ++i) tmp[i].v.limb[0] = mem[i];
  size_t loaded = load_mem_file(tmp, width, path, hex, start_addr, end_addr, true);
  for (size_t i = 0; i < depth; ++i) mem[i] = tmp[i].v.limb[0];
+ return loaded;
+}
+
+inline size_t load_mem_file_flat(w64::W64* mem, size_t depth, int width, const std::string& path, bool hex,
+                                 size_t start_addr = 0, size_t end_addr = SIZE_MAX, bool two_state_mem = false) {
+ std::vector<W> tmp(depth);
+ for (size_t i = 0; i < depth; ++i) tmp[i] = w64::from(mem[i]);
+ size_t loaded = load_mem_file(tmp, width, path, hex, start_addr, end_addr, two_state_mem);
+ for (size_t i = 0; i < depth; ++i) mem[i] = w64::to(tmp[i]);
  return loaded;
 }
 

@@ -30,7 +30,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> CSharpPortNames()
     {
         var reserved = (
-            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO"
+            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint W4 W4Ops MemLog4 W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -48,20 +48,20 @@ public sealed partial class RtlDesign
         return result;
     }
 
-    private static string EmitCsConst64(string bits)
+    private static string CsMaskHex(int w) =>
+        w >= 64 ? "ulong.MaxValue" : (w <= 0 ? "0UL" : $"0x{((1UL << w) - 1UL):x}UL");
+
+    private static string EmitCsConst4(string bits)
     {
-        int w = bits.Length;
-        ulong v = 0, x = 0, z = 0;
+        ulong a = 0, b = 0;
         foreach (char c in bits)
         {
-            v <<= 1; x <<= 1; z <<= 1;
-            if (c == '1') v |= 1;
-            else if (c == 'x') x |= 1;
-            else if (c == 'z') z |= 1;
+            a <<= 1; b <<= 1;
+            if (c == '1') a |= 1;
+            else if (c == 'x') { a |= 1; b |= 1; }
+            else if (c == 'z') b |= 1;
         }
-        return (x | z) == 0
-            ? $"new W64(0x{v:x}UL,0UL,0UL,{w})"
-            : $"new W64(0x{v:x}UL,0x{x:x}UL,0x{z:x}UL,{w})";
+        return (a | b) == 0 ? "default" : $"new W4(0x{a:x}UL,0x{b:x}UL)";
     }
 
     private static string EmitCsConst2(string bits)
@@ -75,43 +75,75 @@ public sealed partial class RtlDesign
         return $"0x{v:x}UL";
     }
 
+    private static bool TryConstShift(JsonElement e, out int shift)
+    {
+        shift = 0;
+        if (Kind(e) != "const") return false;
+        string bits = e.GetProperty("bits").GetString()!;
+        ulong v = 0;
+        foreach (char c in bits)
+        {
+            if (c is not ('0' or '1')) return false;
+            v = (v << 1) | (c == '1' ? 1UL : 0UL);
+        }
+        if (v >= 64UL) return false;
+        shift = (int)v;
+        return true;
+    }
+
     private string CsMemIdx(JsonElement access, int id, bool twoState)
     {
         string idx = twoState ? CsExpr2(access.GetProperty("index")) : CsExpr64(access.GetProperty("index"));
         if (Memories[id].LowerBound == 0) return idx;
-        return twoState ? $"W2Ops.MemIdx({idx},{Memories[id].LowerBound})" : $"W64Ops.MemIdx({idx},{Memories[id].LowerBound})";
+        return twoState ? $"W2Ops.MemIdx({idx},{Memories[id].LowerBound})" : $"W4Ops.MemIdx({idx},{Memories[id].LowerBound})";
     }
 
     private string CsExpr64(JsonElement e, int context = 0, bool? forceSigned = null)
     {
         string kind = Kind(e);
+        int ew = ExpressionWidth(e);
         bool signed = forceSigned ?? ExpressionSigned(e);
-        string Extend(string val) => signed && context > ExpressionWidth(e) ? $"W64Ops.SResize({val},{context})" : val;
+        string Extend(string val) => signed && context > ew ? $"W4Ops.SResize({val},{ew},{CsMaskHex(ew)},{CsMaskHex(context)})" : val;
         if (kind == "ref") return Extend($"_s{SignalId(Name(e))}");
-        if (kind == "const") return Extend(EmitCsConst64(e.GetProperty("bits").GetString()!));
+        if (kind == "const") return Extend(EmitCsConst4(e.GetProperty("bits").GetString()!));
         if (kind == "index")
         {
             int id = MemoryId(Name(e));
-            return Extend($"W64Ops.Read(_m{id},{CsMemIdx(e, id, false)},{Memories[id].Width})");
+            return Extend($"W4Ops.Read(_m{id},{CsMemIdx(e, id, false)},{CsMaskHex(Memories[id].Width)})");
         }
-        if (kind == "bitselect") return $"W64Ops.SelBit({CsExpr64(e.GetProperty("value"))},{CsExpr64(e.GetProperty("index"))})";
-        if (kind == "partselect") return $"W64Ops.SelPart({CsExpr64(e.GetProperty("value"))},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
-        if (kind == "indexedselect") return $"W64Ops.SelIdx({CsExpr64(e.GetProperty("value"))},{CsExpr64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
-        if (kind == "test_plusargs") return Extend($"new W64(TestPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}),0UL,0UL,32)");
-        if (kind == "urandom") return Extend("new W64(NextUrandom(),0UL,0UL,32)");
-        if (kind == "random") return Extend("new W64((uint)NextRandom(),0UL,0UL,32)");
+        if (kind == "bitselect")
+        {
+            var valEl = e.GetProperty("value");
+            return $"W4Ops.SelBit({CsExpr64(valEl)},{ExpressionWidth(valEl)},{CsExpr64(e.GetProperty("index"))})";
+        }
+        if (kind == "partselect")
+        {
+            var valEl = e.GetProperty("value");
+            return $"W4Ops.SelPart({CsExpr64(valEl)},{ExpressionWidth(valEl)},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
+        }
+        if (kind == "indexedselect")
+        {
+            var valEl = e.GetProperty("value");
+            return $"W4Ops.SelIdx({CsExpr64(valEl)},{ExpressionWidth(valEl)},{CsExpr64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})";
+        }
+        if (kind == "test_plusargs") return Extend($"new W4(TestPlusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}),0UL)");
+        if (kind == "urandom") return Extend("new W4(NextUrandom(),0UL)");
+        if (kind == "random") return Extend("new W4((uint)NextRandom(),0UL)");
         if (kind == "urandom_range")
         {
-            string maxExpr = $"(uint)({CsExpr64(e.GetProperty("max"))}).V";
-            string minExpr = e.TryGetProperty("min", out var minEl) ? $"(uint)({CsExpr64(minEl)}).V" : "0u";
-            return Extend($"new W64(NextUrandomRange({maxExpr},{minExpr}),0UL,0UL,32)");
+            string maxExpr = $"(uint)({CsExpr64(e.GetProperty("max"))}).A";
+            string minExpr = e.TryGetProperty("min", out var minEl) ? $"(uint)({CsExpr64(minEl)}).A" : "0u";
+            return Extend($"new W4(NextUrandomRange({maxExpr},{minExpr}),0UL)");
         }
         if (kind == "resolve")
         {
             int nk = ParseNetKind(e.GetProperty("net").GetString()!);
-            int rw = Math.Max(context, ExpressionWidth(e));
-            string drivers = string.Join(", ", e.GetProperty("args").EnumerateArray().Select(d => CsExpr64(d, rw)));
-            return Extend($"W64Ops.ResolveNet({nk}, [{drivers}], {rw})");
+            int rw = Math.Max(context, ew);
+            var drvEls = e.GetProperty("args").EnumerateArray().ToArray();
+            if (drvEls.Length == 2)
+                return Extend($"W4Ops.ResolveNet2({nk},{CsExpr64(drvEls[0], rw)},{CsExpr64(drvEls[1], rw)},{CsMaskHex(rw)})");
+            string drivers = string.Join(", ", drvEls.Select(d => CsExpr64(d, rw)));
+            return Extend($"W4Ops.ResolveNet({nk},[{drivers}],{CsMaskHex(rw)})");
         }
         if (kind == "inside")
         {
@@ -125,18 +157,19 @@ public sealed partial class RtlDesign
                 {
                     int cw = Math.Max(vw, Math.Max(ExpressionWidth(loEl), ExpressionWidth(hiEl)));
                     bool cs = vSigned && ExpressionSigned(loEl) && ExpressionSigned(hiEl);
-                    string cmp = cs ? "W64Ops.SCmp" : "W64Ops.Cmp";
-                    parts.Add($"W64Ops.LAnd({cmp}({CsExpr64(valEl, cw, cs)},{CsExpr64(loEl, cw, cs)},3),{cmp}({CsExpr64(valEl, cw, cs)},{CsExpr64(hiEl, cw, cs)},1))");
+                    string loCmp = cs ? $"W4Ops.SCmp({CsExpr64(valEl, cw, true)},{CsExpr64(loEl, cw, true)},{cw},3)" : $"W4Ops.Cmp({CsExpr64(valEl, cw, false)},{CsExpr64(loEl, cw, false)},3)";
+                    string hiCmp = cs ? $"W4Ops.SCmp({CsExpr64(valEl, cw, true)},{CsExpr64(hiEl, cw, true)},{cw},1)" : $"W4Ops.Cmp({CsExpr64(valEl, cw, false)},{CsExpr64(hiEl, cw, false)},1)";
+                    parts.Add($"W4Ops.LAnd({loCmp},{hiCmp})");
                 }
                 else
                 {
                     int cw = Math.Max(vw, ExpressionWidth(it));
                     bool cs = vSigned && ExpressionSigned(it);
-                    parts.Add($"W64Ops.WildEq({CsExpr64(valEl, cw, cs)},{CsExpr64(it, cw, cs)})");
+                    parts.Add($"W4Ops.WildEq({CsExpr64(valEl, cw, cs)},{CsExpr64(it, cw, cs)},{CsMaskHex(cw)})");
                 }
             }
             string acc = parts[0];
-            for (int i = 1; i < parts.Count; ++i) acc = $"W64Ops.LOr({acc},{parts[i]})";
+            for (int i = 1; i < parts.Count; ++i) acc = $"W4Ops.LOr({acc},{parts[i]})";
             return acc;
         }
         if (kind == "past")
@@ -148,47 +181,50 @@ public sealed partial class RtlDesign
         if (kind == "rose")
         {
             int sid = SignalId(e.GetProperty("signal").GetString()!);
-            return $"new W64(W64Ops.Edge(W64Ops.SelBit(_past_{sid}[0],new W64(0UL,0UL,0UL,1)),W64Ops.SelBit(_s{sid},new W64(0UL,0UL,0UL,1)),true)?1UL:0UL,0UL,0UL,1)";
+            return $"new W4(W4Ops.Edge(_past_{sid}[0],_s{sid},true)?1UL:0UL,0UL)";
         }
         if (kind == "fell")
         {
             int sid = SignalId(e.GetProperty("signal").GetString()!);
-            return $"new W64(W64Ops.Edge(W64Ops.SelBit(_past_{sid}[0],new W64(0UL,0UL,0UL,1)),W64Ops.SelBit(_s{sid},new W64(0UL,0UL,0UL,1)),false)?1UL:0UL,0UL,0UL,1)";
+            return $"new W4(W4Ops.Edge(_past_{sid}[0],_s{sid},false)?1UL:0UL,0UL)";
         }
         if (kind == "stable")
         {
             int sid = SignalId(e.GetProperty("signal").GetString()!);
-            return $"new W64(W64Ops.Exact(_s{sid},_past_{sid}[0])?1UL:0UL,0UL,0UL,1)";
+            return $"new W4(W4Ops.Exact(_s{sid},_past_{sid}[0])?1UL:0UL,0UL)";
         }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
-        int width = Math.Max(context, ExpressionWidth(e));
+        int width = Math.Max(context, ew);
+        string wm = CsMaskHex(width);
         return kind switch
         {
             "castsigned" or "castunsigned" => Extend(CsExpr64(args[0])),
-            "countones" => Extend($"W64Ops.CountOnes({CsExpr64(args[0])})"),
-            "onehot" => $"W64Ops.OneHot({CsExpr64(args[0])})",
-            "onehot0" => $"W64Ops.OneHot0({CsExpr64(args[0])})",
-            "isunknown" => $"W64Ops.IsUnknown({CsExpr64(args[0])})",
-            "clog2" => Extend($"W64Ops.CLog2({CsExpr64(args[0])})"),
-            "add" or "sub" => $"W64Ops.Arith({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{width},{(kind == "sub" ? "true" : "false")})",
-            "bitnot" => $"W64Ops.BNot({CsExpr64(args[0], width, signed)},{width})",
-            "neg" => $"W64Ops.Arith(new W64(0UL,0UL,0UL,{width}),{CsExpr64(args[0], width, signed)},{width},true)",
-            "pos" => $"W64Ops.Resize({CsExpr64(args[0], width, signed)},{width})",
-            "mul" or "div" or "mod" => $"W64Ops.{(signed ? "SProduct" : "Product")}({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{width},{(kind == "mul" ? 0 : kind == "div" ? 1 : 2)})",
-            "cond" => $"W64Ops.Cond({CsExpr64(args[0])},{CsExpr64(args[1], width, signed)},{CsExpr64(args[2], width, signed)},{width})",
-            "ashr" when signed => $"W64Ops.SShift({CsExpr64(args[0], width, true)},{CsExpr64(args[1])},{width})",
-            "shl" or "shr" or "ashr" => $"W64Ops.Shift({CsExpr64(args[0], width, signed)},{CsExpr64(args[1])},{width},{(kind == "shl" ? "false" : "true")})",
-            "redand" or "rednand" or "redor" or "rednor" or "redxor" or "redxnor" => $"W64Ops.Red({CsExpr64(args[0])},{(kind == "redand" ? 0 : kind == "rednand" ? 1 : kind == "redor" ? 2 : kind == "rednor" ? 3 : kind == "redxor" ? 4 : 5)})",
-            "bitxnor" => $"W64Ops.BNot(W64Ops.BBin({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{width},2),{width})",
-            "bitand" or "bitor" or "bitxor" => $"W64Ops.BBin({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{width},{(kind == "bitand" ? 0 : kind == "bitor" ? 1 : 2)})",
-            "not" => $"W64Ops.LNot({CsExpr64(args[0])})",
-            "and" => $"W64Ops.LAnd({CsExpr64(args[0])},{CsExpr64(args[1])})",
-            "or" => $"W64Ops.LOr({CsExpr64(args[0])},{CsExpr64(args[1])})",
-            "eq" or "neq" => (kind == "neq" ? "W64Ops.LNot(" : "") + $"W64Ops.Eq({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})" + (kind == "neq" ? ")" : ""),
-            "wildeq" or "wildneq" => $"W64Ops.{(kind == "wildneq" ? "WildNeq" : "WildEq")}({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})",
-            "caseeq" or "caseneq" => $"new W64({(kind == "caseneq" ? "!" : "")}W64Ops.Exact({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})?1UL:0UL,0UL,0UL,1)",
-            "lt" or "le" or "gt" or "ge" => $"W64Ops.{(args.All(ExpressionSigned) ? "SCmp" : "Cmp")}({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
-            "concat" => $"W64Ops.Concat({CsExpr64(args[0])},{CsExpr64(args[1])})",
+            "countones" => Extend($"W4Ops.CountOnes({CsExpr64(args[0])},{CsMaskHex(ExpressionWidth(args[0]))})"),
+            "onehot" => $"W4Ops.OneHot({CsExpr64(args[0])},{CsMaskHex(ExpressionWidth(args[0]))})",
+            "onehot0" => $"W4Ops.OneHot0({CsExpr64(args[0])},{CsMaskHex(ExpressionWidth(args[0]))})",
+            "isunknown" => $"W4Ops.IsUnknown({CsExpr64(args[0])},{CsMaskHex(ExpressionWidth(args[0]))})",
+            "clog2" => Extend($"W4Ops.CLog2({CsExpr64(args[0])},{CsMaskHex(ExpressionWidth(args[0]))})"),
+            "add" or "sub" => $"W4Ops.Arith({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{wm},{(kind == "sub" ? "true" : "false")})",
+            "bitnot" => $"W4Ops.BNot({CsExpr64(args[0], width, signed)},{wm})",
+            "neg" => $"W4Ops.Arith(default,{CsExpr64(args[0], width, signed)},{wm},true)",
+            "pos" => $"W4Ops.Resize({CsExpr64(args[0], width, signed)},{wm})",
+            "mul" or "div" or "mod" => $"W4Ops.{(signed ? "SProduct" : "Product")}({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{width},{wm},{(kind == "mul" ? 0 : kind == "div" ? 1 : 2)})",
+            "cond" => $"W4Ops.Cond({CsExpr64(args[0])},{CsExpr64(args[1], width, signed)},{CsExpr64(args[2], width, signed)},{wm})",
+            "ashr" when signed => $"W4Ops.SShift({CsExpr64(args[0], width, true)},{CsExpr64(args[1])},{width},{wm})",
+            "shl" or "shr" or "ashr" => $"W4Ops.Shift({CsExpr64(args[0], width, signed)},{CsExpr64(args[1])},{wm},{(kind == "shl" ? "false" : "true")})",
+            "redand" or "rednand" or "redor" or "rednor" or "redxor" or "redxnor" => $"W4Ops.Red({CsExpr64(args[0])},{CsMaskHex(ExpressionWidth(args[0]))},{(kind == "redand" ? 0 : kind == "rednand" ? 1 : kind == "redor" ? 2 : kind == "rednor" ? 3 : kind == "redxor" ? 4 : 5)})",
+            "bitxnor" => $"W4Ops.BNot(W4Ops.BBin({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{wm},2),{wm})",
+            "bitand" or "bitor" or "bitxor" => $"W4Ops.BBin({CsExpr64(args[0], width, signed)},{CsExpr64(args[1], width, signed)},{wm},{(kind == "bitand" ? 0 : kind == "bitor" ? 1 : 2)})",
+            "not" => $"W4Ops.LNot({CsExpr64(args[0])})",
+            "and" => $"W4Ops.LAnd({CsExpr64(args[0])},{CsExpr64(args[1])})",
+            "or" => $"W4Ops.LOr({CsExpr64(args[0])},{CsExpr64(args[1])})",
+            "eq" or "neq" => (kind == "neq" ? "W4Ops.LNot(" : "") + $"W4Ops.Eq({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})" + (kind == "neq" ? ")" : ""),
+            "wildeq" or "wildneq" => $"W4Ops.{(kind == "wildneq" ? "WildNeq" : "WildEq")}({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsMaskHex(args.Max(ExpressionWidth))})",
+            "caseeq" or "caseneq" => $"new W4({(kind == "caseneq" ? "!" : "")}W4Ops.Exact({CsExpr64(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr64(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})?1UL:0UL,0UL)",
+            "lt" or "le" or "gt" or "ge" => args.All(ExpressionSigned)
+                ? $"W4Ops.SCmp({CsExpr64(args[0], args.Max(ExpressionWidth), true)},{CsExpr64(args[1], args.Max(ExpressionWidth), true)},{args.Max(ExpressionWidth)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})"
+                : $"W4Ops.Cmp({CsExpr64(args[0], args.Max(ExpressionWidth), false)},{CsExpr64(args[1], args.Max(ExpressionWidth), false)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
+            "concat" => $"W4Ops.Concat({CsExpr64(args[0])},{CsExpr64(args[1])},{ExpressionWidth(args[1])})",
             _ => throw new IrValidationException("Unsupported C# expression.")
         };
     }
@@ -277,12 +313,12 @@ public sealed partial class RtlDesign
         if (kind == "rose")
         {
             int sid = SignalId(e.GetProperty("signal").GetString()!);
-            return $"(W2Ops.Edge(_past_{sid}[0]&1UL,_s{sid}&1UL,true)?1UL:0UL)";
+            return $"(((_past_{sid}[0]&1UL)==0UL&&(_s{sid}&1UL)!=0UL)?1UL:0UL)";
         }
         if (kind == "fell")
         {
             int sid = SignalId(e.GetProperty("signal").GetString()!);
-            return $"(W2Ops.Edge(_past_{sid}[0]&1UL,_s{sid}&1UL,false)?1UL:0UL)";
+            return $"(((_past_{sid}[0]&1UL)!=0UL&&(_s{sid}&1UL)==0UL)?1UL:0UL)";
         }
         if (kind == "stable")
         {
@@ -291,6 +327,8 @@ public sealed partial class RtlDesign
         }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ew);
+        string maskExpr = CsMaskHex(width);
+        string MaskWrap(string inner) => width >= 64 ? $"({inner})" : $"(({inner})&{maskExpr})";
         return kind switch
         {
             "castsigned" or "castunsigned" => Extend(CsExpr2(args[0])),
@@ -299,24 +337,28 @@ public sealed partial class RtlDesign
             "onehot0" => $"W2Ops.OneHot0({CsExpr2(args[0])},{ExpressionWidth(args[0])})",
             "isunknown" => "0UL",
             "clog2" => Extend($"W2Ops.CLog2({CsExpr2(args[0])},{ExpressionWidth(args[0])})"),
-            "add" or "sub" => $"W2Ops.Arith({CsExpr2(args[0], width, signed)},{CsExpr2(args[1], width, signed)},{width},{(kind == "sub" ? "true" : "false")})",
-            "bitnot" => $"W2Ops.BNot({CsExpr2(args[0], width, signed)},{width})",
-            "neg" => $"W2Ops.Arith(0UL,{CsExpr2(args[0], width, signed)},{width},true)",
-            "pos" => $"W2Ops.Resize({CsExpr2(args[0], width, signed)},{width})",
+            "add" => MaskWrap($"unchecked({CsExpr2(args[0], width, signed)}+{CsExpr2(args[1], width, signed)})"),
+            "sub" => MaskWrap($"unchecked({CsExpr2(args[0], width, signed)}-{CsExpr2(args[1], width, signed)})"),
+            "bitnot" => MaskWrap($"~({CsExpr2(args[0], width, signed)})"),
+            "neg" => MaskWrap($"unchecked(0UL-{CsExpr2(args[0], width, signed)})"),
+            "pos" => MaskWrap(CsExpr2(args[0], width, signed)),
+            "mul" when !signed => MaskWrap($"unchecked({CsExpr2(args[0], width, false)}*{CsExpr2(args[1], width, false)})"),
             "mul" or "div" or "mod" => $"W2Ops.{(signed ? "SProduct" : "Product")}({CsExpr2(args[0], width, signed)},{CsExpr2(args[1], width, signed)},{width},{(kind == "mul" ? 0 : kind == "div" ? 1 : 2)})",
             "cond" => $"W2Ops.Cond({CsExpr2(args[0])},{CsExpr2(args[1], width, signed)},{CsExpr2(args[2], width, signed)},{width})",
             "ashr" when signed => $"W2Ops.SShift({CsExpr2(args[0], width, true)},{CsExpr2(args[1])},{width})",
+            "shl" when TryConstShift(args[1], out int shL) => MaskWrap($"({CsExpr2(args[0], width, signed)}<<{shL})"),
+            "shr" or "ashr" when TryConstShift(args[1], out int shR) => $"({MaskWrap(CsExpr2(args[0], width, signed))}>>{shR})",
             "shl" or "shr" or "ashr" => $"W2Ops.Shift({CsExpr2(args[0], width, signed)},{CsExpr2(args[1])},{width},{(kind == "shl" ? "false" : "true")})",
             "redand" or "rednand" or "redor" or "rednor" or "redxor" or "redxnor" => $"W2Ops.Red({CsExpr2(args[0])},{ExpressionWidth(args[0])},{(kind == "redand" ? 0 : kind == "rednand" ? 1 : kind == "redor" ? 2 : kind == "rednor" ? 3 : kind == "redxor" ? 4 : 5)})",
-            "bitxnor" => $"W2Ops.BNot(W2Ops.BBin({CsExpr2(args[0], width, signed)},{CsExpr2(args[1], width, signed)},{width},2),{width})",
-            "bitand" or "bitor" or "bitxor" => $"W2Ops.BBin({CsExpr2(args[0], width, signed)},{CsExpr2(args[1], width, signed)},{width},{(kind == "bitand" ? 0 : kind == "bitor" ? 1 : 2)})",
-            "not" => $"W2Ops.LNot({CsExpr2(args[0])})",
-            "and" => $"W2Ops.LAnd({CsExpr2(args[0])},{CsExpr2(args[1])})",
-            "or" => $"W2Ops.LOr({CsExpr2(args[0])},{CsExpr2(args[1])})",
+            "bitxnor" => MaskWrap($"~({CsExpr2(args[0], width, signed)}^{CsExpr2(args[1], width, signed)})"),
+            "bitand" => MaskWrap($"{CsExpr2(args[0], width, signed)}&{CsExpr2(args[1], width, signed)}"),
+            "bitor" => MaskWrap($"{CsExpr2(args[0], width, signed)}|{CsExpr2(args[1], width, signed)}"),
+            "bitxor" => MaskWrap($"{CsExpr2(args[0], width, signed)}^{CsExpr2(args[1], width, signed)}"),
+            "not" => $"({CsExpr2(args[0])}==0UL?1UL:0UL)",
+            "and" => $"(({CsExpr2(args[0])}!=0UL&&{CsExpr2(args[1])}!=0UL)?1UL:0UL)",
+            "or" => $"(({CsExpr2(args[0])}!=0UL||{CsExpr2(args[1])}!=0UL)?1UL:0UL)",
             "eq" or "neq" or "caseeq" or "caseneq" or "wildeq" or "wildneq" =>
-                (kind is "neq" or "caseneq" or "wildneq" ? "W2Ops.LNot(" : "")
-                + $"W2Ops.Eq({CsExpr2(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))},{CsExpr2(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))})"
-                + (kind is "neq" or "caseneq" or "wildneq" ? ")" : ""),
+                $"({CsExpr2(args[0], args.Max(ExpressionWidth), args.All(ExpressionSigned))}{(kind is "neq" or "caseneq" or "wildneq" ? "!=" : "==")}{CsExpr2(args[1], args.Max(ExpressionWidth), args.All(ExpressionSigned))}?1UL:0UL)",
             "lt" or "le" or "gt" or "ge" =>
                 args.All(ExpressionSigned)
                     ? $"W2Ops.SCmp({CsExpr2(args[0], args.Max(ExpressionWidth), true)},{CsExpr2(args[1], args.Max(ExpressionWidth), true)},{args.Max(ExpressionWidth)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})"
@@ -328,10 +370,15 @@ public sealed partial class RtlDesign
 
     private static string CsStore(string val, RtlSignal signal, bool twoState, int exprWidth = -1)
     {
-        if (twoState) return exprWidth == signal.Width ? val : $"W2Ops.Resize({val},{signal.Width})";
+        if (twoState)
+        {
+            if (exprWidth == signal.Width || signal.Width >= 64) return val;
+            return $"(({val})&{CsMaskHex(signal.Width)})";
+        }
+        string sm = CsMaskHex(signal.Width);
         return signal.TwoState
-            ? $"W64Ops.TwoState(W64Ops.Resize({val},{signal.Width}))"
-            : (exprWidth == signal.Width ? val : $"W64Ops.Resize({val},{signal.Width})");
+            ? $"W4Ops.TwoState({val},{sm})"
+            : (exprWidth == signal.Width ? val : $"W4Ops.Resize({val},{sm})");
     }
 
     private void CsWordWrite(StringBuilder code, JsonElement target, string value, bool twoState, int exprWidth = -1)
@@ -355,9 +402,9 @@ public sealed partial class RtlDesign
         {
             string basis = Kind(target) == "bitselect" ? CsExpr64(target.GetProperty("index"))
                 : Kind(target) == "indexedselect" ? CsExpr64(target.GetProperty("base"))
-                : $"new W64({target.GetProperty("right").GetInt32()}UL,0UL,0UL,64)";
-            string dep = $"W64Ops.DepIdx(_next{sid},{basis},{width},{(desc ? "true" : "false")},{value})";
-            code.AppendLine($"_next{sid}={(Signals[sid].TwoState ? $"W64Ops.TwoState({dep})" : dep)};");
+                : $"new W4({target.GetProperty("right").GetInt32()}UL,0UL)";
+            string dep = $"W4Ops.DepIdx(_next{sid},{Signals[sid].Width},{basis},{width},{(desc ? "true" : "false")},{value})";
+            code.AppendLine($"_next{sid}={(Signals[sid].TwoState ? $"W4Ops.TwoState({dep},{CsMaskHex(Signals[sid].Width)})" : dep)};");
         }
     }
 
@@ -368,7 +415,7 @@ public sealed partial class RtlDesign
         {
             case "while":
             case "do":
-                string cond = twoState ? $"W2Ops.Yes({CsExpr2(e.GetProperty("condition"))})" : $"W64Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
+                string cond = twoState ? $"({CsExpr2(e.GetProperty("condition"))}!=0UL)" : $"W4Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
                 if (Kind(e) == "do") code.AppendLine("do{");
                 else code.AppendLine($"while({cond}){{");
                 code.AppendLine("W64Ops.Step(ref _budget);");
@@ -380,7 +427,7 @@ public sealed partial class RtlDesign
                 var cntEl = e.GetProperty("count");
                 string cnt = twoState
                     ? $"W2Ops.RepeatCount({CsExpr2(cntEl)},{ExpressionWidth(cntEl)},{(ExpressionSigned(cntEl) ? "true" : "false")})"
-                    : $"W64Ops.RepeatCount({CsExpr64(cntEl)},{(ExpressionSigned(cntEl) ? "true" : "false")})";
+                    : $"W4Ops.RepeatCount({CsExpr64(cntEl)},{ExpressionWidth(cntEl)},{(ExpressionSigned(cntEl) ? "true" : "false")})";
                 code.AppendLine($"for(uint {rl}={cnt};{rl}>0;--{rl}){{");
                 code.AppendLine("W64Ops.Step(ref _budget);");
                 CsStmt(code, e.GetProperty("body"), ref unique, twoState, trackBudget);
@@ -403,14 +450,14 @@ public sealed partial class RtlDesign
                     string rhs = "nba" + unique++;
                     code.AppendLine(twoState
                         ? $"{{ulong {rhs}=W2Ops.Resize({CsExpr2(e.GetProperty("value"), total)},{total});"
-                        : $"{{W64 {rhs}=W64Ops.Resize({CsExpr64(e.GetProperty("value"), total)},{total});");
+                        : $"{{W4 {rhs}=W4Ops.Resize({CsExpr64(e.GetProperty("value"), total)},{CsMaskHex(total)});");
                     foreach (var leaf in TargetLeaves(target))
                     {
                         int width = ExpressionWidth(leaf);
                         remaining -= width;
                         string part = twoState
                             ? $"W2Ops.SelPart({rhs},{total},{remaining + width - 1},{remaining})"
-                            : $"W64Ops.SelPart({rhs},{remaining + width - 1},{remaining})";
+                            : $"W4Ops.SelPart({rhs},{total},{remaining + width - 1},{remaining})";
                         CsWordWrite(code, leaf, part, twoState, width);
                     }
                     code.AppendLine("}");
@@ -432,13 +479,14 @@ public sealed partial class RtlDesign
                     else
                     {
                         string v = CsExpr64(e.GetProperty("value"), Memories[id].Width);
-                        if (Memories[id].TwoState) v = $"W64Ops.TwoState({v})";
-                        code.AppendLine($"_mlog.Push({id},_m{id}.Length,{CsMemIdx(target, id, false)},{v},{Memories[id].Width});");
+                        string mm = CsMaskHex(Memories[id].Width);
+                        if (Memories[id].TwoState) v = $"W4Ops.TwoState({v},{mm})";
+                        code.AppendLine($"_mlog.Push({id},_m{id}.Length,{CsMemIdx(target, id, false)},{v},{mm});");
                     }
                 }
                 break;
             case "if":
-                string ifCond = twoState ? $"W2Ops.Yes({CsExpr2(e.GetProperty("condition"))})" : $"W64Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
+                string ifCond = twoState ? $"({CsExpr2(e.GetProperty("condition"))}!=0UL)" : $"W4Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
                 code.AppendLine($"if({ifCond}){{");
                 CsStmt(code, e.GetProperty("then"), ref unique, twoState, trackBudget);
                 code.AppendLine("}else{");
@@ -447,7 +495,7 @@ public sealed partial class RtlDesign
                 break;
             case "assert":
             {
-                string condExpr = twoState ? $"W2Ops.Yes({CsExpr2(e.GetProperty("condition"))})" : $"W64Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
+                string condExpr = twoState ? $"({CsExpr2(e.GetProperty("condition"))}!=0UL)" : $"W4Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
                 string msg = CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "");
                 code.AppendLine($"if (!{condExpr}) throw new InvalidOperationException(\"RTL assertion failed: \" + {msg});");
                 break;
@@ -462,7 +510,7 @@ public sealed partial class RtlDesign
                 {
                     string fmt = CppStringLiteral(ff.GetString()!);
                     string argList = e.TryGetProperty("args", out var fa)
-                        ? string.Join(", ", fa.EnumerateArray().Select(a => twoState ? $"new W64({CsExpr2(a)},0UL,0UL,{ExpressionWidth(a)})" : CsExpr64(a)))
+                        ? string.Join(", ", fa.EnumerateArray().Select(a => twoState ? $"new W64({CsExpr2(a)},0UL,0UL,{ExpressionWidth(a)})" : $"({CsExpr64(a)}).ToW64({ExpressionWidth(a)})"))
                         : "";
                     code.AppendLine($"Fatal({fCode}, W64Ops.FormatDisplay({fmt}, [{argList}], false));");
                 }
@@ -477,7 +525,7 @@ public sealed partial class RtlDesign
                 string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
                 bool nl = !e.TryGetProperty("newline", out var nlProp) || nlProp.GetBoolean();
                 string argList = e.TryGetProperty("args", out var dArgs)
-                    ? string.Join(", ", dArgs.EnumerateArray().Select(a => twoState ? $"new W64({CsExpr2(a)},0UL,0UL,{ExpressionWidth(a)})" : CsExpr64(a)))
+                    ? string.Join(", ", dArgs.EnumerateArray().Select(a => twoState ? $"new W64({CsExpr2(a)},0UL,0UL,{ExpressionWidth(a)})" : $"({CsExpr64(a)}).ToW64({ExpressionWidth(a)})"))
                     : "";
                 code.AppendLine($"EmitDisplay(W64Ops.FormatDisplay({fmt}, [{argList}], {(nl ? "true" : "false")}));");
                 break;
@@ -487,11 +535,11 @@ public sealed partial class RtlDesign
                 string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
                 int tid = SignalId(e.GetProperty("target").GetString()!);
                 var tsig = Signals[tid];
-                code.AppendLine($"{{W64 _vp = {(twoState ? $"new W64(_next{tid},0UL,0UL,{tsig.Width})" : $"_next{tid}")}; uint _vpm = ValuePlusargs({fmt}, ref _vp); if (_vpm != 0u) _next{tid} = {CsStore(twoState ? "_vp.V" : "_vp", tsig, twoState)};");
+                code.AppendLine($"{{W64 _vp = {(twoState ? $"new W64(_next{tid},0UL,0UL,{tsig.Width})" : $"_next{tid}.ToW64({tsig.Width})")}; uint _vpm = ValuePlusargs({fmt}, ref _vp); if (_vpm != 0u) _next{tid} = {CsStore(twoState ? "_vp.V" : $"W4.FromW64(_vp,{CsMaskHex(tsig.Width)})", tsig, twoState)};");
                 if (e.TryGetProperty("matched", out var vpMatched) && vpMatched.ValueKind != JsonValueKind.Null)
                 {
                     int mid = SignalId(vpMatched.GetString()!);
-                    code.AppendLine($"_next{mid} = {CsStore(twoState ? "(ulong)_vpm" : "new W64(_vpm,0UL,0UL,32)", Signals[mid], twoState)};");
+                    code.AppendLine($"_next{mid} = {CsStore(twoState ? "(ulong)_vpm" : "new W4(_vpm,0UL)", Signals[mid], twoState)};");
                 }
                 code.AppendLine("}");
                 break;
@@ -502,7 +550,7 @@ public sealed partial class RtlDesign
                 var tsig = Signals[tid];
                 string valExpr = twoState
                     ? $"new W64({CsStore(CsExpr2(e.GetProperty("value")), tsig, true)},0UL,0UL,{tsig.Width})"
-                    : CsStore(CsExpr64(e.GetProperty("value")), tsig, false);
+                    : $"({CsStore(CsExpr64(e.GetProperty("value")), tsig, false)}).ToW64({tsig.Width})";
                 code.AppendLine($"ForceSignal({tid}, {valExpr});");
                 break;
             }
@@ -516,20 +564,26 @@ public sealed partial class RtlDesign
             {
                 string lbl = "cs" + unique++;
                 var items = e.GetProperty("items").EnumerateArray().ToArray();
-                string matcher = CaseKind(e) switch { "casez" => "W64Ops.CasezMatch", "casex" => "W64Ops.CasexMatch", _ => "W64Ops.Exact" };
                 var allMatches = items.SelectMany(CaseItemMatches).ToArray();
                 int cw = Math.Max(ExpressionWidth(e.GetProperty("value")), allMatches.Select(ExpressionWidth).DefaultIfEmpty(1).Max());
+                string cwm = CsMaskHex(cw);
+                string ck = CaseKind(e);
                 bool csSigned = ExpressionSigned(e.GetProperty("value")) && allMatches.All(ExpressionSigned);
                 code.AppendLine(twoState
                     ? $"{{ulong {lbl}={CsExpr2(e.GetProperty("value"), cw, csSigned)};"
-                    : $"{{W64 {lbl}={CsExpr64(e.GetProperty("value"), cw, csSigned)};");
+                    : $"{{W4 {lbl}={CsExpr64(e.GetProperty("value"), cw, csSigned)};");
                 bool first = true;
                 foreach (var item in items.Where(i => !IsCaseDefault(i)))
                 {
                     var ms = CaseItemMatches(item);
                     string cmp = twoState
                         ? string.Join(" || ", ms.Select(m => $"{lbl}=={CsExpr2(m, cw, csSigned)}"))
-                        : string.Join(" || ", ms.Select(m => $"{matcher}({lbl},{CsExpr64(m, cw, csSigned)})"));
+                        : string.Join(" || ", ms.Select(m => ck switch
+                        {
+                            "casez" => $"W4Ops.CasezMatch({lbl},{CsExpr64(m, cw, csSigned)},{cwm})",
+                            "casex" => $"W4Ops.CasexMatch({lbl},{CsExpr64(m, cw, csSigned)},{cwm})",
+                            _ => $"W4Ops.Exact({lbl},{CsExpr64(m, cw, csSigned)})"
+                        }));
                     code.AppendLine($"{(first ? "if" : "else if")}({cmp}){{");
                     CsStmt(code, item.GetProperty("body"), ref unique, twoState, trackBudget);
                     code.AppendLine("}");
@@ -548,7 +602,7 @@ public sealed partial class RtlDesign
         }
     }
 
-    /// <summary>Emits a standalone C# model class using register-resident W64 (4-state) or ulong (2-state) storage.</summary>
+    /// <summary>Emits a standalone C# model class using register-resident W4 (16-byte 4-state) or ulong (2-state) storage.</summary>
     public string EmitCSharpModel(string top, RtlStateMode stateMode = RtlStateMode.FourState, string @namespace = "VeloSim.Generated")
     {
         if (!Identifier(top) || ("V" + top).Contains("__", StringComparison.Ordinal)) throw new ArgumentException("Invalid external model top name.", nameof(top));
@@ -558,7 +612,7 @@ public sealed partial class RtlDesign
         string className = "V" + top;
         var names = CSharpPortNames();
         if (names.Values.Contains(className)) throw new ArgumentException("Port conflicts with generated class name.", nameof(top));
-        string wordType = twoState ? "ulong" : "W64";
+        string wordType = twoState ? "ulong" : "W4";
         bool hasRuntimeLoops = StatementsHaveRuntimeLoops(SettledSteps.Append(Body));
         bool canThrow = CanEvaluateThrow();
         var procs = CombinationalOnly ? Array.Empty<JsonElement>() : (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]);
@@ -571,6 +625,7 @@ public sealed partial class RtlDesign
                     : new[] { SignalId(e.GetProperty("target").GetString()!) }))
             .Distinct().Order().ToArray();
         bool hasFixedMemWrites = !CombinationalOnly && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index");
+        bool bodyUsesForces = Statements(Body).Any(e => Kind(e) is "force" or "release");
 
         var code = new StringBuilder();
         code.AppendLine("// <auto-generated/>");
@@ -590,6 +645,7 @@ public sealed partial class RtlDesign
         code.AppendLine("    private readonly PlusargStore _plusargs = new();");
         code.AppendLine("    private SplitMix64Rng _rng = new();");
         code.AppendLine($"    private Dictionary<int, {wordType}>? _forced;");
+        code.AppendLine("    private bool _hasForces;");
         code.AppendLine("    public bool GotFinish => _finished;");
         code.AppendLine("    public int ExitCode => _exitCode;");
         code.AppendLine("    public void Fatal(int code, string message = \"\") { _exitCode = code; _finished = true; throw new InvalidOperationException(string.IsNullOrEmpty(message) ? $\"RTL $fatal({code})\" : $\"RTL $fatal({code}): {message}\"); }");
@@ -611,7 +667,7 @@ public sealed partial class RtlDesign
             code.AppendLine($"    public ulong[] PropertyVacuous {{ get; }} = new ulong[{Properties.Count}];");
             for (int i = 0; i < Properties.Count; ++i)
                 if (Properties[i].Delay > 0)
-                    code.AppendLine($"    private readonly bool[] _propPipe_{i} = new bool[{Properties[i].Delay}];");
+                    code.AppendLine($"    private ulong _propPipe_{i};");
         }
         foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
             code.AppendLine($"    private readonly {wordType}[] _past_{sid} = new {wordType}[{depth}];");
@@ -627,14 +683,18 @@ public sealed partial class RtlDesign
         {
             var sig = Signals[i];
             if (twoState)
-                code.AppendLine($"            case {i}: {{ ulong fv = W2Ops.Resize(value.V, {sig.Width}); _forced[{i}] = fv; _s{i} = fv; break; }}");
+                code.AppendLine($"            case {i}: {{ ulong fv = W2Ops.Resize(value.V, {sig.Width}); _forced[{i}] = fv; _s{i} = fv; _hasForces = true; break; }}");
             else
-                code.AppendLine($"            case {i}: {{ W64 fv = {(sig.TwoState ? $"W64Ops.TwoState(W64Ops.Resize(value, {sig.Width}))" : $"W64Ops.Resize(value, {sig.Width})")}; _forced[{i}] = fv; _s{i} = fv; break; }}");
+            {
+                string sm = CsMaskHex(sig.Width);
+                string fv = sig.TwoState ? $"W4Ops.TwoState(W4.FromW64(value,{sm}),{sm})" : $"W4.FromW64(value,{sm})";
+                code.AppendLine($"            case {i}: {{ W4 fv = {fv}; _forced[{i}] = fv; _s{i} = fv; _hasForces = true; break; }}");
+            }
         }
         code.AppendLine("            default: throw new ArgumentOutOfRangeException(nameof(signalId));");
         code.AppendLine("        }");
         code.AppendLine("    }");
-        code.AppendLine("    public void ReleaseSignal(int signalId) { _forced?.Remove(signalId); }");
+        code.AppendLine("    public void ReleaseSignal(int signalId) { if (_forced is not null) { _forced.Remove(signalId); _hasForces = _forced.Count > 0; } }");
         code.AppendLine("    private void ApplyForces()");
         code.AppendLine("    {");
         code.AppendLine("        if (_forced is null || _forced.Count == 0) return;");
@@ -651,14 +711,12 @@ public sealed partial class RtlDesign
             code.AppendLine($"    private {wordType} _s{i};");
         foreach (int id in eventIds)
             code.AppendLine($"    private {wordType} _prev{id};");
-        foreach (int id in seqIds)
-            code.AppendLine($"    private {wordType} _next{id};");
         for (int i = 0; i < Memories.Count; ++i)
             code.AppendLine($"    private readonly {wordType}[] _m{i} = new {wordType}[{Memories[i].Depth}];");
         if (hasFixedMemWrites)
         {
             code.AppendLine($"    private readonly {wordType}[][] _mems;");
-            code.AppendLine($"    private readonly {(twoState ? "MemLog2" : "MemLog64")} _mlog = new();");
+            code.AppendLine($"    private readonly {(twoState ? "MemLog2" : "MemLog4")} _mlog = new();");
         }
         code.AppendLine();
         code.AppendLine($"    public {className}()");
@@ -667,30 +725,30 @@ public sealed partial class RtlDesign
         {
             var sig = Signals[i];
             if (twoState) code.AppendLine($"        _s{i} = 0UL;");
-            else if (sig.Name == Clock || sig.TwoState) code.AppendLine($"        _s{i} = new W64(0UL,0UL,0UL,{sig.Width});");
-            else code.AppendLine($"        _s{i} = W64Ops.Unknown({sig.Width});");
+            else if (sig.Name == Clock || sig.TwoState) code.AppendLine($"        _s{i} = default;");
+            else code.AppendLine($"        _s{i} = W4Ops.Unknown({CsMaskHex(sig.Width)});");
         }
         foreach (int id in eventIds)
         {
             var sig = Signals[id];
             if (twoState) code.AppendLine($"        _prev{id} = 0UL;");
-            else if (sig.Name == Clock || sig.TwoState) code.AppendLine($"        _prev{id} = new W64(0UL,0UL,0UL,1);");
-            else code.AppendLine($"        _prev{id} = W64Ops.Unknown(1);");
+            else if (sig.Name == Clock || sig.TwoState) code.AppendLine($"        _prev{id} = default;");
+            else code.AppendLine($"        _prev{id} = new W4(1UL,1UL);");
         }
         for (int i = 0; i < Memories.Count; ++i)
         {
             var mem = Memories[i];
-            if (!twoState)
-                code.AppendLine($"        Array.Fill(_m{i}, {(mem.TwoState ? $"new W64(0UL,0UL,0UL,{mem.Width})" : $"W64Ops.Unknown({mem.Width})")});");
+            if (!twoState && !mem.TwoState)
+                code.AppendLine($"        Array.Fill(_m{i}, W4Ops.Unknown({CsMaskHex(mem.Width)}));");
         }
         foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
         {
             var sig = Signals[sid];
-            string initVal = twoState ? "0UL" : (sig.TwoState ? $"new W64(0UL,0UL,0UL,{sig.Width})" : $"W64Ops.Unknown({sig.Width})");
-            code.AppendLine($"        Array.Fill(_past_{sid}, {initVal});");
+            if (!twoState && !sig.TwoState)
+                code.AppendLine($"        Array.Fill(_past_{sid}, W4Ops.Unknown({CsMaskHex(sig.Width)}));");
         }
         foreach (int cid in PropertyClockSignalIds())
-            code.AppendLine(twoState ? $"        _pclk_{cid} = 0UL;" : $"        _pclk_{cid} = new W64(0UL,0UL,0UL,1);");
+            code.AppendLine(twoState ? $"        _pclk_{cid} = 0UL;" : $"        _pclk_{cid} = default;");
         if (hasFixedMemWrites)
         {
             code.Append("        _mems = [");
@@ -721,7 +779,7 @@ public sealed partial class RtlDesign
         code.AppendLine("    {");
         code.AppendLine("        if (_vcd is null) return;");
         code.Append("        _vcd.Dump(_time, [");
-        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"new W64(_s{idx}, 0UL, 0UL, {s.Width})" : $"_s{idx}"));
+        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"new W64(_s{idx}, 0UL, 0UL, {s.Width})" : $"_s{idx}.ToW64({s.Width})"));
         code.AppendLine("]);");
         code.AppendLine("    }");
         code.AppendLine("    public void CloseVcd() { _vcd?.Dispose(); _vcd = null; }");
@@ -730,10 +788,10 @@ public sealed partial class RtlDesign
         code.AppendLine("    public void SaveCheckpoint(string path)");
         code.AppendLine("    {");
         code.Append("        W64[] sigs = [");
-        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"new W64(_s{idx}, 0UL, 0UL, {s.Width})" : $"_s{idx}"));
+        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"new W64(_s{idx}, 0UL, 0UL, {s.Width})" : $"_s{idx}.ToW64({s.Width})"));
         code.AppendLine("];");
         code.Append("        W64[] prevs = [");
-        code.AppendJoin(", ", eventIds.Select(id => twoState ? $"new W64(_prev{id}, 0UL, 0UL, 1)" : $"_prev{id}"));
+        code.AppendJoin(", ", eventIds.Select(id => twoState ? $"new W64(_prev{id}, 0UL, 0UL, 1)" : $"_prev{id}.ToW64(1)"));
         code.AppendLine("];");
         code.AppendLine($"        W64[][] mems = new W64[{Memories.Count}][];");
         for (int i = 0; i < Memories.Count; ++i)
@@ -741,7 +799,7 @@ public sealed partial class RtlDesign
             if (twoState)
                 code.AppendLine($"        mems[{i}] = Array.ConvertAll(_m{i}, v => new W64(v, 0UL, 0UL, {Memories[i].Width}));");
             else
-                code.AppendLine($"        mems[{i}] = _m{i};");
+                code.AppendLine($"        mems[{i}] = Array.ConvertAll(_m{i}, v => v.ToW64({Memories[i].Width}));");
         }
         code.AppendLine("        CheckpointIO.Save(path, CheckpointSchemaHash(), _time, _rng.State, sigs, prevs, mems);");
         code.AppendLine("    }");
@@ -750,15 +808,15 @@ public sealed partial class RtlDesign
         code.AppendLine($"        var (t, rngState, sigs, prevs, mems) = CheckpointIO.Load(path, CheckpointSchemaHash(), {Signals.Count}, {eventIds.Length}, [{string.Join(", ", Memories.Select(m => m.Depth))}]);");
         code.AppendLine("        _time = t; _rng.State = rngState;");
         for (int i = 0; i < Signals.Count; ++i)
-            code.AppendLine(twoState ? $"        _s{i} = W2Ops.Resize(sigs[{i}].V, {Signals[i].Width});" : $"        _s{i} = sigs[{i}];");
+            code.AppendLine(twoState ? $"        _s{i} = W2Ops.Resize(sigs[{i}].V, {Signals[i].Width});" : $"        _s{i} = W4.FromW64(sigs[{i}], {CsMaskHex(Signals[i].Width)});");
         for (int i = 0; i < eventIds.Length; ++i)
-            code.AppendLine(twoState ? $"        _prev{eventIds[i]} = prevs[{i}].V & 1UL;" : $"        _prev{eventIds[i]} = prevs[{i}];");
+            code.AppendLine(twoState ? $"        _prev{eventIds[i]} = prevs[{i}].V & 1UL;" : $"        _prev{eventIds[i]} = W4.FromW64(prevs[{i}], 1UL);");
         for (int i = 0; i < Memories.Count; ++i)
         {
             if (twoState)
                 code.AppendLine($"        for (int j = 0; j < _m{i}.Length; ++j) _m{i}[j] = W2Ops.Resize(mems[{i}][j].V, {Memories[i].Width});");
             else
-                code.AppendLine($"        Array.Copy(mems[{i}], _m{i}, _m{i}.Length);");
+                code.AppendLine($"        for (int j = 0; j < _m{i}.Length; ++j) _m{i}[j] = W4.FromW64(mems[{i}][j], {CsMaskHex(Memories[i].Width)});");
         }
         code.AppendLine("    }");
         code.AppendLine();
@@ -766,23 +824,23 @@ public sealed partial class RtlDesign
         {
             int id = SignalId(sig.Name);
             string prop = names[sig.Name];
-            ulong mask = sig.Width >= 64 ? ulong.MaxValue : ((1UL << sig.Width) - 1UL);
+            string sm = CsMaskHex(sig.Width);
             if (sig.Direction == "input")
             {
                 if (twoState)
                 {
-                    code.AppendLine($"    public ulong {prop} {{ [MethodImpl(MethodImplOptions.AggressiveInlining)] get => _s{id}; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => _s{id} = value & 0x{mask:x}UL; }}");
+                    code.AppendLine($"    public ulong {prop} {{ [MethodImpl(MethodImplOptions.AggressiveInlining)] get => _s{id}; [MethodImpl(MethodImplOptions.AggressiveInlining)] set => _s{id} = {(sig.Width >= 64 ? "value" : $"value & {sm}")}; }}");
                     code.AppendLine($"    public W64 Get_{prop}_Word() => new W64(_s{id}, 0UL, 0UL, {sig.Width});");
-                    code.AppendLine($"    public void Set_{prop}_Word(W64 value) => _s{id} = value.V & ~(value.X | value.Z) & 0x{mask:x}UL;");
+                    code.AppendLine($"    public void Set_{prop}_Word(W64 value) => _s{id} = value.V & ~(value.X | value.Z) & {sm};");
                     code.AppendLine($"    public string Get_{prop}_Bits() => W64Ops.Text(new W64(_s{id}, 0UL, 0UL, {sig.Width}));");
-                    code.AppendLine($"    public void Set_{prop}_Bits(string bits) {{ var w = W64Ops.Parse(bits, {sig.Width}); _s{id} = w.V & ~(w.X | w.Z) & 0x{mask:x}UL; }}");
+                    code.AppendLine($"    public void Set_{prop}_Bits(string bits) {{ var w = W64Ops.Parse(bits, {sig.Width}); _s{id} = w.V & ~(w.X | w.Z) & {sm}; }}");
                 }
                 else
                 {
-                    code.AppendLine($"    public ulong {prop} {{ [MethodImpl(MethodImplOptions.AggressiveInlining)] get => W64Ops.ToUInt64(_s{id}); [MethodImpl(MethodImplOptions.AggressiveInlining)] set => _s{id} = new W64(value & 0x{mask:x}UL, 0UL, 0UL, {sig.Width}); }}");
-                    code.AppendLine($"    public W64 Get_{prop}_Word() => _s{id};");
-                    code.AppendLine($"    public void Set_{prop}_Word(W64 value) => _s{id} = {(sig.TwoState ? $"W64Ops.TwoState(W64Ops.Resize(value, {sig.Width}))" : $"W64Ops.Resize(value, {sig.Width})")};");
-                    code.AppendLine($"    public string Get_{prop}_Bits() => W64Ops.Text(_s{id});");
+                    code.AppendLine($"    public ulong {prop} {{ [MethodImpl(MethodImplOptions.AggressiveInlining)] get => W4Ops.ToUInt64(_s{id}); [MethodImpl(MethodImplOptions.AggressiveInlining)] set => _s{id} = new W4({(sig.Width >= 64 ? "value" : $"value & {sm}")}, 0UL); }}");
+                    code.AppendLine($"    public W64 Get_{prop}_Word() => _s{id}.ToW64({sig.Width});");
+                    code.AppendLine($"    public void Set_{prop}_Word(W64 value) => _s{id} = {(sig.TwoState ? $"W4Ops.TwoState(W4.FromW64(value, {sm}), {sm})" : $"W4.FromW64(value, {sm})")};");
+                    code.AppendLine($"    public string Get_{prop}_Bits() => W64Ops.Text(_s{id}.ToW64({sig.Width}));");
                     code.AppendLine($"    public void Set_{prop}_Bits(string bits) => Set_{prop}_Word(W64Ops.Parse(bits, {sig.Width}));");
                 }
             }
@@ -796,9 +854,9 @@ public sealed partial class RtlDesign
                 }
                 else
                 {
-                    code.AppendLine($"    public ulong {prop} {{ [MethodImpl(MethodImplOptions.AggressiveInlining)] get => W64Ops.ToUInt64(_s{id}); }}");
-                    code.AppendLine($"    public W64 Get_{prop}_Word() => _s{id};");
-                    code.AppendLine($"    public string Get_{prop}_Bits() => W64Ops.Text(_s{id});");
+                    code.AppendLine($"    public ulong {prop} {{ [MethodImpl(MethodImplOptions.AggressiveInlining)] get => W4Ops.ToUInt64(_s{id}); }}");
+                    code.AppendLine($"    public W64 Get_{prop}_Word() => _s{id}.ToW64({sig.Width});");
+                    code.AppendLine($"    public string Get_{prop}_Bits() => W64Ops.Text(_s{id}.ToW64({sig.Width}));");
                 }
             }
         }
@@ -817,120 +875,143 @@ public sealed partial class RtlDesign
         }
         code.AppendLine("    }");
         code.AppendLine();
-        code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)]");
-        code.AppendLine("    public void Eval()");
-        code.AppendLine("    {");
-        if (hasRuntimeLoops) code.AppendLine("        _budget = 20000;");
-        if (canThrow)
+
+        void EmitEvalBody(bool withForces)
         {
-            for (int i = 0; i < Signals.Count; ++i) code.AppendLine($"        var sv_s{i} = _s{i};");
-            foreach (int id in eventIds) code.AppendLine($"        var sv_p{id} = _prev{id};");
-            for (int i = 0; i < Memories.Count; ++i) code.AppendLine($"        var sv_m{i} = ({wordType}[])_m{i}.Clone();");
-            code.AppendLine("        try {");
-        }
-        code.AppendLine("        if (_forced is { Count: > 0 }) ApplyForces();");
-        code.AppendLine("        Settle();");
-        code.AppendLine("        if (_forced is { Count: > 0 }) ApplyForces();");
-        if (Properties.Count > 0 || PastDepths.Count > 0)
-        {
-            for (int i = 0; i < Properties.Count; ++i)
+            if (hasRuntimeLoops) code.AppendLine("        _budget = 20000;");
+            if (canThrow)
             {
-                var p = Properties[i];
-                int cid = SignalId(p.Clock);
-                string edgeCond = twoState
-                    ? $"W2Ops.Edge(_pclk_{cid}, _s{cid}, {(p.Edge == "posedge" ? "true" : "false")})"
-                    : $"W64Ops.Edge(_pclk_{cid}, _s{cid}, {(p.Edge == "posedge" ? "true" : "false")})";
-                code.AppendLine($"        if ({edgeCond}) {{");
-                if (p.DisableIff is { } dis)
+                for (int i = 0; i < Signals.Count; ++i) code.AppendLine($"        var sv_s{i} = _s{i};");
+                foreach (int id in eventIds) code.AppendLine($"        var sv_p{id} = _prev{id};");
+                for (int i = 0; i < Memories.Count; ++i) code.AppendLine($"        var sv_m{i} = ({wordType}[])_m{i}.Clone();");
+                code.AppendLine("        try {");
+            }
+            if (withForces) code.AppendLine("        if (_hasForces) ApplyForces();");
+            code.AppendLine("        Settle();");
+            if (withForces) code.AppendLine("        if (_hasForces) ApplyForces();");
+            if (Properties.Count > 0 || PastDepths.Count > 0)
+            {
+                for (int i = 0; i < Properties.Count; ++i)
                 {
-                    string disCond = twoState ? $"W2Ops.Yes({CsExpr2(dis)})" : $"W64Ops.Yes({CsExpr64(dis)})";
-                    code.AppendLine($"            if ({disCond}) {{");
-                    if (p.Delay > 0) code.AppendLine($"                Array.Clear(_propPipe_{i});");
-                    code.AppendLine("            } else {");
+                    var p = Properties[i];
+                    int cid = SignalId(p.Clock);
+                    string edgeCond = twoState
+                        ? (p.Edge == "posedge" ? $"((_pclk_{cid}&1UL)==0UL&&(_s{cid}&1UL)!=0UL)" : $"((_pclk_{cid}&1UL)!=0UL&&(_s{cid}&1UL)==0UL)")
+                        : $"W4Ops.Edge(_pclk_{cid},_s{cid},{(p.Edge == "posedge" ? "true" : "false")})";
+                    code.AppendLine($"        if ({edgeCond}) {{");
+                    if (p.DisableIff is { } dis)
+                    {
+                        string disCond = twoState ? $"({CsExpr2(dis)}!=0UL)" : $"W4Ops.Yes({CsExpr64(dis)})";
+                        code.AppendLine($"            if ({disCond}) {{");
+                        if (p.Delay > 0) code.AppendLine($"                _propPipe_{i} = 0UL;");
+                        code.AppendLine("            } else {");
+                    }
+                    string antCond = p.Antecedent is { } ant
+                        ? (twoState ? $"({CsExpr2(ant)}!=0UL)" : $"W4Ops.Yes({CsExpr64(ant)})")
+                        : "true";
+                    string consCond = twoState ? $"({CsExpr2(p.Consequent)}!=0UL)" : $"W4Ops.Yes({CsExpr64(p.Consequent)})";
+                    string failMsg = CppStringLiteral(string.IsNullOrEmpty(p.Message) ? $"SVA property '{p.Name}' failed" : $"SVA property '{p.Name}' failed: {p.Message}");
+                    if (p.Delay == 0)
+                    {
+                        code.AppendLine($"            if ({antCond}) {{ if ({consCond}) {{ ++PropertyPasses[{i}]; }} else {{ ++PropertyFailures[{i}]; {(p.Kind == "assert" ? $"throw new InvalidOperationException({failMsg});" : "")} }} }}");
+                        if (p.Kind != "cover") code.AppendLine($"            else {{ ++PropertyVacuous[{i}]; }}");
+                    }
+                    else
+                    {
+                        ulong dueMask = 1UL << (p.Delay - 1);
+                        code.AppendLine($"            if ((_propPipe_{i} & 0x{dueMask:x}UL) != 0UL) {{ if ({consCond}) {{ ++PropertyPasses[{i}]; }} else {{ ++PropertyFailures[{i}]; {(p.Kind == "assert" ? $"throw new InvalidOperationException({failMsg});" : "")} }} }}");
+                        code.AppendLine($"            bool _ant_{i} = {antCond}; _propPipe_{i} = (_propPipe_{i} << 1) | (_ant_{i} ? 1UL : 0UL);");
+                        if (p.Kind != "cover") code.AppendLine($"            if (!_ant_{i}) ++PropertyVacuous[{i}];");
+                    }
+                    if (p.DisableIff is not null) code.AppendLine("            }");
+                    code.AppendLine("        }");
                 }
-                string antCond = p.Antecedent is { } ant
-                    ? (twoState ? $"W2Ops.Yes({CsExpr2(ant)})" : $"W64Ops.Yes({CsExpr64(ant)})")
-                    : "true";
-                string consCond = twoState ? $"W2Ops.Yes({CsExpr2(p.Consequent)})" : $"W64Ops.Yes({CsExpr64(p.Consequent)})";
-                string failMsg = CppStringLiteral(string.IsNullOrEmpty(p.Message) ? $"SVA property '{p.Name}' failed" : $"SVA property '{p.Name}' failed: {p.Message}");
-                if (p.Delay == 0)
+                if (PastDepths.Count > 0)
                 {
-                    code.AppendLine($"            if ({antCond}) {{ if ({consCond}) {{ ++PropertyPasses[{i}]; }} else {{ ++PropertyFailures[{i}]; {(p.Kind == "assert" ? $"throw new InvalidOperationException({failMsg});" : "")} }} }}");
-                    if (p.Kind != "cover") code.AppendLine($"            else {{ ++PropertyVacuous[{i}]; }}");
+                    int pastCid = Clock is not null ? SignalId(Clock) : SignalId(Properties[0].Clock);
+                    string pastEdge = Properties.FirstOrDefault(p => SignalId(p.Clock) == pastCid)?.Edge ?? "posedge";
+                    string pEdge = twoState
+                        ? (pastEdge == "posedge" ? $"((_pclk_{pastCid}&1UL)==0UL&&(_s{pastCid}&1UL)!=0UL)" : $"((_pclk_{pastCid}&1UL)!=0UL&&(_s{pastCid}&1UL)==0UL)")
+                        : $"W4Ops.Edge(_pclk_{pastCid},_s{pastCid},{(pastEdge == "posedge" ? "true" : "false")})";
+                    code.AppendLine($"        if ({pEdge}) {{");
+                    foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
+                    {
+                        for (int k = depth - 1; k > 0; --k)
+                            code.AppendLine($"            _past_{sid}[{k}] = _past_{sid}[{k - 1}];");
+                        code.AppendLine($"            _past_{sid}[0] = _s{sid};");
+                    }
+                    code.AppendLine("        }");
                 }
-                else
+                foreach (int cid in PropertyClockSignalIds())
+                    code.AppendLine($"        _pclk_{cid} = _s{cid};");
+            }
+            if (!CombinationalOnly)
+            {
+                for (int p = 0; p < procs.Length; ++p)
                 {
-                    code.AppendLine($"            if (_propPipe_{i}[{p.Delay - 1}]) {{ if ({consCond}) {{ ++PropertyPasses[{i}]; }} else {{ ++PropertyFailures[{i}]; {(p.Kind == "assert" ? $"throw new InvalidOperationException({failMsg});" : "")} }} }}");
-                    for (int k = p.Delay - 1; k > 0; --k)
-                        code.AppendLine($"            _propPipe_{i}[{k}] = _propPipe_{i}[{k - 1}];");
-                    code.AppendLine($"            bool _ant_{i} = {antCond}; _propPipe_{i}[0] = _ant_{i};");
-                    if (p.Kind != "cover") code.AppendLine($"            if (!_ant_{i}) ++PropertyVacuous[{i}];");
+                    string cond = string.Join(" || ", procs[p].GetProperty("events").EnumerateArray().Select(tr =>
+                    {
+                        int id = SignalId(tr.GetProperty("signal").GetString()!);
+                        bool pos = tr.GetProperty("edge").GetString() == "posedge";
+                        return twoState
+                            ? (pos ? $"((_prev{id}&1UL)==0UL&&(_s{id}&1UL)!=0UL)" : $"((_prev{id}&1UL)!=0UL&&(_s{id}&1UL)==0UL)")
+                            : $"W4Ops.Edge(_prev{id},_s{id},{(pos ? "true" : "false")})";
+                    }));
+                    code.AppendLine($"        bool ev{p} = {cond};");
                 }
-                if (p.DisableIff is not null) code.AppendLine("            }");
+                string anyEv = string.Join(" || ", Enumerable.Range(0, procs.Length).Select(p => $"ev{p}"));
+                code.AppendLine($"        if ({anyEv})");
+                code.AppendLine("        {");
+                foreach (int id in seqIds) code.AppendLine($"            {wordType} _next{id} = _s{id};");
+                int unique = 0;
+                for (int p = 0; p < procs.Length; ++p)
+                {
+                    if (procs.Length > 1) code.AppendLine($"            if (ev{p}) {{");
+                    CsStmt(code, procs[p].GetProperty("body"), ref unique, twoState, hasRuntimeLoops);
+                    if (procs.Length > 1) code.AppendLine("            }");
+                }
+                foreach (int id in seqIds) code.AppendLine($"            _s{id} = _next{id};");
+                if (hasFixedMemWrites) code.AppendLine("            _mlog.Commit(_mems);");
+                code.AppendLine("            Settle();");
+                if (withForces) code.AppendLine("            if (_hasForces) ApplyForces();");
+                code.AppendLine("        }");
+                foreach (int id in eventIds) code.AppendLine($"        _prev{id} = _s{id};");
+            }
+            if (canThrow)
+            {
+                code.AppendLine("        } catch {");
+                for (int i = 0; i < Signals.Count; ++i) code.AppendLine($"            _s{i} = sv_s{i};");
+                foreach (int id in eventIds) code.AppendLine($"            _prev{id} = sv_p{id};");
+                for (int i = 0; i < Memories.Count; ++i) code.AppendLine($"            Array.Copy(sv_m{i}, _m{i}, _m{i}.Length);");
+                if (hasFixedMemWrites) code.AppendLine("            _mlog.Clear();");
+                code.AppendLine("            throw;");
                 code.AppendLine("        }");
             }
-            if (PastDepths.Count > 0)
-            {
-                int pastCid = Clock is not null ? SignalId(Clock) : SignalId(Properties[0].Clock);
-                string pastEdge = Properties.FirstOrDefault(p => SignalId(p.Clock) == pastCid)?.Edge ?? "posedge";
-                string pEdge = twoState
-                    ? $"W2Ops.Edge(_pclk_{pastCid}, _s{pastCid}, {(pastEdge == "posedge" ? "true" : "false")})"
-                    : $"W64Ops.Edge(_pclk_{pastCid}, _s{pastCid}, {(pastEdge == "posedge" ? "true" : "false")})";
-                code.AppendLine($"        if ({pEdge}) {{");
-                foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
-                {
-                    for (int k = depth - 1; k > 0; --k)
-                        code.AppendLine($"            _past_{sid}[{k}] = _past_{sid}[{k - 1}];");
-                    code.AppendLine($"            _past_{sid}[0] = _s{sid};");
-                }
-                code.AppendLine("        }");
-            }
-            foreach (int cid in PropertyClockSignalIds())
-                code.AppendLine($"        _pclk_{cid} = _s{cid};");
         }
-        if (!CombinationalOnly)
+
+        if (bodyUsesForces)
         {
-            for (int p = 0; p < procs.Length; ++p)
-            {
-                string cond = string.Join(" || ", procs[p].GetProperty("events").EnumerateArray().Select(tr =>
-                {
-                    int id = SignalId(tr.GetProperty("signal").GetString()!);
-                    bool pos = tr.GetProperty("edge").GetString() == "posedge";
-                    return twoState
-                        ? $"W2Ops.Edge(_prev{id}, _s{id}, {(pos ? "true" : "false")})"
-                        : $"W64Ops.Edge(_prev{id}, _s{id}, {(pos ? "true" : "false")})";
-                }));
-                code.AppendLine($"        bool ev{p} = {cond};");
-            }
-            string anyEv = string.Join(" || ", Enumerable.Range(0, procs.Length).Select(p => $"ev{p}"));
-            code.AppendLine($"        if ({anyEv})");
-            code.AppendLine("        {");
-            foreach (int id in seqIds) code.AppendLine($"            _next{id} = _s{id};");
-            int unique = 0;
-            for (int p = 0; p < procs.Length; ++p)
-            {
-                if (procs.Length > 1) code.AppendLine($"            if (ev{p}) {{");
-                CsStmt(code, procs[p].GetProperty("body"), ref unique, twoState, hasRuntimeLoops);
-                if (procs.Length > 1) code.AppendLine("            }");
-            }
-            foreach (int id in seqIds) code.AppendLine($"            _s{id} = _next{id};");
-            if (hasFixedMemWrites) code.AppendLine("            _mlog.Commit(_mems);");
-            code.AppendLine("            Settle();");
-            code.AppendLine("            if (_forced is { Count: > 0 }) ApplyForces();");
-            code.AppendLine("        }");
-            foreach (int id in eventIds) code.AppendLine($"        _prev{id} = _s{id};");
+            code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)]");
+            code.AppendLine("    public void Eval()");
+            code.AppendLine("    {");
+            EmitEvalBody(withForces: true);
+            code.AppendLine("    }");
         }
-        if (canThrow)
+        else
         {
-            code.AppendLine("        } catch {");
-            for (int i = 0; i < Signals.Count; ++i) code.AppendLine($"            _s{i} = sv_s{i};");
-            foreach (int id in eventIds) code.AppendLine($"            _prev{id} = sv_p{id};");
-            for (int i = 0; i < Memories.Count; ++i) code.AppendLine($"            Array.Copy(sv_m{i}, _m{i}, _m{i}.Length);");
-            if (hasFixedMemWrites) code.AppendLine("            _mlog.Clear();");
-            code.AppendLine("            throw;");
-            code.AppendLine("        }");
+            code.AppendLine("    [MethodImpl(MethodImplOptions.NoInlining)]");
+            code.AppendLine("    private void EvalForced()");
+            code.AppendLine("    {");
+            EmitEvalBody(withForces: true);
+            code.AppendLine("    }");
+            code.AppendLine();
+            code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)]");
+            code.AppendLine("    public void Eval()");
+            code.AppendLine("    {");
+            code.AppendLine("        if (_hasForces) { EvalForced(); return; }");
+            EmitEvalBody(withForces: false);
+            code.AppendLine("    }");
         }
-        code.AppendLine("    }");
         code.AppendLine("}");
         return code.ToString();
     }
@@ -944,6 +1025,446 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace {{@namespace}};
+
+/// <summary>16-byte IEEE 1800 aval/bval 4-state word (0=(0,0), 1=(1,0), Z=(0,1), X=(1,1)) promoted into two 64-bit CPU registers by RyuJIT.</summary>
+public readonly struct W4
+{
+    public readonly ulong A;
+    public readonly ulong B;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public W4(ulong a, ulong b) { A = a; B = b; }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public W64 ToW64(int w) => new W64(A & ~B, A & B, ~A & B, w);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 FromW64(in W64 w, ulong mask) => new W4((w.V | w.X) & mask, (w.X | w.Z) & mask);
+}
+
+public static class W4Ops
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Unknown(ulong m) => new W4(m, m);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong ToUInt64(W4 a)
+    {
+        if (a.B != 0UL) throw new InvalidOperationException("integer conversion of X/Z port");
+        return a.A;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static uint RepeatCount(W4 a, int w, bool isSigned)
+    {
+        if (a.B != 0UL) return 0U;
+        if (isSigned && w > 0 && ((a.A >> (w - 1)) & 1UL) != 0) return 0U;
+        if (a.A > 20000UL) throw new InvalidOperationException("runtime repeat count exceeds budget");
+        return (uint)a.A;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Resize(W4 a, ulong m) => new W4(a.A & m, a.B & m);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 TwoState(W4 a, ulong m) => new W4(a.A & ~a.B & m, 0UL);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 SResize(W4 a, int aw, ulong am, ulong wm)
+    {
+        if (wm <= am) return new W4(a.A & wm, a.B & wm);
+        ulong fill = wm & ~am;
+        int top = aw - 1;
+        ulong sa = ((a.A >> top) & 1UL) != 0 ? fill : 0UL;
+        ulong sb = ((a.B >> top) & 1UL) != 0 ? fill : 0UL;
+        return new W4(a.A | sa, a.B | sb);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool Edge(W4 prev, W4 curr, bool pos)
+    {
+        int p = (prev.B & 1UL) != 0UL ? -1 : (int)(prev.A & 1UL);
+        int c = (curr.B & 1UL) != 0UL ? -1 : (int)(curr.A & 1UL);
+        return pos ? ((p == 0 && c != 0) || (p < 0 && c == 1)) : ((p == 1 && c != 1) || (p < 0 && c == 0));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int Truth(W4 a) => (a.A & ~a.B) != 0UL ? 1 : (a.B != 0UL ? -1 : 0);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool Yes(W4 a) => (a.A & ~a.B) != 0UL;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 LNot(W4 a)
+    {
+        int t = Truth(a);
+        return t < 0 ? new W4(1UL, 1UL) : new W4(t == 0 ? 1UL : 0UL, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 LAnd(W4 a, W4 b)
+    {
+        int x = Truth(a), y = Truth(b);
+        return (x == 0 || y == 0) ? default : (x == 1 && y == 1) ? new W4(1UL, 0UL) : new W4(1UL, 1UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 LOr(W4 a, W4 b)
+    {
+        int x = Truth(a), y = Truth(b);
+        return (x == 1 || y == 1) ? new W4(1UL, 0UL) : (x == 0 && y == 0) ? default : new W4(1UL, 1UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 BNot(W4 a, ulong m)
+    {
+        ulong ob = a.B & m;
+        return new W4(((~a.A) | ob) & m, ob);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 BBin(W4 a, W4 b, ulong m, int op)
+    {
+        if (op == 2)
+        {
+            ulong ob = (a.B | b.B) & m;
+            return new W4(((a.A ^ b.A) | ob) & m, ob);
+        }
+        if (op == 0)
+        {
+            ulong o0 = ((~a.A & ~a.B) | (~b.A & ~b.B)) & m;
+            ulong o1 = (a.A & ~a.B) & (b.A & ~b.B) & m;
+            ulong ox = ~(o0 | o1) & m;
+            return new W4((o1 | ox) & m, ox);
+        }
+        {
+            ulong o1 = ((a.A & ~a.B) | (b.A & ~b.B)) & m;
+            ulong o0 = (~a.A & ~a.B) & (~b.A & ~b.B) & m;
+            ulong ox = ~(o0 | o1) & m;
+            return new W4((o1 | ox) & m, ox);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool Exact(W4 a, W4 b) => a.A == b.A && a.B == b.B;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool CasezMatch(W4 a, W4 b, ulong m)
+    {
+        ulong care = ~((~a.A & a.B) | (~b.A & b.B)) & m;
+        return (((a.A ^ b.A) | (a.B ^ b.B)) & care) == 0UL;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool CasexMatch(W4 a, W4 b, ulong m)
+    {
+        ulong care = ~(a.B | b.B) & m;
+        return ((a.A ^ b.A) & care) == 0UL;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 WildEq(W4 a, W4 b, ulong m)
+    {
+        ulong care = ~b.B & m;
+        ulong au = a.B & care;
+        ulong known = care & ~au;
+        if (((a.A ^ b.A) & known) != 0UL) return default;
+        return au != 0UL ? new W4(1UL, 1UL) : new W4(1UL, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 WildNeq(W4 a, W4 b, ulong m) => LNot(WildEq(a, b, m));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Eq(W4 a, W4 b)
+    {
+        if ((a.B | b.B) != 0UL) return new W4(1UL, 1UL);
+        return new W4(a.A == b.A ? 1UL : 0UL, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Cmp(W4 a, W4 b, int op)
+    {
+        if ((a.B | b.B) != 0UL) return new W4(1UL, 1UL);
+        bool r = op == 0 ? a.A < b.A : op == 1 ? a.A <= b.A : op == 2 ? a.A > b.A : a.A >= b.A;
+        return new W4(r ? 1UL : 0UL, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 SCmp(W4 a, W4 b, int w, int op)
+    {
+        if ((a.B | b.B) != 0UL) return new W4(1UL, 1UL);
+        long sa = W2Ops.SExt(a.A, w), sb = W2Ops.SExt(b.A, w);
+        bool r = op == 0 ? sa < sb : op == 1 ? sa <= sb : op == 2 ? sa > sb : sa >= sb;
+        return new W4(r ? 1UL : 0UL, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Arith(W4 a, W4 b, ulong m, bool sub)
+    {
+        if ((a.B | b.B) != 0UL) return new W4(m, m);
+        ulong r = unchecked(sub ? (a.A - b.A) : (a.A + b.A)) & m;
+        return new W4(r, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Shift(W4 a, W4 b, ulong m, bool right)
+    {
+        if (b.B != 0UL) return new W4(m, m);
+        if (b.A >= 64UL) return default;
+        int sh = (int)b.A;
+        if (right) return new W4((a.A & m) >> sh, (a.B & m) >> sh);
+        return new W4((a.A << sh) & m, (a.B << sh) & m);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 SShift(W4 a, W4 b, int w, ulong m)
+    {
+        if (b.B != 0UL) return new W4(m, m);
+        int top = w - 1;
+        ulong sa = (a.A >> top) & 1UL, sb = (a.B >> top) & 1UL;
+        if (b.A >= 64UL) return new W4(sa != 0 ? m : 0UL, sb != 0 ? m : 0UL);
+        int sh = (int)b.A;
+        ulong fill = sh == 0 ? 0UL : (m & ~(m >> sh));
+        return new W4((((a.A & m) >> sh) | (sa != 0 ? fill : 0UL)) & m,
+                      (((a.B & m) >> sh) | (sb != 0 ? fill : 0UL)) & m);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Red(W4 a, ulong m, int op)
+    {
+        ulong u = a.B & m;
+        ulong v = a.A & ~u & m;
+        if (op == 0 || op == 1)
+        {
+            ulong zeros = ~(v | u) & m;
+            if (zeros != 0UL) return new W4(op == 1 ? 1UL : 0UL, 0UL);
+            if (u != 0UL) return new W4(1UL, 1UL);
+            return new W4(op == 0 ? 1UL : 0UL, 0UL);
+        }
+        if (op == 2 || op == 3)
+        {
+            if (v != 0UL) return new W4(op == 2 ? 1UL : 0UL, 0UL);
+            if (u != 0UL) return new W4(1UL, 1UL);
+            return new W4(op == 3 ? 1UL : 0UL, 0UL);
+        }
+        if (u != 0UL) return new W4(1UL, 1UL);
+        bool odd = (BitOperations.PopCount(v) & 1) != 0;
+        return new W4((odd ^ (op == 5)) ? 1UL : 0UL, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Product(W4 a, W4 b, int w, ulong m, int op)
+    {
+        if ((a.B | b.B) != 0UL) return new W4(m, m);
+        ulong av = a.A & m, bv = b.A & m;
+        if (op == 0) return new W4(unchecked(av * bv) & m, 0UL);
+        if (bv == 0UL) return new W4(m, m);
+        return new W4((op == 1 ? (av / bv) : (av % bv)) & m, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 SProduct(W4 a, W4 b, int w, ulong m, int op)
+    {
+        if ((a.B | b.B) != 0UL) return new W4(m, m);
+        long sa = W2Ops.SExt(a.A, w), sb = W2Ops.SExt(b.A, w);
+        if (op == 0) return new W4(unchecked((ulong)sa * (ulong)sb) & m, 0UL);
+        if (sb == 0L) return new W4(m, m);
+        if (sa == long.MinValue && sb == -1L) return new W4(op == 1 ? ((ulong)sa & m) : 0UL, 0UL);
+        return new W4((ulong)(op == 1 ? (sa / sb) : (sa % sb)) & m, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Cond(W4 c, W4 a, W4 b, ulong m)
+    {
+        int t = Truth(c);
+        if (t == 1) return Resize(a, m);
+        if (t == 0) return Resize(b, m);
+        ulong au = a.B & m, bu = b.B & m;
+        ulong av = a.A & ~au & m, bv = b.A & ~bu & m;
+        ulong u = (au | bu | (av ^ bv)) & m;
+        return new W4(((av & ~u) | u) & m, u);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Concat(W4 a, W4 b, int bw)
+    {
+        ulong bm = W2Ops.Mask(bw);
+        if (bw >= 64) return new W4(b.A & bm, b.B & bm);
+        return new W4((a.A << bw) | (b.A & bm), (a.B << bw) | (b.B & bm));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 SelBit(W4 a, int aw, W4 idx)
+    {
+        if (idx.B != 0UL || idx.A >= (ulong)aw) return new W4(1UL, 1UL);
+        int i = (int)idx.A;
+        return new W4((a.A >> i) & 1UL, (a.B >> i) & 1UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 SelPart(W4 a, int aw, int left, int right)
+    {
+        int n = left - right + 1;
+        ulong m = W2Ops.Mask(n);
+        if (right >= aw) return new W4(m, m);
+        int avail = aw - right;
+        ulong am = W2Ops.Mask(avail < n ? avail : n);
+        ulong oob = m & ~am;
+        return new W4(((a.A >> right) & am) | oob, ((a.B >> right) & am) | oob);
+    }
+
+    public static W4 SelIdx(W4 a, int aw, W4 b, int width, bool desc)
+    {
+        ulong wm = W2Ops.Mask(width);
+        if (b.B != 0UL) return new W4(wm, wm);
+        if (b.A > 2147483647UL) throw new ArgumentOutOfRangeException(nameof(b), "known indexed select base exceeds qualified range 0..INT32_MAX");
+        long lo = desc ? (long)b.A - (width - 1) : (long)b.A;
+        long srcLo = lo < 0 ? 0 : lo;
+        long srcHi = (lo + width) < aw ? (lo + width) : aw;
+        if (srcLo >= srcHi) return new W4(wm, wm);
+        int count = (int)(srcHi - srcLo);
+        int dstLo = (int)(srcLo - lo);
+        int sLo = (int)srcLo;
+        ulong cm = W2Ops.Mask(count);
+        ulong dstMask = cm << dstLo;
+        ulong oob = wm & ~dstMask;
+        return new W4((((a.A >> sLo) & cm) << dstLo) | oob, (((a.B >> sLo) & cm) << dstLo) | oob);
+    }
+
+    public static W4 DepIdx(W4 before, int bw, W4 b, int width, bool desc, W4 value)
+    {
+        if (b.B != 0UL) return before;
+        if (b.A > 2147483647UL) throw new ArgumentOutOfRangeException(nameof(b), "known selected write base exceeds qualified range 0..INT32_MAX");
+        ulong wm = W2Ops.Mask(width);
+        W4 val = new W4(value.A & wm, value.B & wm);
+        long lo = desc ? (long)b.A - (width - 1) : (long)b.A;
+        long dstLo = lo < 0 ? 0 : lo;
+        long dstHi = (lo + width) < bw ? (lo + width) : bw;
+        if (dstLo >= dstHi) return before;
+        int count = (int)(dstHi - dstLo);
+        int srcLo = (int)(dstLo - lo);
+        int dLo = (int)dstLo;
+        ulong cm = W2Ops.Mask(count);
+        ulong dmask = cm << dLo;
+        return new W4((before.A & ~dmask) | (((val.A >> srcLo) & cm) << dLo),
+                      (before.B & ~dmask) | (((val.B >> srcLo) & cm) << dLo));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 MemIdx(W4 index, int lower)
+    {
+        if (index.B != 0UL || index.A < (ulong)lower) return new W4(1UL, 1UL);
+        return new W4(index.A - (ulong)lower, 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Read(W4[] m, W4 idx, ulong wm)
+    {
+        if (idx.B != 0UL || idx.A >= (ulong)m.Length) return new W4(wm, wm);
+        return m[(int)idx.A];
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 CountOnes(W4 a, ulong m)
+    {
+        ulong ones = a.A & ~a.B & m;
+        return new W4((ulong)BitOperations.PopCount(ones), 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 OneHot(W4 a, ulong m) => new W4(BitOperations.PopCount(a.A & ~a.B & m) == 1 ? 1UL : 0UL, 0UL);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 OneHot0(W4 a, ulong m) => new W4(BitOperations.PopCount(a.A & ~a.B & m) <= 1 ? 1UL : 0UL, 0UL);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 IsUnknown(W4 a, ulong m) => new W4((a.B & m) != 0UL ? 1UL : 0UL, 0UL);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 CLog2(W4 a, ulong m)
+    {
+        if ((a.B & m) != 0UL) return default;
+        ulong x = a.A & m;
+        if (x <= 1UL) return default;
+        return new W4((ulong)(64 - BitOperations.LeadingZeroCount(x - 1UL)), 0UL);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 ResolvePair(W4 a, W4 b, int netKind, ulong m)
+    {
+        ulong va = a.A & ~a.B & m, za = ~a.A & a.B & m, a0 = ~a.A & ~a.B & m;
+        ulong vb = b.A & ~b.B & m, zb = ~b.A & b.B & m, b0 = ~b.A & ~b.B & m;
+        ulong zOut = za & zb;
+        ulong vOut, o0;
+        if (netKind == 1)
+        {
+            o0 = (a0 | b0) & m;
+            vOut = (~o0) & ((va & (vb | zb)) | (za & vb)) & m;
+        }
+        else if (netKind == 2)
+        {
+            vOut = (va | vb) & m;
+            o0 = (~vOut) & ((a0 & (b0 | zb)) | (za & b0)) & m;
+        }
+        else
+        {
+            vOut = ((va & (vb | zb)) | (za & vb)) & m;
+            o0 = ((a0 & (b0 | zb)) | (za & b0)) & m;
+        }
+        ulong xOut = ~(zOut | vOut | o0) & m;
+        return new W4((vOut | xOut) & m, (xOut | zOut) & m);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 ResolveFinalize(W4 acc, int netKind, ulong m)
+    {
+        if (netKind == 3) return new W4(acc.A & m, (acc.A & acc.B) & m);
+        if (netKind == 4) return new W4((acc.A | acc.B) & m, (acc.A & acc.B) & m);
+        return acc;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 ResolveNet2(int netKind, W4 a, W4 b, ulong m) =>
+        ResolveFinalize(ResolvePair(a, b, netKind, m), netKind, m);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 ResolveNet(int netKind, ReadOnlySpan<W4> drivers, ulong m)
+    {
+        if (drivers.Length == 0) return ResolveFinalize(new W4(0UL, m), netKind, m);
+        W4 acc = Resize(drivers[0], m);
+        for (int i = 1; i < drivers.Length; ++i) acc = ResolvePair(acc, drivers[i], netKind, m);
+        return ResolveFinalize(acc, netKind, m);
+    }
+}
+
+public sealed class MemLog4
+{
+    private readonly int[] _mem = new int[16];
+    private readonly int[] _idx = new int[16];
+    private readonly W4[] _val = new W4[16];
+    private List<(int mem, int idx, W4 val)>? _overflow;
+    private int _count;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Push(int memId, int memLen, W4 idx, W4 val, ulong m)
+    {
+        if (idx.B != 0UL || idx.A >= (ulong)memLen) return;
+        W4 v = new W4(val.A & m, val.B & m);
+        if (_count < 16) { _mem[_count] = memId; _idx[_count] = (int)idx.A; _val[_count] = v; ++_count; }
+        else (_overflow ??= new()).Add((memId, (int)idx.A, v));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Commit(W4[][] mems)
+    {
+        for (int i = 0; i < _count; ++i) mems[_mem[i]][_idx[i]] = _val[i];
+        if (_overflow is { Count: > 0 }) { foreach (var e in _overflow) mems[e.mem][e.idx] = e.val; _overflow.Clear(); }
+        _count = 0;
+    }
+
+    public void Clear() { _count = 0; _overflow?.Clear(); }
+}
 
 public readonly struct W64
 {
@@ -965,7 +1486,7 @@ public static class W64Ops
     public static W64 Unknown(int w) => new W64(0UL, Mask(w), 0UL, w);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ulong ToUInt64(W64 a)
+    public static ulong ToUInt64(in W64 a)
     {
         if ((a.X | a.Z) != 0UL) throw new InvalidOperationException("integer conversion of X/Z port");
         return a.V;
@@ -990,7 +1511,7 @@ public static class W64Ops
         return new W64(v, x, z, width);
     }
 
-    public static string Text(W64 a)
+    public static string Text(in W64 a)
     {
         char[] buf = new char[a.W];
         for (int i = 0; i < a.W; ++i)
@@ -1043,7 +1564,7 @@ public static class W64Ops
         --budget;
     }
 
-    public static uint RepeatCount(W64 a, bool isSigned)
+    public static uint RepeatCount(in W64 a, bool isSigned)
     {
         if ((a.X | a.Z) != 0UL) return 0U;
         if (isSigned && a.W > 0 && ((a.V >> (a.W - 1)) & 1UL) != 0) return 0U;
@@ -1052,17 +1573,17 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Resize(W64 a, int w)
+    public static W64 Resize(in W64 a, int w)
     {
         ulong m = Mask(w);
         return new W64(a.V & m, a.X & m, a.Z & m, w);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 TwoState(W64 a) => new W64(a.V & Mask(a.W), 0UL, 0UL, a.W);
+    public static W64 TwoState(in W64 a) => new W64(a.V & Mask(a.W), 0UL, 0UL, a.W);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 SResize(W64 a, int w)
+    public static W64 SResize(in W64 a, int w)
     {
         if (w <= a.W) return Resize(a, w);
         ulong fill = Mask(w) & ~Mask(a.W);
@@ -1074,44 +1595,44 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int LogicBit(W64 a) => ((a.X | a.Z) & 1UL) != 0 ? -1 : (int)(a.V & 1UL);
+    private static int LogicBit(in W64 a) => ((a.X | a.Z) & 1UL) != 0 ? -1 : (int)(a.V & 1UL);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Edge(W64 prev, W64 curr, bool pos)
+    public static bool Edge(in W64 prev, in W64 curr, bool pos)
     {
         int p = LogicBit(prev), c = LogicBit(curr);
         return pos ? ((p == 0 && c != 0) || (p < 0 && c == 1)) : ((p == 1 && c != 1) || (p < 0 && c == 0));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int Truth(W64 a) => a.V != 0UL ? 1 : ((a.X | a.Z) != 0UL ? -1 : 0);
+    public static int Truth(in W64 a) => a.V != 0UL ? 1 : ((a.X | a.Z) != 0UL ? -1 : 0);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Yes(W64 a) => a.V != 0UL;
+    public static bool Yes(in W64 a) => a.V != 0UL;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 LNot(W64 a)
+    public static W64 LNot(in W64 a)
     {
         int t = Truth(a);
         return t < 0 ? new W64(0UL, 1UL, 0UL, 1) : new W64(t == 0 ? 1UL : 0UL, 0UL, 0UL, 1);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 LAnd(W64 a, W64 b)
+    public static W64 LAnd(in W64 a, in W64 b)
     {
         int x = Truth(a), y = Truth(b);
         return (x == 0 || y == 0) ? new W64(0UL, 0UL, 0UL, 1) : (x == 1 && y == 1) ? new W64(1UL, 0UL, 0UL, 1) : new W64(0UL, 1UL, 0UL, 1);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 LOr(W64 a, W64 b)
+    public static W64 LOr(in W64 a, in W64 b)
     {
         int x = Truth(a), y = Truth(b);
         return (x == 1 || y == 1) ? new W64(1UL, 0UL, 0UL, 1) : (x == 0 && y == 0) ? new W64(0UL, 0UL, 0UL, 1) : new W64(0UL, 1UL, 0UL, 1);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 BNot(W64 a, int w)
+    public static W64 BNot(in W64 a, int w)
     {
         ulong m = Mask(w);
         ulong u = (a.X | a.Z) & m;
@@ -1119,7 +1640,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 BBin(W64 a, W64 b, int w, int op)
+    public static W64 BBin(in W64 a, in W64 b, int w, int op)
     {
         ulong m = Mask(w);
         ulong au = (a.X | a.Z) & m, bu = (b.X | b.Z) & m;
@@ -1131,10 +1652,10 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Exact(W64 a, W64 b) => a.V == b.V && a.X == b.X && a.Z == b.Z;
+    public static bool Exact(in W64 a, in W64 b) => a.V == b.V && a.X == b.X && a.Z == b.Z;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool CasezMatch(W64 a, W64 b)
+    public static bool CasezMatch(in W64 a, in W64 b)
     {
         int w = a.W > b.W ? a.W : b.W;
         ulong care = ~(a.Z | b.Z) & Mask(w);
@@ -1142,7 +1663,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool CasexMatch(W64 a, W64 b)
+    public static bool CasexMatch(in W64 a, in W64 b)
     {
         int w = a.W > b.W ? a.W : b.W;
         ulong care = ~(a.X | a.Z | b.X | b.Z) & Mask(w);
@@ -1150,7 +1671,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 WildEq(W64 a, W64 b)
+    public static W64 WildEq(in W64 a, in W64 b)
     {
         int w = a.W > b.W ? a.W : b.W;
         ulong care = ~(b.X | b.Z) & Mask(w);
@@ -1161,17 +1682,17 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 WildNeq(W64 a, W64 b) => LNot(WildEq(a, b));
+    public static W64 WildNeq(in W64 a, in W64 b) => LNot(WildEq(a, b));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Eq(W64 a, W64 b)
+    public static W64 Eq(in W64 a, in W64 b)
     {
         if (((a.X | a.Z) | (b.X | b.Z)) != 0UL) return new W64(0UL, 1UL, 0UL, 1);
         return new W64(a.V == b.V ? 1UL : 0UL, 0UL, 0UL, 1);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Cmp(W64 a, W64 b, int op)
+    public static W64 Cmp(in W64 a, in W64 b, int op)
     {
         if (((a.X | a.Z) | (b.X | b.Z)) != 0UL) return new W64(0UL, 1UL, 0UL, 1);
         bool r = op == 0 ? a.V < b.V : op == 1 ? a.V <= b.V : op == 2 ? a.V > b.V : a.V >= b.V;
@@ -1179,7 +1700,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 SCmp(W64 a, W64 b, int op)
+    public static W64 SCmp(in W64 a, in W64 b, int op)
     {
         if (((a.X | a.Z) | (b.X | b.Z)) != 0UL) return new W64(0UL, 1UL, 0UL, 1);
         long sa = W2Ops.SExt(a.V, a.W), sb = W2Ops.SExt(b.V, b.W);
@@ -1188,7 +1709,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Arith(W64 a, W64 b, int w, bool sub)
+    public static W64 Arith(in W64 a, in W64 b, int w, bool sub)
     {
         ulong m = Mask(w);
         if (((a.X | a.Z) | (b.X | b.Z)) != 0UL) return new W64(0UL, m, 0UL, w);
@@ -1197,7 +1718,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Shift(W64 a, W64 b, int w, bool right)
+    public static W64 Shift(in W64 a, in W64 b, int w, bool right)
     {
         ulong m = Mask(w);
         if ((b.X | b.Z) != 0UL) return new W64(0UL, m, 0UL, w);
@@ -1208,7 +1729,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 SShift(W64 a, W64 b, int w)
+    public static W64 SShift(in W64 a, in W64 b, int w)
     {
         ulong m = Mask(w);
         if ((b.X | b.Z) != 0UL) return new W64(0UL, m, 0UL, w);
@@ -1223,7 +1744,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Red(W64 a, int op)
+    public static W64 Red(in W64 a, int op)
     {
         ulong m = Mask(a.W);
         ulong u = (a.X | a.Z) & m;
@@ -1247,7 +1768,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Product(W64 a, W64 b, int w, int op)
+    public static W64 Product(in W64 a, in W64 b, int w, int op)
     {
         ulong m = Mask(w);
         if (((a.X | a.Z) | (b.X | b.Z)) != 0UL) return new W64(0UL, m, 0UL, w);
@@ -1258,7 +1779,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 SProduct(W64 a, W64 b, int w, int op)
+    public static W64 SProduct(in W64 a, in W64 b, int w, int op)
     {
         ulong m = Mask(w);
         if (((a.X | a.Z) | (b.X | b.Z)) != 0UL) return new W64(0UL, m, 0UL, w);
@@ -1270,7 +1791,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Cond(W64 c, W64 a, W64 b, int w)
+    public static W64 Cond(in W64 c, in W64 a, in W64 b, int w)
     {
         int t = Truth(c);
         if (t == 1) return Resize(a, w);
@@ -1283,7 +1804,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Concat(W64 a, W64 b)
+    public static W64 Concat(in W64 a, in W64 b)
     {
         int bw = b.W;
         ulong bm = Mask(bw);
@@ -1292,7 +1813,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 SelBit(W64 a, W64 idx)
+    public static W64 SelBit(in W64 a, in W64 idx)
     {
         if ((idx.X | idx.Z) != 0UL || idx.V >= (ulong)a.W) return new W64(0UL, 1UL, 0UL, 1);
         int i = (int)idx.V;
@@ -1300,7 +1821,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 SelPart(W64 a, int left, int right)
+    public static W64 SelPart(in W64 a, int left, int right)
     {
         int n = left - right + 1;
         ulong m = Mask(n);
@@ -1310,7 +1831,7 @@ public static class W64Ops
         return new W64((a.V >> right) & am, ((a.X >> right) & am) | (m & ~am), (a.Z >> right) & am, n);
     }
 
-    public static W64 SelIdx(W64 a, W64 b, int width, bool desc)
+    public static W64 SelIdx(in W64 a, in W64 b, int width, bool desc)
     {
         if ((b.X | b.Z) != 0UL) return Unknown(width);
         if (b.V > 2147483647UL) throw new ArgumentOutOfRangeException(nameof(b), "known indexed select base exceeds qualified range 0..INT32_MAX");
@@ -1326,11 +1847,11 @@ public static class W64Ops
         return new W64(((a.V >> sLo) & cm) << dstLo, (((a.X >> sLo) & cm) << dstLo) | (Mask(width) & ~dstMask), ((a.Z >> sLo) & cm) << dstLo, width);
     }
 
-    public static W64 DepIdx(W64 before, W64 b, int width, bool desc, W64 value)
+    public static W64 DepIdx(in W64 before, in W64 b, int width, bool desc, in W64 value)
     {
         if ((b.X | b.Z) != 0UL) return before;
         if (b.V > 2147483647UL) throw new ArgumentOutOfRangeException(nameof(b), "known selected write base exceeds qualified range 0..INT32_MAX");
-        value = Resize(value, width);
+        W64 val = Resize(value, width);
         long lo = desc ? (long)b.V - (width - 1) : (long)b.V;
         long dstLo = lo < 0 ? 0 : lo;
         long dstHi = (lo + width) < before.W ? (lo + width) : before.W;
@@ -1340,43 +1861,43 @@ public static class W64Ops
         int dLo = (int)dstLo;
         ulong cm = Mask(count);
         ulong dmask = cm << dLo;
-        return new W64((before.V & ~dmask) | (((value.V >> srcLo) & cm) << dLo),
-                       (before.X & ~dmask) | (((value.X >> srcLo) & cm) << dLo),
-                       (before.Z & ~dmask) | (((value.Z >> srcLo) & cm) << dLo), before.W);
+        return new W64((before.V & ~dmask) | (((val.V >> srcLo) & cm) << dLo),
+                       (before.X & ~dmask) | (((val.X >> srcLo) & cm) << dLo),
+                       (before.Z & ~dmask) | (((val.Z >> srcLo) & cm) << dLo), before.W);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 MemIdx(W64 index, int lower)
+    public static W64 MemIdx(in W64 index, int lower)
     {
         if ((index.X | index.Z) != 0UL || index.V < (ulong)lower) return new W64(0UL, 1UL, 0UL, 1);
         return new W64(index.V - (ulong)lower, 0UL, 0UL, index.W);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 Read(W64[] m, W64 idx, int w)
+    public static W64 Read(W64[] m, in W64 idx, int w)
     {
         if ((idx.X | idx.Z) != 0UL || idx.V >= (ulong)m.Length) return Unknown(w);
         return m[(int)idx.V];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 CountOnes(W64 a)
+    public static W64 CountOnes(in W64 a)
     {
         ulong ones = a.V & ~a.X & ~a.Z & Mask(a.W);
         return new W64((ulong)BitOperations.PopCount(ones), 0UL, 0UL, 32);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 OneHot(W64 a) => new W64(CountOnes(a).V == 1UL ? 1UL : 0UL, 0UL, 0UL, 1);
+    public static W64 OneHot(in W64 a) => new W64(CountOnes(a).V == 1UL ? 1UL : 0UL, 0UL, 0UL, 1);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 OneHot0(W64 a) => new W64(CountOnes(a).V <= 1UL ? 1UL : 0UL, 0UL, 0UL, 1);
+    public static W64 OneHot0(in W64 a) => new W64(CountOnes(a).V <= 1UL ? 1UL : 0UL, 0UL, 0UL, 1);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 IsUnknown(W64 a) => new W64(((a.X | a.Z) & Mask(a.W)) != 0UL ? 1UL : 0UL, 0UL, 0UL, 1);
+    public static W64 IsUnknown(in W64 a) => new W64(((a.X | a.Z) & Mask(a.W)) != 0UL ? 1UL : 0UL, 0UL, 0UL, 1);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 CLog2(W64 a)
+    public static W64 CLog2(in W64 a)
     {
         ulong m = Mask(a.W);
         if (((a.X | a.Z) & m) != 0UL) return new W64(0UL, 0UL, 0UL, 32);
@@ -1386,13 +1907,11 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 ResolvePair(W64 aIn, W64 bIn, int netKind, int w)
+    public static W64 ResolvePair(in W64 aIn, in W64 bIn, int netKind, int w)
     {
         ulong m = Mask(w);
-        W64 a = aIn.W == w ? aIn : Resize(aIn, w);
-        W64 b = bIn.W == w ? bIn : Resize(bIn, w);
-        ulong va = a.V & m, xa = a.X & m, za = a.Z & m;
-        ulong vb = b.V & m, xb = b.X & m, zb = b.Z & m;
+        ulong va = aIn.V & m, xa = aIn.X & m, za = aIn.Z & m;
+        ulong vb = bIn.V & m, xb = bIn.X & m, zb = bIn.Z & m;
         ulong a0 = ~(va | xa | za) & m;
         ulong b0 = ~(vb | xb | zb) & m;
         ulong zOut = za & zb;
@@ -1417,7 +1936,7 @@ public static class W64Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W64 ResolveFinalize(W64 acc, int netKind)
+    public static W64 ResolveFinalize(in W64 acc, int netKind)
     {
         ulong m = Mask(acc.W);
         if (netKind == 3) return new W64(acc.V, acc.X, 0UL, acc.W);
@@ -1425,6 +1944,11 @@ public static class W64Ops
         return acc;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W64 ResolveNet2(int netKind, in W64 a, in W64 b, int w) =>
+        ResolveFinalize(ResolvePair(a, b, netKind, w), netKind);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W64 ResolveNet(int netKind, ReadOnlySpan<W64> drivers, int w)
     {
         if (drivers.Length == 0) return ResolveFinalize(new W64(0UL, 0UL, Mask(w), w), netKind);
@@ -1637,7 +2161,7 @@ public sealed class MemLog64
     private int _count;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Push(int memId, int memLen, W64 idx, W64 val, int w)
+    public void Push(int memId, int memLen, in W64 idx, in W64 val, int w)
     {
         if ((idx.X | idx.Z) != 0UL || idx.V >= (ulong)memLen) return;
         W64 v = W64Ops.Resize(val, w);
