@@ -3,8 +3,9 @@ namespace VeloSim;
 
 public static class RtlExternalSdk
 {
-    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null, bool enableCoverage = false)
+    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null, bool enableCoverage = false, int threads = 1)
     {
+        if (threads is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(threads), "Thread count must be 1..64.");
         var effectiveLimits = limits ?? RtlDesignLimits.Bounded;
         if (new FileInfo(ir).Length > effectiveLimits.MaxIrBytes) throw new ArgumentException($"RTL IR exceeds {effectiveLimits.MaxIrBytes / (1024 * 1024)} MiB.");
         string json = await File.ReadAllTextAsync(ir, token).ConfigureAwait(false);
@@ -15,11 +16,17 @@ public static class RtlExternalSdk
         if (Directory.Exists(directory) && Directory.EnumerateFileSystemEntries(directory).Any()) throw new ArgumentException("External SDK output directory must be empty.");
 
         if (target == RtlTargetLanguage.CSharp)
+        {
+            if (threads > 1) throw new ArgumentException("Multi-threaded --threads > 1 export is currently supported only on the cpp target.");
             return await ExportCSharpAsync(design, json, top, directory, stateMode, token).ConfigureAwait(false);
+        }
         if (target == RtlTargetLanguage.Rust)
+        {
+            if (threads > 1) throw new ArgumentException("Multi-threaded --threads > 1 export is currently supported only on the cpp target.");
             return await ExportRustAsync(design, json, top, directory, stateMode, token).ConfigureAwait(false);
+        }
 
-        string header = design.EmitModelHeader(top, stateMode, enableCoverage);
+        string header = design.EmitModelHeader(top, stateMode, enableCoverage, threads);
         string? runtime = null;
         for (var parent = new DirectoryInfo(Environment.CurrentDirectory); parent is not null; parent = parent.Parent)
             if (File.Exists(Path.Combine(parent.FullName, "native/rtl/external_model.h"))) { runtime = Path.Combine(parent.FullName, "native/rtl"); break; }
@@ -28,6 +35,7 @@ public static class RtlExternalSdk
         await File.WriteAllTextAsync(Path.Combine(directory, "V" + top + ".h"), header, token).ConfigureAwait(false);
         foreach (string file in new[] { "runtime.h", "external_model.h", "gzip_stream.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "svdpi.h", "vpi.cpp" }) File.Copy(Path.Combine(runtime, file), Path.Combine(directory, file));
         if (design.Timed) File.Copy(Path.Combine(runtime, "hdl_scheduler.h"), Path.Combine(directory, "hdl_scheduler.h"));
+        if (threads > 1) File.Copy(Path.Combine(runtime, "thread_pool.h"), Path.Combine(directory, "thread_pool.h"));
         await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory,"timing-diagnostics.txt"),
             "Conservative timed-process analysis; warnings do not prove races, and absence does not prove race freedom.\n"+string.Join('\n',design.TimingDiagnostics)+"\n",token).ConfigureAwait(false);
@@ -68,14 +76,14 @@ public static class RtlExternalSdk
             Clockless models have no synthetic clock: eval() settles their DAG on startup and input changes.
             Bit inputs and destinations convert X/Z bits to zero.
             Use bits() for X/Z and wide words (256-bit default; 512-bit when exported with --large-design); uint64 conversion rejects unknown or overflowing values.
-            Use openVcd()/dumpVcd()/closeVcd() for IEEE 1364 hierarchical 4-state VCD waveform output,
+            Use openVcd()/openVcdGz()/dumpVcd()/closeVcd() for IEEE 1364 hierarchical 4-state VCD and RFC 1952 .vcd.gz waveform output,
             saveCheckpoint()/restoreCheckpoint() for versioned binary checkpoints,
             loadMemoryHex()/loadMemoryBin() for IEEE 1364 $readmemh/$readmemb memory initialization,
-            and coveragePoints()/writeCoverageJson() when exported with --coverage.
+            and coveragePoints()/toggleCoverage()/covergroups()/propertyStats()/writeCoverageJson() when exported with --coverage.
             loadVpi() accepts a native plugin with a null-terminated exported
             vlog_startup_routines table before the first eval().
             The VPI subset supports signal lookup, metadata, identity, immediate
-            input deposits, radix/vector/scalar values, and start/end/value/read-only
+            input deposits, force/release, memory handles, radix/vector/scalar values, and start/end/value/read-only/read-write/after-delay
             callbacks. IEEE 1800 Annex I svdpi.h core types and scalar DPI-C C imports are supported.
             Models whose manifest says explicit-time include hdl_scheduler.h.
             Their timeInc()/eval() host sequence executes queued older events
@@ -104,12 +112,13 @@ public static class RtlExternalSdk
             """, token).ConfigureAwait(false);
         var inputPaths = new List<string> { "V" + top + ".h", "runtime.h", "external_model.h", "gzip_stream.h", "vcd_trace.h", "checkpoint.h", "vpi_user.h", "svdpi.h", "vpi.cpp", "design.rtl.json", "CMakeLists.txt", "README.md" };
         if (design.Timed) inputPaths.Add("hdl_scheduler.h");
+        if (threads > 1) inputPaths.Add("thread_pool.h");
         inputPaths.Add("timing-diagnostics.txt");
         var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
         string manifest = Path.Combine(directory, "external-model.json");
         var names = design.ExternalPortNames();
         bool twoState = stateMode == RtlStateMode.TwoState;
-        string semantics = (twoState ? "two-state; " : "") + (enableCoverage ? "coverage; " : "") + (design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
+        string semantics = (twoState ? "two-state; " : "") + (enableCoverage ? "coverage; " : "") + (threads > 1 ? $"threads={threads}; " : "") + (design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval");
         var contract = new ExternalManifestContract("velosim.external.model.v2", 2, maxWordBits, top, "V" + top,
             semantics,
             design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),

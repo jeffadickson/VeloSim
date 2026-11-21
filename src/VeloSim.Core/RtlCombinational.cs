@@ -7,6 +7,7 @@ public sealed partial class RtlDesign
     // Each step owns complete words. The DAG settles once in dependency order;
     // a procedural block is never retriggered by its own blocking writes.
     private IReadOnlyList<JsonElement> SettledSteps { get; set; } = [];
+    internal IReadOnlyList<IReadOnlyList<JsonElement>> SettledLevels { get; private set; } = [];
 
     private List<JsonElement> SortCombinational(JsonElement root, HashSet<string> sequential, Dictionary<string, JsonElement> continuous)
     {
@@ -34,14 +35,17 @@ public sealed partial class RtlDesign
             if(sequential.Contains(word)||!owners.TryAdd(word,i))throw new IrValidationException("Conflicting combinational writer.");
         var reads=steps.Select(step=>Statements(step).SelectMany(e=>new[]{"value","condition","count"}.Where(n=>e.TryGetProperty(n,out var v)&&v.ValueKind==JsonValueKind.Object).SelectMany(n=>References(e.GetProperty(n)))).ToHashSet(StringComparer.Ordinal)).ToArray();
         foreach(var read in reads)if(read.Intersect(EventSignals.Append(Clock)).Any())throw new IrValidationException("Clock-dependent combinational logic is outside the race-free subset.");
-        var pending=Enumerable.Range(0,steps.Count).ToHashSet();var ordered=new List<JsonElement>();
+        var pending=Enumerable.Range(0,steps.Count).ToHashSet();var ordered=new List<JsonElement>();var levels=new List<IReadOnlyList<JsonElement>>();
         while(pending.Count>0)
         {
             var ready=pending.Where(i=>!reads[i].Any(n=>owners.TryGetValue(n,out int owner)&&owner!=i&&pending.Contains(owner))).ToArray();
             if(ready.Length==0)throw new IrValidationException("Combinational feedback is unsupported.");
-            foreach(int i in ready){ordered.Add(steps[i]);pending.Remove(i);}
+            var levelSteps = new List<JsonElement>(ready.Length);
+            foreach(int i in ready){ordered.Add(steps[i]);levelSteps.Add(steps[i]);pending.Remove(i);}
+            levels.Add(levelSteps);
         }
         SettledSteps=ordered;
+        SettledLevels=levels;
         // Preserve the continuous-only public inventory; execution uses the unified graph.
         return ordered.Where(e=>Kind(e)=="blocking"&&Kind(e.GetProperty("target"))=="ref"&&continuous.ContainsKey(Name(e.GetProperty("target")))).Select(e=>continuous[Name(e.GetProperty("target"))]).ToList();
     }
@@ -92,20 +96,43 @@ public sealed partial class RtlDesign
 
     private static JsonElement Element(string json) { using var document=JsonDocument.Parse(json);return document.RootElement.Clone(); }
 
-    private void EmitSettle(StringBuilder code, List<(string Id, string Kind)>? coverage = null)
+    private void EmitSettleStep(StringBuilder code, JsonElement step, List<(string Id, string Kind)>? coverage = null)
     {
-        foreach(var step in SettledSteps)
+        if(Kind(step)=="blocking"&&Kind(step.GetProperty("target"))=="ref")
         {
-            if(Kind(step)=="blocking"&&Kind(step.GetProperty("target"))=="ref")
+            int id=SignalId(Name(step.GetProperty("target")));
+            var rhs=step.GetProperty("value");
+            code.AppendLine($"s[{id}]={StoreWord(Expression(rhs,Signals[id].Width),Signals[id],ExpressionWidth(rhs))};");
+        }
+        else
+        {
+            code.AppendLine("{auto next=s;");int unique=0;Statement(code,step,ref unique,coverage:coverage);code.AppendLine("}");
+        }
+    }
+
+    private void EmitSettle(StringBuilder code, List<(string Id, string Kind)>? coverage = null, int threads = 1)
+    {
+        if (threads <= 1)
+        {
+            foreach (var step in SettledSteps) EmitSettleStep(code, step, coverage);
+            return;
+        }
+        foreach (var level in SettledLevels)
+        {
+            bool allSimpleRef = level.Count >= 2 && level.All(st => Kind(st) == "blocking" && Kind(st.GetProperty("target")) == "ref");
+            if (!allSimpleRef)
             {
-                int id=SignalId(Name(step.GetProperty("target")));
-                var rhs=step.GetProperty("value");
-                code.AppendLine($"s[{id}]={StoreWord(Expression(rhs,Signals[id].Width),Signals[id],ExpressionWidth(rhs))};");
+                foreach (var step in level) EmitSettleStep(code, step, coverage);
+                continue;
             }
-            else
+            code.AppendLine($"_vs_pool.parallel_for({level.Count},[&](size_t _lvl_i){{switch(_lvl_i){{");
+            for (int idx = 0; idx < level.Count; ++idx)
             {
-                code.AppendLine("{auto next=s;");int unique=0;Statement(code,step,ref unique,coverage:coverage);code.AppendLine("}");
+                code.Append($"case {idx}:{{");
+                EmitSettleStep(code, level[idx], coverage);
+                code.AppendLine("}break;");
             }
+            code.AppendLine("}});");
         }
     }
 }

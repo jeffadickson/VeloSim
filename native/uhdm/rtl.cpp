@@ -116,7 +116,10 @@ if(op==vpiWildEqOp)return 1;
 #ifdef vpiWildNeqOp
 if(op==vpiWildNeqOp)return 1;
 #endif
-need(!args.empty(),"expression width requires operands");if(op==vpiLShiftOp||op==vpiRShiftOp||op==vpiArithRShiftOp)return width(args[0],depth+1);size_t start=op==vpiConditionOp?1:0;need(start<args.size(),"conditional width requires branches");int n=0;for(size_t i=start;i<args.size();i++)n=std::max(n,width(args[i],depth+1));return n;}if(type(h)==vpiFuncCall)return width(one(one(h,vpiFunction),vpiReturn),depth+1);if(type(h)==vpiConstant)return int(bits(h).size());if(type(h)==vpiSysFuncCall){auto args=many(h,vpiArgument);auto fn=name(h);if((fn=="$bits"||fn=="$clog2"||fn=="$countones"||fn=="$test$plusargs")&&args.size()==1)return 32;if((fn=="$onehot"||fn=="$onehot0"||fn=="$isunknown")&&args.size()==1)return 1;if(fn=="$urandom"&&args.empty())return 32;if(fn=="$urandom_range"&&(args.size()==1||args.size()==2))return 32;need((fn=="$signed"||fn=="$unsigned")&&args.size()==1,"unsupported system function width");return width(args[0],depth+1);}auto actual=one(h,vpiActual);if(is_parameter_reference(h))return parameter_reference_width(h);if(actual&&identity(actual)!=identity(h))return width(actual,depth+1);auto spec=word_spec(h);if(aggregate_spec(spec))return aggregate_width(spec,depth+1);if(auto w=atom_width(spec))return w;need((type(spec)==vpiLogicTypespec||type(spec)==vpiBitTypespec),"only logic word widths supported: "+name(h));auto ranges=many(spec,vpiRange);need(ranges.size()<=1,"multidimensional packed words unsupported");if(ranges.empty())return 1;auto l=integer(one(ranges[0],vpiLeftRange)),r=integer(one(ranges[0],vpiRightRange));need(l>=r&&l-r<uint64_t(limits.max_word_bits),"word width exceeds limit");return int(l-r+1);}
+#ifdef vpiInsideOp
+if(op==vpiInsideOp)return 1;
+#endif
+need(!args.empty(),"expression width requires operands");if(op==vpiLShiftOp||op==vpiRShiftOp||op==vpiArithRShiftOp)return width(args[0],depth+1);size_t start=op==vpiConditionOp?1:0;need(start<args.size(),"conditional width requires branches");int n=0;for(size_t i=start;i<args.size();i++)n=std::max(n,width(args[i],depth+1));return n;}if(type(h)==vpiFuncCall)return width(one(one(h,vpiFunction),vpiReturn),depth+1);if(type(h)==vpiConstant)return int(bits(h).size());if(type(h)==vpiSysFuncCall){auto args=many(h,vpiArgument);auto fn=name(h);if((fn=="$bits"||fn=="$clog2"||fn=="$countones"||fn=="$test$plusargs")&&args.size()==1)return 32;if((fn=="$onehot"||fn=="$onehot0"||fn=="$isunknown")&&args.size()==1)return 1;if((fn=="$urandom"||fn=="$random")&&args.empty())return 32;if(fn=="$urandom_range"&&(args.size()==1||args.size()==2))return 32;need((fn=="$signed"||fn=="$unsigned")&&args.size()==1,"unsupported system function width");return width(args[0],depth+1);}auto actual=one(h,vpiActual);if(is_parameter_reference(h))return parameter_reference_width(h);if(actual&&identity(actual)!=identity(h))return width(actual,depth+1);auto spec=word_spec(h);if(aggregate_spec(spec))return aggregate_width(spec,depth+1);if(auto w=atom_width(spec))return w;need((type(spec)==vpiLogicTypespec||type(spec)==vpiBitTypespec),"only logic word widths supported: "+name(h));auto ranges=many(spec,vpiRange);need(ranges.size()<=1,"multidimensional packed words unsupported");if(ranges.empty())return 1;auto l=integer(one(ranges[0],vpiLeftRange)),r=integer(one(ranges[0],vpiRightRange));need(l>=r&&l-r<uint64_t(limits.max_word_bits),"word width exceeds limit");return int(l-r+1);}
 bool declared_signed(H h){auto spec=word_spec(h);return vpi_get(vpiSigned,h)||(spec&&vpi_get(vpiSigned,spec));}
 void logic_word(H h){auto spec=word_spec(h);if(atom_width(spec))return;if(aggregate_spec(spec)){aggregate_width(spec,0);aggregate_state(spec,0);return;}need((type(spec)==vpiLogicTypespec||type(spec)==vpiBitTypespec),"only packed logic/bit words supported");auto ranges=many(spec,vpiRange);need(ranges.size()<=1,"multidimensional packed words unsupported");if(!ranges.empty())need(integer(one(ranges[0],vpiRightRange))==0&&integer(one(ranges[0],vpiLeftRange))==uint64_t(width(h)-1),"packed words require descending zero-based bounds [width-1:0]");}
 
@@ -126,6 +129,7 @@ void output_budget(const std::string& value){need(value.size()<=limits.max_json_
 bool signed_expression(H h,int depth=0){
  need(h&&depth<limits.max_depth,"signedness depth exceeded");
  if(type(h)==vpiConstant){auto spec=word_spec(h);const char* p=vpi_get_str(vpiDecompile,h);std::string literal=p?p:"";return (!literal.empty()&&literal.find_first_not_of("0123456789_")==std::string::npos)||vpi_get(vpiSigned,h)||(spec&&vpi_get(vpiSigned,spec))||vpi_get(vpiConstType,h)==vpiIntConst||literal.find("'s")!=std::string::npos||literal.find("'S")!=std::string::npos;}
+ if(type(h)==vpiSysFuncCall&&name(h)=="$random")return true;
  if(is_parameter_reference(h))return parameter_reference_signed(h);
  if(auto declaration=bound_variable_reference(h))return declared_signed(declaration);
  if(type(h)!=vpiOperation)return false; // Structural expression signedness is inferred from normalized declarations.
@@ -136,6 +140,9 @@ bool signed_expression(H h,int depth=0){
 #endif
 #ifdef vpiWildNeqOp
  if(op==vpiWildNeqOp)return false;
+#endif
+#ifdef vpiInsideOp
+ if(op==vpiInsideOp)return false;
 #endif
  if(op==vpiConditionOp)return a.size()==3&&signed_expression(a[1],depth+1)&&signed_expression(a[2],depth+1);
  if(op==vpiLShiftOp||op==vpiRShiftOp||op==vpiArithLShiftOp||op==vpiArithRShiftOp)return !a.empty()&&signed_expression(a[0],depth+1);
@@ -191,12 +198,34 @@ std::string expr_core(H h,int depth){
   if((fn=="$countones"||fn=="$onehot"||fn=="$onehot0"||fn=="$isunknown")&&args.size()==1)return "{\"kind\":"+q(fn.substr(1))+",\"args\":["+expr(args[0],depth+1)+"]}";
   if(fn=="$test$plusargs"&&args.size()==1){const char* p=vpi_get_str(vpiDecompile,args[0]);std::string raw=p?p:"";if(raw.size()>=2&&raw.front()=='"'&&raw.back()=='"')raw=raw.substr(1,raw.size()-2);need(!raw.empty(),"$test$plusargs requires a non-empty string literal");return "{\"kind\":\"test_plusargs\",\"prefix\":"+q(raw)+"}";}
   if(fn=="$urandom"&&args.empty())return "{\"kind\":\"urandom\"}";
+  if(fn=="$random"&&args.empty())return "{\"kind\":\"random\"}";
   if(fn=="$urandom_range"&&(args.size()==1||args.size()==2))return "{\"kind\":\"urandom_range\",\"max\":"+expr(args[0],depth+1)+(args.size()==2?",\"min\":"+expr(args[1],depth+1):"")+"}";
   need((fn=="$signed"||fn=="$unsigned")&&args.size()==1,"unsupported system function");
   return "{\"kind\":"+q(fn=="$signed"?"castsigned":"castunsigned")+",\"args\":["+expr(args[0],depth+1)+"]}";
  }
  if(type(h)==vpiOperation){
   auto operation=vpi_get(vpiOpType,h);auto concatOperands=many(h,vpiOperand);
+#ifdef vpiInsideOp
+  if(operation==vpiInsideOp){
+   need(concatOperands.size()>=2&&concatOperands.size()<=257,"inside requires lhs and 1..256 set items");
+   std::string s="{\"kind\":\"inside\",\"value\":"+expr(concatOperands[0],depth+1)+",\"items\":[";
+   for(size_t i=1;i<concatOperands.size();++i){
+    if(i>1)s+=",";
+    auto item=concatOperands[i];
+#ifdef vpiColonOp
+    if(type(item)==vpiOperation&&vpi_get(vpiOpType,item)==vpiColonOp){
+     auto bounds=many(item,vpiOperand);
+     need(bounds.size()==2,"inside range requires [lo:hi]");
+     s+="{\"lo\":"+expr(bounds[0],depth+1)+",\"hi\":"+expr(bounds[1],depth+1)+"}";
+    }else
+#endif
+    {
+     s+=expr(item,depth+1);
+    }
+   }
+   return s+"]}";
+  }
+#endif
   if(operation==vpiConcatOp||operation==vpiMultiConcatOp){std::vector<std::string> values;if(operation==vpiMultiConcatOp){need(concatOperands.size()==2,"replication requires count and expression");auto count=selected_constant(concatOperands[0]);need(count>=1&&count<=uint64_t(limits.max_word_bits)&&count*uint64_t(width(concatOperands[1]))<=uint64_t(limits.max_word_bits),"replication exceeds word width limit");auto value=expr(concatOperands[1],depth+1);need(value.size()*count+count*32<=limits.max_json_bytes,"replication exceeds normalized output budget");for(uint64_t i=0;i<count;i++)values.push_back(value);}else{need(!concatOperands.empty()&&concatOperands.size()<=size_t(limits.max_word_bits),"concat operand limit exceeded");int total=0;size_t expanded=0;for(auto operand:concatOperands){total+=width(operand);need(total<=limits.max_word_bits,"concat exceeds word width limit");auto value=expr(operand,depth+1);expanded+=value.size();need(expanded<=limits.max_json_bytes,"concat expanded byte budget exceeded");values.push_back(std::move(value));}}auto value=concat_tree(values,0,values.size());output_budget(value);return value;}
   static const std::map<int,std::string> ops={{vpiAddOp,"add"},{vpiSubOp,"sub"},{vpiLogAndOp,"and"},{vpiNotOp,"not"},{vpiEqOp,"eq"},{vpiConcatOp,"concat"},{vpiBitAndOp,"bitand"},{vpiBitOrOp,"bitor"},{vpiBitXorOp,"bitxor"},{vpiBitNegOp,"bitnot"},
    {vpiLogOrOp,"or"},{vpiNeqOp,"neq"},{vpiCaseEqOp,"caseeq"},{vpiCaseNeqOp,"caseneq"},
@@ -300,6 +329,26 @@ std::string stmt_impl(H h,int depth,bool control){
  if(type(h)==vpiSysTaskCall){
   auto fn=name(h);auto args=many(h,vpiArgument);
   if(fn=="$finish")return "{\"kind\":\"finish\"}";
+  if(fn=="$fatal"){
+   int code=1;
+   std::string fmt;
+   if(!args.empty()&&type(args[0])==vpiConstant)code=int(integer(args[0]));
+   if(args.size()>=2&&type(args[1])==vpiConstant){
+    auto c=static_cast<const UHDM::constant*>(identity(args[1]));
+    std::string raw(c->VpiValue());auto colon=raw.find(':');
+    if(colon!=std::string::npos&&raw.substr(0,colon)=="STRING")fmt=raw.substr(colon+1);
+   }
+   std::string out="{\"kind\":\"fatal\",\"code\":"+std::to_string(code);
+   if(!fmt.empty()){
+    out+=",\"format\":"+q(fmt);
+    if(args.size()>2){
+     out+=",\"args\":[";
+     for(size_t i=2;i<args.size();++i){if(i>2)out+=",";out+=expr(args[i],depth+1);}
+     out+="]";
+    }
+   }
+   return out+"}";
+  }
   if((fn=="$display"||fn=="$write")&&!args.empty()&&type(args[0])==vpiConstant){
    auto c=static_cast<const UHDM::constant*>(identity(args[0]));
    std::string raw(c->VpiValue());auto colon=raw.find(':');

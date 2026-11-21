@@ -13,6 +13,11 @@ namespace vsrtl {
 struct Signal { const char* name; int width, direction; bool is_signed=false; bool two_state=false; };
 struct CoveragePoint { const char* id; const char* kind; uint64_t hits; };
 struct ToggleCoverage { const char* signal; int width; Bits rise; Bits fall; };
+struct CoverBin { std::string name; uint64_t lo = 0; uint64_t hi = 0; bool is_default = false; bool is_ignore = false; bool is_illegal = false; uint64_t hits = 0; };
+struct CoverpointSpec { std::string name; std::vector<CoverBin> bins; };
+struct CrossSpec { std::string name; size_t cp_a = 0; size_t cp_b = 0; std::vector<uint64_t> hits; };
+struct CovergroupSpec { std::string name; std::vector<CoverpointSpec> points; std::vector<CrossSpec> crosses; uint64_t samples = 0; };
+struct PropertyStat { std::string name; std::string kind; uint64_t passes = 0; uint64_t failures = 0; uint64_t vacuous = 0; };
 class Port;
 class VS_VPI_API Model {
  friend class Port;
@@ -69,9 +74,10 @@ public:
   evalSlow();
  }
  void final(); void timeInc(uint64_t delta);
- uint64_t time() const; bool gotFinish() const; bool evalNeeded() const; bool started() const;
+ uint64_t time() const; bool gotFinish() const; int exitCode() const; bool evalNeeded() const; bool started() const;
  void requestEval();
- void finish(); void useVpi(); void loadVpi(const std::string& path);
+ void finish(); void fatal(int code, const std::string& message = "");
+ void useVpi(); void loadVpi(const std::string& path);
  void openVcd(const std::string& path, const std::string& timescale = "1ns",
               const std::vector<std::string>& filter_prefixes = {});
  void openVcdGz(const std::string& path, const std::string& timescale = "1ns",
@@ -98,11 +104,20 @@ public:
  uint64_t randomSeed() const;
  uint32_t nextUrandom();
  uint32_t nextUrandomRange(uint32_t max_val, uint32_t min_val = 0);
+ int32_t nextRandom();
  void forceSignal(size_t id, W value);
  void releaseSignal(size_t id);
  bool isForced(size_t id) const;
  void enableToggleCoverage(bool enabled = true);
  std::vector<ToggleCoverage> toggleCoverage() const;
+ size_t registerCovergroup(CovergroupSpec spec);
+ void sampleCovergroup(size_t cg_id, const std::vector<uint64_t>& values, const std::vector<bool>& known);
+ const std::vector<CovergroupSpec>& covergroups() const;
+ size_t registerProperty(std::string name, std::string kind);
+ void recordPropertyPass(size_t prop_id);
+ void recordPropertyFail(size_t prop_id);
+ void recordPropertyVacuous(size_t prop_id);
+ const std::vector<PropertyStat>& propertyStats() const;
  virtual std::vector<CoveragePoint> coveragePoints() const { return {}; }
  void writeCoverageJson(const std::string& path) const;
  const std::string& name() const; const std::vector<Signal>& signals() const;

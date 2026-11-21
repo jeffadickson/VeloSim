@@ -573,7 +573,7 @@ STATEMENT: >>>
 The simulator shall provide losslessly compressed digital waveform output in a documented format readable by an independent waveform reader. The trace shall preserve the declared widths, hierarchical signal identities, supported four-state values and simulation timestamps/time precision for the selected traced signals. Trace selection and output failures shall be reported explicitly; an uncompressed text comparison trace alone shall not satisfy this requirement.
 <<<
 COMMENT: >>>
-User explicitly requested compressed waveform output. First verified lossless compressed slice is active under VS-RTL-VCD-001: zero-dependency RFC 1952 .vcd.gz (RFC 1951 LZ77 fixed-Huffman DEFLATE in native/rtl/gzip_stream.h for C++ and System.IO.Compression.GZipStream for C#) with fail-closed hierarchical signal selection and independent GZipStream decompression checks in RtlVerilatorGapsWave3Tests. Tracked by WP-17, https://github.com/jeffadickson/VeloSim/issues/18. Optional binary FST (GTKWave libfst, LIB-11) and clean-machine Windows qualification remain open before closing this broad Draft requirement.
+User explicitly requested compressed waveform output. Verified lossless compressed slice is active under VS-RTL-VCD-001 across all three backends: zero-dependency RFC 1952 .vcd.gz (RFC 1951 LZ77 fixed-Huffman DEFLATE in native/rtl/gzip_stream.h for C++ and pure safe Rust in src/VeloSim.Core/RtlRustEmitter.cs, plus System.IO.Compression.GZipStream for C#) with fail-closed hierarchical signal selection and independent GZipStream decompression checks in RtlVerilatorGapsWave3Tests and RtlVerilatorGapsWave4Tests. Tracked by WP-17, https://github.com/jeffadickson/VeloSim/issues/18. Optional binary FST (GTKWave libfst, LIB-11) and clean-machine Windows qualification remain open before closing this broad Draft requirement.
 <<<
 RELATIONS:
 - TYPE: File
@@ -587,7 +587,11 @@ RELATIONS:
 - TYPE: File
   VALUE: native/rtl/vcd_trace.h
 - TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
 
 [REQUIREMENT]
 UID: VS-VERIFY-SIMD-001
@@ -972,10 +976,10 @@ UID: VS-RTL-VCD-001
 STATUS: Active
 TITLE: IEEE 1364 hierarchical four-state VCD and RFC 1952 .vcd.gz waveform tracing
 STATEMENT: >>>
-External C++, C# and safe Rust models shall support hierarchical four-state IEEE 1364 VCD waveform tracing via openVcd/OpenVcd/open_vcd, dumpVcd/DumpVcd/dump_vcd and closeVcd/CloseVcd/close_vcd (automatically closed on final()/Final()/drop). C++ and C# models shall additionally support lossless RFC 1952 .vcd.gz output via openVcdGz/OpenVcdGz (backed by zero-dependency LZ77 fixed-Huffman DEFLATE in C++ and GZipStream in C#) and fail-closed hierarchical signal selection (filter_prefixes/filterPrefixes). Traces shall build nested $scope trees from dotted signal paths, support 1..256-bit (and opt-in 512-bit in C++ under VSRTL_MAX_WORD_BITS=512) 0/1/x/z values with IEEE compact vector trimming, and suppress redundant unchanged timestamps via delta compression with zero overhead when tracing is disabled.
+External C++, C# and safe Rust models shall support hierarchical four-state IEEE 1364 VCD waveform tracing via openVcd/OpenVcd/open_vcd, dumpVcd/DumpVcd/dump_vcd and closeVcd/CloseVcd/close_vcd (automatically closed on final()/Final()/drop). All three backends (C++, C# and safe Rust) shall additionally support lossless RFC 1952 .vcd.gz output via openVcdGz/OpenVcdGz/open_vcd_gz (backed by zero-dependency LZ77 fixed-Huffman DEFLATE in C++ and safe Rust and GZipStream in C#) and fail-closed hierarchical signal selection (filter_prefixes/filterPrefixes/open_vcd_filtered/open_vcd_gz_filtered). Traces shall build nested $scope trees from dotted signal paths, support 1..256-bit (and opt-in 512-bit in C++ under VSRTL_MAX_WORD_BITS=512) 0/1/x/z values with IEEE compact vector trimming, and suppress redundant unchanged timestamps via delta compression with zero overhead when tracing is disabled.
 <<<
 COMMENT: >>>
-WP-17 (G52) vertical slice across C++, C# and safe Rust backends. Standard VCD and zero-dependency RFC 1952 .vcd.gz with fail-closed hierarchical trace selection are implemented and verified; optional binary FST streaming and clean-machine Windows verification remain tracked under Draft VS-TRACE-COMPRESSED-001.
+WP-17 (G52) vertical slice across C++, C# and safe Rust backends. Standard VCD and zero-dependency RFC 1952 .vcd.gz with fail-closed hierarchical trace selection are implemented and verified across all three targets; optional binary FST streaming and clean-machine Windows verification remain tracked under Draft VS-TRACE-COMPRESSED-001.
 <<<
 RELATIONS:
 - TYPE: File
@@ -1000,6 +1004,8 @@ RELATIONS:
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave2Tests.cs
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
 
 [REQUIREMENT]
 UID: VS-RTL-CHECKPOINT-001
@@ -1038,12 +1044,12 @@ RELATIONS:
 [REQUIREMENT]
 UID: VS-RTL-SYSTASK-001
 STATUS: Active
-TITLE: Memory-file loading, formatted display and simulation finish tasks
+TITLE: Memory-file loading, formatted display, finish and fatal tasks
 STATEMENT: >>>
-The runtime and IR emitters shall support IEEE 1364 $readmemh/$readmemb memory initialization (loadMemoryHex/loadMemoryBin with @hex_addr directives, // and /* */ comments, '_' separators and four-state x/z values), formatted display statements (%d, %u, %x/%h, %b, %0-trimmed forms and %% routed through an overridable sink), and finish statements setting gotFinish(). The UHDM frontend shall lower $finish, $display and $write system task calls where supported by the active UHDM library headers.
+The runtime and IR emitters shall support IEEE 1364 $readmemh/$readmemb memory initialization (loadMemoryHex/loadMemoryBin with @hex_addr directives, // and /* */ comments, '_' separators and four-state x/z values), formatted display statements (%d, %u, %x/%h, %b, %0-trimmed forms and %% routed through an overridable sink), finish statements setting gotFinish(), and fatal statements setting gotFinish() and exitCode() while rolling back mutated state atomically across C++, C# and safe Rust models. The UHDM frontend shall lower $finish, $fatal, $display and $write system task calls where supported by the active UHDM library headers.
 <<<
 COMMENT: >>>
-WP-10 (G35/G36) vertical slice across C++ (W, W64, W2), C# and Rust emitters plus guarded UHDM lowering in native/uhdm/rtl.cpp. General file I/O ($fopen/$fscanf), strings, real values, plusargs and $readmemh UHDM lowering remain open under WP-10.
+WP-10 (G35/G36) vertical slice across C++ (W, W64, W2), C# and Rust emitters plus guarded UHDM lowering in native/uhdm/rtl.cpp. General file I/O ($fopen/$fscanf), strings, real values and $readmemh UHDM lowering remain open under WP-10.
 <<<
 RELATIONS:
 - TYPE: File
@@ -1068,6 +1074,8 @@ RELATIONS:
   VALUE: tests/native/rtl_runtime_tests.cpp
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave1Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
 
 [REQUIREMENT]
 UID: VS-RTL-ASSERT-001
@@ -1170,12 +1178,12 @@ RELATIONS:
 [REQUIREMENT]
 UID: VS-RTL-WILDCARD-001
 STATUS: Active
-TITLE: Multi-label case, casez/casex and wildcard equality operators
+TITLE: Multi-label case, casez/casex, wildcard equality and inside operators
 STATEMENT: >>>
-The IR, UHDM lowering and C++, C# and safe Rust emitters shall support multi-label case items (matches arrays), IEEE 1800 casez and casex matching semantics (Z/? wildcards in casez, X/Z/? wildcards in casex) and wildcard equality operators (wildeq ==? and wildneq !=? with right-hand X/Z don't-care bits and left-hand X/Z uncertainty propagation).
+The IR, UHDM lowering and C++, C# and safe Rust emitters shall support multi-label case items (matches arrays), IEEE 1800 casez and casex matching semantics (Z/? wildcards in casez, X/Z/? wildcards in casex), wildcard equality operators (wildeq ==? and wildneq !=? with right-hand X/Z don't-care bits and left-hand X/Z uncertainty propagation), and SystemVerilog inside set/range membership expressions (supporting value items with wildcard matching and inclusive [lo:hi] ranges).
 <<<
 COMMENT: >>>
-WP-07 (G23) vertical slice across all compiled RTL targets and UHDM lowering. General streaming, assignment-pattern and inside expressions remain open under WP-07.
+WP-07 (G23) vertical slice across all compiled RTL targets and guarded UHDM lowering. General streaming and assignment-pattern expressions remain open under WP-07.
 <<<
 RELATIONS:
 - TYPE: File
@@ -1198,6 +1206,8 @@ RELATIONS:
   VALUE: tests/native/rtl_runtime_tests.cpp
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave2Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
 
 [REQUIREMENT]
 UID: VS-RTL-COVERAGE-001
@@ -1207,7 +1217,7 @@ STATEMENT: >>>
 When explicitly enabled via rtl-export --coverage (enableCoverage), emitted C++ models (W, W64 and W2) shall instrument if/else branches, case items and per-signal bit-toggle rise/fall transitions (up to 512 bits) exposed through Model::coveragePoints() and Model::toggleCoverage(), serialized by Model::writeCoverageJson() in the velosim.dut.coverage.v1 JSON format. The coverage-merge CLI command (RtlCoverageMerge) shall merge multiple compatible velosim.dut.coverage.v1 reports by summing branch/case hit counts and bitwise-ORing toggle masks while failing closed on schema, model, point or width mismatches. When disabled, zero instrumentation counters or overhead shall be emitted.
 <<<
 COMMENT: >>>
-WP-15 (G48) vertical slice providing true simulated-DUT branch/case/toggle coverage and deterministic multi-run merge distinct from simulator C# code coverage. Source-line mapping and SystemVerilog covergroups remain open under WP-15.
+WP-15 (G48) vertical slice providing true simulated-DUT branch/case/toggle coverage and deterministic multi-run merge distinct from simulator C# code coverage. Source-line mapping remains open under WP-15; functional covergroups are tracked under VS-RTL-FUNC-COV-001.
 <<<
 RELATIONS:
 - TYPE: File
@@ -1304,10 +1314,10 @@ UID: VS-RTL-PLUSARGS-RNG-001
 STATUS: Active
 TITLE: Runtime plusargs and deterministic seeded HDL RNG
 STATEMENT: >>>
-External C++, C# and safe Rust models shall support runtime plusarg configuration (setPlusargs/SetPlusargs/set_plusargs) and deterministic SplitMix64 RNG seeding (setRandomSeed/SetRandomSeed/set_random_seed), executing $test$plusargs (test_plusargs), $value$plusargs (value_plusargs for %d/%u/%x/%h/%b/%o), $urandom (urandom) and $urandom_range (urandom_range) with bit-identical results across C++, C# and safe Rust. Active C++ model plusargs shall be exposed via VPI vpi_get_vlog_info.
+External C++, C# and safe Rust models shall support runtime plusarg configuration (setPlusargs/SetPlusargs/set_plusargs) and deterministic seeding (setRandomSeed/SetRandomSeed/set_random_seed), executing $test$plusargs (test_plusargs), $value$plusargs (value_plusargs for %d/%u/%x/%h/%b/%o), $urandom (urandom), $urandom_range (urandom_range) via SplitMix64 and IEEE 1364 $random (random) via deterministic LCG (69069*s+1) with bit-identical results across C++, C# and safe Rust. Active C++ model plusargs shall be exposed via VPI vpi_get_vlog_info.
 <<<
 COMMENT: >>>
-WP-10 (G37) and WP-13 (G44) vertical slice across C++, C#, safe Rust and UHDM lowering. Legacy $random LCG, $dist_* distributions and string %s plusargs remain open under WP-10.
+WP-10 (G37) and WP-13 (G44) vertical slice across C++, C#, safe Rust and UHDM lowering. $dist_* distributions and string %s plusargs remain open under WP-10.
 <<<
 RELATIONS:
 - TYPE: File
@@ -1330,6 +1340,8 @@ RELATIONS:
   VALUE: tests/native/external_tests.cpp
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
 
 [REQUIREMENT]
 UID: VS-RTL-FORCE-001
@@ -1339,7 +1351,7 @@ STATEMENT: >>>
 External C++, C# and safe Rust models shall support runtime signal force and release (both IR force/release statements and host forceSignal/releaseSignal/isForced APIs) overriding sequential and combinational updates until released, with zero fast-path eval() overhead when no signal is forced. The C++ VPI layer shall additionally support vpiForceFlag and vpiReleaseFlag in vpi_put_value, cbAfterDelay and cbReadWriteSynch callbacks, and vpiMemory/vpiMemoryWord iteration and word read/write handles against live model state.
 <<<
 COMMENT: >>>
-WP-11 (G41) and WP-13 (G44/G45) vertical slice. UHDM force/release lowering, multi-driver net resolution, inertial VPI delays and full cocotb/GPI client qualification remain open under WP-11 and WP-13.
+WP-11 (G41) and WP-13 (G44/G45) vertical slice. UHDM force/release lowering, inertial VPI delays and full cocotb/GPI client qualification remain open under WP-11 and WP-13.
 <<<
 RELATIONS:
 - TYPE: File
@@ -1362,6 +1374,131 @@ RELATIONS:
   VALUE: tests/native/external_tests.cpp
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave3Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-RESOLVED-001
+STATUS: Active
+TITLE: IEEE 1800 multi-driver four-state net resolution
+STATEMENT: >>>
+The runtime and C++ (W, W64, W2), C# and safe Rust emitters shall support multi-driver net resolution via the resolve IR expression for wire/tri, wand/triand, wor/trior, tri0 and tri1 nets following IEEE 1800-2017 Tables 6-1, 6-2 and 6-3 (0/1/X/Z pairwise resolution, Z transparency, conflict-to-X on wire/tri, 0-dominance on wand, 1-dominance on wor, and undriven Z pull-down/pull-up on tri0/tri1) with bit-identical results across all compiled targets.
+<<<
+COMMENT: >>>
+WP-11 (G39) vertical slice verified by full 4x4 truth-table native tests and cross-target C++/C#/Rust tests. UHDM inout port lowering and drive-strength/pull-gate primitives remain open under WP-11.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/runtime.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlVerification.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-SVA-001
+STATUS: Active
+TITLE: Bounded concurrent SVA property monitors and sampled-value functions
+STATEMENT: >>>
+The IR and C++ (W, W64, W2), C# and safe Rust emitters shall support top-level concurrent SVA properties (assert, cover and assume) clocked on posedge or negedge with optional disable_iff reset gating, optional antecedent, bounded implication delay 0..64 (|->, |=>, ##N) and Preponed-region sampled-value functions ($past 1..16 ticks, $rose, $fell and $stable). Failing assert properties shall increment property failure counters, throw/return an error and roll back live DUT signal/memory state atomically; pass, failure and vacuous counters shall be exposed on C++ (Model::propertyStats and velosim.dut.coverage.v1 JSON), C# and safe Rust models.
+<<<
+COMMENT: >>>
+WP-14 (G47) vertical slice providing executable concurrent SVA property monitors and sampled-value functions across C++, C# and safe Rust. UHDM concurrent SVA lowering continues to fail closed via native/uhdm/rtl_audit.h (WP-20) until full frontend sequence lowering is qualified.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlVerification.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: tests/native/external_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-FUNC-COV-001
+STATUS: Active
+TITLE: Functional covergroups, bins, 2-way crosses and multi-run merge
+STATEMENT: >>>
+The IR and C++ (W, W64, W2) runtime/emitters shall support top-level functional covergroups (coverpoints with explicit value, inclusive [lo:hi] range, default, ignore_bins and illegal_bins, plus 2-way cross bins) sampled via sample_covergroup statements. Hitting an illegal_bins entry shall fail closed with std::runtime_error, while ignore_bins entries shall be excluded from coverpoint and cross bin hits per IEEE 1800 §19.5.4. Covergroup and SVA property counters shall serialize into velosim.dut.coverage.v1 JSON via Model::writeCoverageJson() and merge across runs via RtlCoverageMerge / coverage-merge while failing closed on covergroup, coverpoint, bin, cross or property mismatches.
+<<<
+COMMENT: >>>
+WP-15 (G49) vertical slice delivering functional coverage and cross-coverage collection + merge on C++ models. UHDM covergroup lowering, transition bins and multi-way (>2) crosses remain open under WP-15.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlVerification.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCoverageMerge.cs
+- TYPE: File
+  VALUE: tests/native/external_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-PARALLEL-001
+STATUS: Active
+TITLE: Structural combinational DAG levelizer and opt-in multi-threaded settle
+STATEMENT: >>>
+RtlDesign shall topologically levelize acyclic combinational assignments into SettledLevels so independent assignments at the same DAG depth can execute concurrently without data races. Under opt-in rtl-export --threads N (N in 2..64 on C++ W, W64 and W2 targets), exported SDKs shall bundle header-only vsrtl::ThreadPool (native/rtl/thread_pool.h) and dispatch multi-step independent combinational levels via deterministic barrier-synchronized parallel_for producing bit-for-bit identical results to single-threaded --threads 1 execution. Default --threads 1 exports shall omit thread_pool.h with zero overhead, and --threads > 1 on C# or Rust targets shall fail closed.
+<<<
+COMMENT: >>>
+WP-18 (G56) vertical slice delivering deterministic structural DAG levelization and opt-in multi-threaded combinational evaluation on C++ models. Multi-core speedup qualification on large netlists and sequential macro-task partitioning remain open under WP-18.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/thread_pool.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCombinational.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlDesign.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlTwoState64.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/CliOptions.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/ToolCli.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlVerilatorGapsWave4Tests.cs
+
 
 
 

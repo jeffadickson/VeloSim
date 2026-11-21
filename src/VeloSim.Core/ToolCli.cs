@@ -39,7 +39,8 @@ public static class ToolCli
             var stateMode = options.Flag("--two-state") ? RtlStateMode.TwoState : RtlStateMode.FourState;
             var limits = options.Flag("--large-design") ? RtlDesignLimits.Large : RtlDesignLimits.Bounded;
             bool enableCoverage = options.Flag("--coverage");
-            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage).ConfigureAwait(false)); return 0;
+            int threads = options.Int("--threads", 1);
+            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage, threads).ConfigureAwait(false)); return 0;
         }
         if (args.Length > 0 && args[0] == "coverage-merge")
         {

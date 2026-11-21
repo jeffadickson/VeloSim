@@ -7,7 +7,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> RustPortNames()
     {
         var reserved = (
-            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model time time_inc default open_vcd dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range force_signal release_signal is_forced save_checkpoint restore_checkpoint"
+            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model time time_inc default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint got_finish exit_code property_passes property_failures property_vacuous"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -76,11 +76,66 @@ public sealed partial class RtlDesign
         if (kind == "indexedselect") return $"w64::selidx({RsExpr64(e.GetProperty("value"))},{RsExpr64(e.GetProperty("base"))},{e.GetProperty("width").GetInt32()},{(e.GetProperty("descending").GetBoolean() ? "true" : "false")})?";
         if (kind == "test_plusargs") return Extend($"W64::lit(self.test_plusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}) as u64, 32)");
         if (kind == "urandom") return Extend("W64::lit(self.next_urandom() as u64, 32)");
+        if (kind == "random") return Extend("W64::lit(self.next_random() as u32 as u64, 32)");
         if (kind == "urandom_range")
         {
             string maxExpr = $"({RsExpr64(e.GetProperty("max"))}).v as u32";
             string minExpr = e.TryGetProperty("min", out var minEl) ? $"({RsExpr64(minEl)}).v as u32" : "0u32";
             return Extend($"{{ let _rmax = {maxExpr}; let _rmin = {minExpr}; W64::lit(self.next_urandom_range(_rmax, _rmin) as u64, 32) }}");
+        }
+        if (kind == "resolve")
+        {
+            int nk = ParseNetKind(e.GetProperty("net").GetString()!);
+            int rw = Math.Max(context, ExpressionWidth(e));
+            string drivers = string.Join(", ", e.GetProperty("args").EnumerateArray().Select(d => RsExpr64(d, rw)));
+            return Extend($"w64::resolve_net({nk}, &[{drivers}], {rw})");
+        }
+        if (kind == "inside")
+        {
+            var valEl = e.GetProperty("value");
+            bool vSigned = ExpressionSigned(valEl);
+            int vw = ExpressionWidth(valEl);
+            var parts = new List<string>();
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    int cw = Math.Max(vw, Math.Max(ExpressionWidth(loEl), ExpressionWidth(hiEl)));
+                    bool cs = vSigned && ExpressionSigned(loEl) && ExpressionSigned(hiEl);
+                    string cmp = cs ? "w64::scmp" : "w64::cmp";
+                    parts.Add($"w64::land({cmp}({RsExpr64(valEl, cw, cs)},{RsExpr64(loEl, cw, cs)},3),{cmp}({RsExpr64(valEl, cw, cs)},{RsExpr64(hiEl, cw, cs)},1))");
+                }
+                else
+                {
+                    int cw = Math.Max(vw, ExpressionWidth(it));
+                    bool cs = vSigned && ExpressionSigned(it);
+                    parts.Add($"w64::wildeq({RsExpr64(valEl, cw, cs)},{RsExpr64(it, cw, cs)})");
+                }
+            }
+            string acc = parts[0];
+            for (int i = 1; i < parts.Count; ++i) acc = $"w64::lor({acc},{parts[i]})";
+            return acc;
+        }
+        if (kind == "past")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            int ticks = e.TryGetProperty("ticks", out var tEl) ? tEl.GetInt32() : 1;
+            return Extend($"self.past_{sid}[{ticks - 1}]");
+        }
+        if (kind == "rose")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"W64::lit(if w64::edge(w64::selbit(self.past_{sid}[0],W64::lit(0,1)),w64::selbit(self.s{sid},W64::lit(0,1)),true) {{ 1 }} else {{ 0 }},1)";
+        }
+        if (kind == "fell")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"W64::lit(if w64::edge(w64::selbit(self.past_{sid}[0],W64::lit(0,1)),w64::selbit(self.s{sid},W64::lit(0,1)),false) {{ 1 }} else {{ 0 }},1)";
+        }
+        if (kind == "stable")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"W64::lit(if w64::exact(self.s{sid},self.past_{sid}[0]) {{ 1 }} else {{ 0 }},1)";
         }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ExpressionWidth(e));
@@ -145,11 +200,71 @@ public sealed partial class RtlDesign
         }
         if (kind == "test_plusargs") return Extend($"(self.test_plusargs({CppStringLiteral(e.GetProperty("prefix").GetString()!)}) as u64)");
         if (kind == "urandom") return Extend("(self.next_urandom() as u64)");
+        if (kind == "random") return Extend("(self.next_random() as u32 as u64)");
         if (kind == "urandom_range")
         {
             string maxExpr = $"({RsExpr2(e.GetProperty("max"))}) as u32";
             string minExpr = e.TryGetProperty("min", out var minEl) ? $"({RsExpr2(minEl)}) as u32" : "0u32";
             return Extend($"{{ let _rmax = {maxExpr}; let _rmin = {minExpr}; self.next_urandom_range(_rmax, _rmin) as u64 }}");
+        }
+        if (kind == "resolve")
+        {
+            int nk = ParseNetKind(e.GetProperty("net").GetString()!);
+            int rw = Math.Max(context, ew);
+            string drivers = string.Join(", ", e.GetProperty("args").EnumerateArray().Select(d => RsExpr2(d, rw)));
+            return Extend($"w2::resolve_net({nk}, &[{drivers}], {rw})");
+        }
+        if (kind == "inside")
+        {
+            var valEl = e.GetProperty("value");
+            bool vSigned = ExpressionSigned(valEl);
+            int vw = ExpressionWidth(valEl);
+            var parts = new List<string>();
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    int cw = Math.Max(vw, Math.Max(ExpressionWidth(loEl), ExpressionWidth(hiEl)));
+                    bool cs = vSigned && ExpressionSigned(loEl) && ExpressionSigned(hiEl);
+                    string loC = cs
+                        ? $"w2::scmp({RsExpr2(valEl, cw, true)},{RsExpr2(loEl, cw, true)},{cw},3)"
+                        : $"w2::cmp({RsExpr2(valEl, cw, false)},{RsExpr2(loEl, cw, false)},3)";
+                    string hiC = cs
+                        ? $"w2::scmp({RsExpr2(valEl, cw, true)},{RsExpr2(hiEl, cw, true)},{cw},1)"
+                        : $"w2::cmp({RsExpr2(valEl, cw, false)},{RsExpr2(hiEl, cw, false)},1)";
+                    parts.Add($"w2::land({loC},{hiC})");
+                }
+                else
+                {
+                    int cw = Math.Max(vw, ExpressionWidth(it));
+                    bool cs = vSigned && ExpressionSigned(it);
+                    parts.Add($"w2::eq({RsExpr2(valEl, cw, cs)},{RsExpr2(it, cw, cs)})");
+                }
+            }
+            string acc = parts[0];
+            for (int i = 1; i < parts.Count; ++i) acc = $"w2::lor({acc},{parts[i]})";
+            return acc;
+        }
+        if (kind == "past")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            int ticks = e.TryGetProperty("ticks", out var tEl) ? tEl.GetInt32() : 1;
+            return Extend($"self.past_{sid}[{ticks - 1}]");
+        }
+        if (kind == "rose")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"if w2::edge(self.past_{sid}[0] & 1u64,self.s{sid} & 1u64,true) {{ 1u64 }} else {{ 0u64 }}";
+        }
+        if (kind == "fell")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"if w2::edge(self.past_{sid}[0] & 1u64,self.s{sid} & 1u64,false) {{ 1u64 }} else {{ 0u64 }}";
+        }
+        if (kind == "stable")
+        {
+            int sid = SignalId(e.GetProperty("signal").GetString()!);
+            return $"if self.s{sid} == self.past_{sid}[0] {{ 1u64 }} else {{ 0u64 }}";
         }
         var args = e.GetProperty("args").EnumerateArray().ToArray();
         int width = Math.Max(context, ew);
@@ -327,6 +442,13 @@ public sealed partial class RtlDesign
             case "finish":
                 code.AppendLine("self.finished = true;");
                 break;
+            case "fatal":
+            {
+                int fcode = e.TryGetProperty("code", out var fcEl) ? fcEl.GetInt32() : 1;
+                string fmsg = CppStringLiteral(e.TryGetProperty("format", out var ff) && ff.ValueKind == JsonValueKind.String ? ff.GetString()! : $"RTL $fatal({fcode})");
+                code.AppendLine($"self.exit_code = {fcode}; self.finished = true; return Err({fmsg});");
+                break;
+            }
             case "display":
             {
                 string fmt = CppStringLiteral(e.GetProperty("format").GetString()!);
@@ -437,10 +559,24 @@ public sealed partial class RtlDesign
         code.AppendLine($"pub struct {structName} {{");
         code.AppendLine("    time: u64,");
         code.AppendLine("    finished: bool,");
+        code.AppendLine("    exit_code: i32,");
         code.AppendLine("    vcd: VcdSlot,");
         code.AppendLine("    plusargs: PlusargStore,");
         code.AppendLine("    rng: SplitMix64Rng,");
         code.AppendLine($"    forced: Vec<(usize, {wordType})>,");
+        if (Properties.Count > 0)
+        {
+            code.AppendLine($"    prop_passes: [u64; {Properties.Count}],");
+            code.AppendLine($"    prop_failures: [u64; {Properties.Count}],");
+            code.AppendLine($"    prop_vacuous: [u64; {Properties.Count}],");
+            for (int i = 0; i < Properties.Count; ++i)
+                if (Properties[i].Delay > 0)
+                    code.AppendLine($"    prop_pipe_{i}: [bool; {Properties[i].Delay}],");
+        }
+        foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
+            code.AppendLine($"    past_{sid}: [{wordType}; {depth}],");
+        foreach (int cid in PropertyClockSignalIds())
+            code.AppendLine($"    pclk_{cid}: {wordType},");
         for (int i = 0; i < Signals.Count; ++i)
             code.AppendLine($"    s{i}: {wordType},");
         foreach (int id in eventIds)
@@ -460,10 +596,28 @@ public sealed partial class RtlDesign
         code.AppendLine("        Self {");
         code.AppendLine("            time: 0,");
         code.AppendLine("            finished: false,");
+        code.AppendLine("            exit_code: 0,");
         code.AppendLine("            vcd: VcdSlot::new(),");
         code.AppendLine("            plusargs: PlusargStore::new(),");
         code.AppendLine("            rng: SplitMix64Rng::new(),");
         code.AppendLine("            forced: Vec::new(),");
+        if (Properties.Count > 0)
+        {
+            code.AppendLine($"            prop_passes: [0u64; {Properties.Count}],");
+            code.AppendLine($"            prop_failures: [0u64; {Properties.Count}],");
+            code.AppendLine($"            prop_vacuous: [0u64; {Properties.Count}],");
+            for (int i = 0; i < Properties.Count; ++i)
+                if (Properties[i].Delay > 0)
+                    code.AppendLine($"            prop_pipe_{i}: [false; {Properties[i].Delay}],");
+        }
+        foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
+        {
+            var sig = Signals[sid];
+            string initVal = twoState ? "0u64" : (sig.TwoState ? $"W64::lit(0u64, {sig.Width})" : $"W64::unknown({sig.Width})");
+            code.AppendLine($"            past_{sid}: [{initVal}; {depth}],");
+        }
+        foreach (int cid in PropertyClockSignalIds())
+            code.AppendLine(twoState ? $"            pclk_{cid}: 0u64," : $"            pclk_{cid}: W64::lit(0u64, 1),");
         for (int i = 0; i < Signals.Count; ++i)
         {
             var sig = Signals[i];
@@ -493,14 +647,22 @@ public sealed partial class RtlDesign
         code.AppendLine("    #[inline(always)] pub fn time_inc(&mut self, delta: u64) { self.time = self.time.wrapping_add(delta); }");
         code.AppendLine("    #[inline(always)] pub fn final_model(&mut self) { self.close_vcd(); }");
         code.AppendLine("    #[inline(always)] pub fn got_finish(&self) -> bool { self.finished }");
+        code.AppendLine("    #[inline(always)] pub fn exit_code(&self) -> i32 { self.exit_code }");
         code.AppendLine("    pub fn set_plusargs<I, S>(&mut self, args: I) where I: IntoIterator<Item = S>, S: AsRef<str> { self.plusargs.set(args); }");
         code.AppendLine("    pub fn add_plusarg(&mut self, arg: &str) { self.plusargs.add(arg); }");
         code.AppendLine("    pub fn test_plusargs(&self, prefix: &str) -> u32 { self.plusargs.test(prefix) }");
         code.AppendLine("    pub fn value_plusargs(&self, spec: &str, out: &mut W64) -> u32 { self.plusargs.value(spec, out) }");
-        code.AppendLine("    #[inline(always)] pub fn set_random_seed(&mut self, seed: u64) { self.rng.state = seed; }");
+        code.AppendLine("    #[inline(always)] pub fn set_random_seed(&mut self, seed: u64) { self.rng.set_seed(seed); }");
         code.AppendLine("    #[inline(always)] pub fn random_seed(&self) -> u64 { self.rng.state }");
         code.AppendLine("    #[inline(always)] pub fn next_urandom(&mut self) -> u32 { self.rng.next_u32() }");
         code.AppendLine("    #[inline(always)] pub fn next_urandom_range(&mut self, max_val: u32, min_val: u32) -> u32 { self.rng.next_range(max_val, min_val) }");
+        code.AppendLine("    #[inline(always)] pub fn next_random(&mut self) -> i32 { self.rng.next_random() }");
+        if (Properties.Count > 0)
+        {
+            code.AppendLine("    #[inline(always)] pub fn property_passes(&self) -> &[u64] { &self.prop_passes }");
+            code.AppendLine("    #[inline(always)] pub fn property_failures(&self) -> &[u64] { &self.prop_failures }");
+            code.AppendLine("    #[inline(always)] pub fn property_vacuous(&self) -> &[u64] { &self.prop_vacuous }");
+        }
         code.AppendLine("    pub fn is_forced(&self, signal_id: usize) -> bool { self.forced.iter().any(|(id, _)| *id == signal_id) }");
         code.AppendLine("    pub fn force_signal(&mut self, signal_id: usize, value: W64) {");
         code.AppendLine("        let fv = match signal_id {");
@@ -532,7 +694,16 @@ public sealed partial class RtlDesign
         code.AppendJoin(", ", Signals.Select(s => $"({CppStringLiteral(s.SourcePath ?? s.Name)}, {s.Width})"));
         code.AppendLine("];");
         code.AppendLine("    pub fn open_vcd(&mut self, path: &str, timescale: &str) -> std::io::Result<()> {");
-        code.AppendLine($"        self.vcd.open(path, \"{top}\", Self::SIGNAL_SCHEMA, timescale)");
+        code.AppendLine($"        self.vcd.open(path, \"{top}\", Self::SIGNAL_SCHEMA, timescale, false, &[])");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn open_vcd_gz(&mut self, path: &str, timescale: &str) -> std::io::Result<()> {");
+        code.AppendLine($"        self.vcd.open(path, \"{top}\", Self::SIGNAL_SCHEMA, timescale, true, &[])");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn open_vcd_filtered(&mut self, path: &str, timescale: &str, filter_prefixes: &[&str]) -> std::io::Result<()> {");
+        code.AppendLine($"        self.vcd.open(path, \"{top}\", Self::SIGNAL_SCHEMA, timescale, false, filter_prefixes)");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn open_vcd_gz_filtered(&mut self, path: &str, timescale: &str, filter_prefixes: &[&str]) -> std::io::Result<()> {");
+        code.AppendLine($"        self.vcd.open(path, \"{top}\", Self::SIGNAL_SCHEMA, timescale, true, filter_prefixes)");
         code.AppendLine("    }");
         code.AppendLine("    pub fn dump_vcd(&mut self) -> std::io::Result<()> {");
         code.Append("        self.vcd.dump(self.time, &[");
@@ -654,6 +825,63 @@ public sealed partial class RtlDesign
             code.AppendLine("        self.settle();");
             code.AppendLine("        self.apply_forces();");
         }
+        if (Properties.Count > 0 || PastDepths.Count > 0)
+        {
+            for (int i = 0; i < Properties.Count; ++i)
+            {
+                var p = Properties[i];
+                int cid = SignalId(p.Clock);
+                string edgeCond = twoState
+                    ? $"w2::edge(self.pclk_{cid}, self.s{cid}, {(p.Edge == "posedge" ? "true" : "false")})"
+                    : $"w64::edge(self.pclk_{cid}, self.s{cid}, {(p.Edge == "posedge" ? "true" : "false")})";
+                code.AppendLine($"        if {edgeCond} {{");
+                if (p.DisableIff is { } dis)
+                {
+                    string disCond = twoState ? $"w2::yes({RsExpr2(dis)})" : $"w64::yes({RsExpr64(dis)})";
+                    code.AppendLine($"            if {disCond} {{");
+                    if (p.Delay > 0) code.AppendLine($"                self.prop_pipe_{i} = [false; {p.Delay}];");
+                    code.AppendLine("            } else {");
+                }
+                string antCond = p.Antecedent is { } ant
+                    ? (twoState ? $"w2::yes({RsExpr2(ant)})" : $"w64::yes({RsExpr64(ant)})")
+                    : "true";
+                string consCond = twoState ? $"w2::yes({RsExpr2(p.Consequent)})" : $"w64::yes({RsExpr64(p.Consequent)})";
+                string failMsg = CppStringLiteral(string.IsNullOrEmpty(p.Message) ? $"SVA property '{p.Name}' failed" : $"SVA property '{p.Name}' failed: {p.Message}");
+                if (p.Delay == 0)
+                {
+                    code.AppendLine($"            if {antCond} {{ if {consCond} {{ self.prop_passes[{i}] += 1; }} else {{ self.prop_failures[{i}] += 1; {(p.Kind == "assert" ? $"return Err({failMsg});" : "")} }} }}");
+                    if (p.Kind != "cover") code.AppendLine($"            else {{ self.prop_vacuous[{i}] += 1; }}");
+                }
+                else
+                {
+                    code.AppendLine($"            if self.prop_pipe_{i}[{p.Delay - 1}] {{ if {consCond} {{ self.prop_passes[{i}] += 1; }} else {{ self.prop_failures[{i}] += 1; {(p.Kind == "assert" ? $"return Err({failMsg});" : "")} }} }}");
+                    for (int k = p.Delay - 1; k > 0; --k)
+                        code.AppendLine($"            self.prop_pipe_{i}[{k}] = self.prop_pipe_{i}[{k - 1}];");
+                    code.AppendLine($"            let _ant_{i} = {antCond}; self.prop_pipe_{i}[0] = _ant_{i};");
+                    if (p.Kind != "cover") code.AppendLine($"            if !_ant_{i} {{ self.prop_vacuous[{i}] += 1; }}");
+                }
+                if (p.DisableIff is not null) code.AppendLine("            }");
+                code.AppendLine("        }");
+            }
+            if (PastDepths.Count > 0)
+            {
+                int pastCid = Clock is not null ? SignalId(Clock) : SignalId(Properties[0].Clock);
+                string pastEdge = Properties.FirstOrDefault(p => SignalId(p.Clock) == pastCid)?.Edge ?? "posedge";
+                string pEdge = twoState
+                    ? $"w2::edge(self.pclk_{pastCid}, self.s{pastCid}, {(pastEdge == "posedge" ? "true" : "false")})"
+                    : $"w64::edge(self.pclk_{pastCid}, self.s{pastCid}, {(pastEdge == "posedge" ? "true" : "false")})";
+                code.AppendLine($"        if {pEdge} {{");
+                foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
+                {
+                    for (int k = depth - 1; k > 0; --k)
+                        code.AppendLine($"            self.past_{sid}[{k}] = self.past_{sid}[{k - 1}];");
+                    code.AppendLine($"            self.past_{sid}[0] = self.s{sid};");
+                }
+                code.AppendLine("        }");
+            }
+            foreach (int cid in PropertyClockSignalIds())
+                code.AppendLine($"        self.pclk_{cid} = self.s{cid};");
+        }
         if (!CombinationalOnly)
         {
             for (int p = 0; p < procs.Length; ++p)
@@ -714,8 +942,13 @@ public sealed partial class RtlDesign
             code.AppendLine("        let vcd = self.vcd.take();");
             code.AppendLine("        let saved = self.clone();");
             code.AppendLine("        if let Err(err) = self.eval_inner() {");
+            code.AppendLine("            let fin = self.finished;");
+            code.AppendLine("            let ec = self.exit_code;");
+            if (Properties.Count > 0) code.AppendLine("            let pf = self.prop_failures;");
             code.AppendLine("            *self = saved;");
             code.AppendLine("            self.vcd = vcd;");
+            code.AppendLine("            if fin { self.finished = true; self.exit_code = ec; }");
+            if (Properties.Count > 0) code.AppendLine("            self.prop_failures = pf;");
             code.AppendLine("            return Err(err);");
             code.AppendLine("        }");
             code.AppendLine("        self.vcd = vcd;");
@@ -1347,6 +1580,56 @@ pub mod w64 {
             m[idx.v as usize]
         }
     }
+
+    #[inline(always)]
+    pub const fn resolve_pair(a_in: W64, b_in: W64, net_kind: i32, w: i32) -> W64 {
+        let m = W64::mask(w);
+        let a = if a_in.w == w { a_in } else { resize(a_in, w) };
+        let b = if b_in.w == w { b_in } else { resize(b_in, w) };
+        let va = a.v & m; let xa = a.x & m; let za = a.z & m;
+        let vb = b.v & m; let xb = b.x & m; let zb = b.z & m;
+        let a0 = !(va | xa | za) & m;
+        let b0 = !(vb | xb | zb) & m;
+        let z_out = za & zb;
+        let (v_out, o0) = if net_kind == 1 {
+            let o0 = (a0 | b0) & m;
+            let v_out = (!o0) & ((va & (vb | zb)) | (za & vb)) & m;
+            (v_out, o0)
+        } else if net_kind == 2 {
+            let v_out = (va | vb) & m;
+            let o0 = (!v_out) & ((a0 & (b0 | zb)) | (za & b0)) & m;
+            (v_out, o0)
+        } else {
+            let v_out = ((va & (vb | zb)) | (za & vb)) & m;
+            let o0 = ((a0 & (b0 | zb)) | (za & b0)) & m;
+            (v_out, o0)
+        };
+        let x_out = !(z_out | v_out | o0) & m;
+        W64 { v: v_out, x: x_out, z: z_out, w }
+    }
+
+    #[inline(always)]
+    pub const fn resolve_finalize(acc: W64, net_kind: i32) -> W64 {
+        let m = W64::mask(acc.w);
+        if net_kind == 3 {
+            W64 { v: acc.v, x: acc.x, z: 0, w: acc.w }
+        } else if net_kind == 4 {
+            W64 { v: (acc.v | acc.z) & m, x: acc.x, z: 0, w: acc.w }
+        } else {
+            acc
+        }
+    }
+
+    pub fn resolve_net(net_kind: i32, drivers: &[W64], w: i32) -> W64 {
+        if drivers.is_empty() {
+            return resolve_finalize(W64 { v: 0, x: 0, z: W64::mask(w), w }, net_kind);
+        }
+        let mut acc = if drivers[0].w == w { drivers[0] } else { resize(drivers[0], w) };
+        for &d in &drivers[1..] {
+            acc = resolve_pair(acc, d, net_kind, w);
+        }
+        resolve_finalize(acc, net_kind)
+    }
 }
 
 pub mod w2 {
@@ -1547,6 +1830,20 @@ pub mod w2 {
         if a > 20000 { return Err("runtime repeat count exceeds budget"); }
         Ok(a as usize)
     }
+
+    #[inline(always)]
+    pub const fn resolve_pair(a: u64, b: u64, net_kind: i32, w: i32) -> u64 {
+        let m = W64::mask(w);
+        (if net_kind == 1 { a & b } else { a | b }) & m
+    }
+
+    pub fn resolve_net(net_kind: i32, drivers: &[u64], w: i32) -> u64 {
+        let m = W64::mask(w);
+        if drivers.is_empty() { return if net_kind == 4 { m } else { 0 }; }
+        let mut acc = drivers[0] & m;
+        for &d in &drivers[1..] { acc = resolve_pair(acc, d, net_kind, w); }
+        acc
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -1621,14 +1918,275 @@ impl MemLog2 {
     }
 }
 
-pub struct VcdWriter {
+struct GzipWriter {
     out: std::io::BufWriter<std::fs::File>,
+    buf: Vec<u8>,
+    compressed: Vec<u8>,
+    bit_buf: u64,
+    bit_count: u32,
+    crc: u32,
+    isize: u32,
+    opened: bool,
+}
+
+impl GzipWriter {
+    const BLOCK_LIMIT: usize = 65536;
+    const HASH_BITS: usize = 13;
+    const HASH_SIZE: usize = 1 << Self::HASH_BITS;
+    const MAX_DIST: usize = 32768;
+    const MAX_MATCH: usize = 258;
+
+    const CRC_TABLE: [u32; 256] = {
+        let mut t = [0u32; 256];
+        let mut i = 0usize;
+        while i < 256 {
+            let mut c = i as u32;
+            let mut k = 0;
+            while k < 8 {
+                c = if (c & 1) != 0 { 0xEDB88320u32 ^ (c >> 1) } else { c >> 1 };
+                k += 1;
+            }
+            t[i] = c;
+            i += 1;
+        }
+        t
+    };
+
+    fn open(path: &str) -> std::io::Result<Self> {
+        use std::io::Write;
+        let file = std::fs::File::create(path)?;
+        let mut out = std::io::BufWriter::new(file);
+        out.write_all(&[0x1F, 0x8B, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF])?;
+        Ok(Self {
+            out,
+            buf: Vec::with_capacity(Self::BLOCK_LIMIT),
+            compressed: Vec::with_capacity(Self::BLOCK_LIMIT),
+            bit_buf: 0,
+            bit_count: 0,
+            crc: 0xFFFFFFFFu32,
+            isize: 0,
+            opened: true,
+        })
+    }
+
+    #[inline(always)]
+    fn reverse_bits(mut code: u32, bits: u32) -> u32 {
+        let mut out = 0u32;
+        for _ in 0..bits {
+            out = (out << 1) | (code & 1);
+            code >>= 1;
+        }
+        out
+    }
+
+    #[inline(always)]
+    fn put_bits(&mut self, val: u32, nbits: u32) {
+        self.bit_buf |= (val as u64) << self.bit_count;
+        self.bit_count += nbits;
+        while self.bit_count >= 8 {
+            self.compressed.push((self.bit_buf & 0xFF) as u8);
+            self.bit_buf >>= 8;
+            self.bit_count -= 8;
+        }
+    }
+
+    #[inline(always)]
+    fn emit_litlen(&mut self, sym: u32) {
+        if sym <= 143 {
+            self.put_bits(Self::reverse_bits(0x30 + sym, 8), 8);
+        } else if sym <= 255 {
+            self.put_bits(Self::reverse_bits(0x190 + (sym - 144), 9), 9);
+        } else if sym <= 279 {
+            self.put_bits(Self::reverse_bits(sym - 256, 7), 7);
+        } else {
+            self.put_bits(Self::reverse_bits(0xC0 + (sym - 280), 8), 8);
+        }
+    }
+
+    fn emit_length(&mut self, len: u32) {
+        const BASE: [u16; 29] = [3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258];
+        const EXTRA: [u8; 29] = [0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0];
+        let mut idx = 28usize;
+        if len < 258 {
+            idx = 0;
+            while idx < 27 && len >= BASE[idx + 1] as u32 { idx += 1; }
+        }
+        self.emit_litlen(257 + idx as u32);
+        if EXTRA[idx] > 0 { self.put_bits(len - BASE[idx] as u32, EXTRA[idx] as u32); }
+    }
+
+    fn emit_distance(&mut self, dist: u32) {
+        const BASE: [u16; 30] = [1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577];
+        const EXTRA: [u8; 30] = [0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13];
+        let mut idx = 0usize;
+        while idx < 29 && dist >= BASE[idx + 1] as u32 { idx += 1; }
+        self.put_bits(Self::reverse_bits(idx as u32, 5), 5);
+        if EXTRA[idx] > 0 { self.put_bits(dist - BASE[idx] as u32, EXTRA[idx] as u32); }
+    }
+
+    #[inline(always)]
+    fn hash3(b0: u8, b1: u8, b2: u8) -> usize {
+        let h = ((b0 as u32) << 16) ^ ((b1 as u32) << 8) ^ (b2 as u32);
+        ((h.wrapping_mul(2654435761u32) >> (32 - Self::HASH_BITS)) as usize) & (Self::HASH_SIZE - 1)
+    }
+
+    fn flush_block(&mut self, is_final: bool) -> std::io::Result<()> {
+        use std::io::Write;
+        self.put_bits(if is_final { 1 } else { 0 }, 1);
+        self.put_bits(1, 2);
+        let data = std::mem::take(&mut self.buf);
+        let n = data.len();
+        if n > 0 {
+            let mut head = vec![-1i32; Self::HASH_SIZE];
+            let mut prev = vec![-1i32; n];
+            let mut i = 0usize;
+            while i < n {
+                let mut best_len = 0usize;
+                let mut best_dist = 0usize;
+                if i + 3 <= n {
+                    let h = Self::hash3(data[i], data[i + 1], data[i + 2]);
+                    let mut pos = head[h];
+                    prev[i] = pos;
+                    head[h] = i as i32;
+                    let mut chain = 16;
+                    while pos >= 0 && chain > 0 {
+                        chain -= 1;
+                        let upos = pos as usize;
+                        let dist = i - upos;
+                        if dist == 0 || dist > Self::MAX_DIST { break; }
+                        let limit = Self::MAX_MATCH.min(n - i);
+                        if data[upos + best_len] == data[i + best_len] {
+                            let mut len = 0usize;
+                            while len < limit && data[upos + len] == data[i + len] { len += 1; }
+                            if len >= 3 && len > best_len {
+                                best_len = len;
+                                best_dist = dist;
+                                if best_len >= 64 || best_len >= limit { break; }
+                            }
+                        }
+                        pos = prev[upos];
+                    }
+                }
+                if best_len >= 3 {
+                    self.emit_length(best_len as u32);
+                    self.emit_distance(best_dist as u32);
+                    let mut k = 1usize;
+                    while k < best_len && i + k + 3 <= n {
+                        let h = Self::hash3(data[i + k], data[i + k + 1], data[i + k + 2]);
+                        prev[i + k] = head[h];
+                        head[h] = (i + k) as i32;
+                        k += 1;
+                    }
+                    i += best_len;
+                } else {
+                    self.emit_litlen(data[i] as u32);
+                    i += 1;
+                }
+            }
+        }
+        self.buf = data;
+        self.buf.clear();
+        self.emit_litlen(256);
+        if is_final && self.bit_count > 0 {
+            self.compressed.push((self.bit_buf & 0xFF) as u8);
+            self.bit_buf = 0;
+            self.bit_count = 0;
+        }
+        if !self.compressed.is_empty() {
+            self.out.write_all(&self.compressed)?;
+            self.compressed.clear();
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self) -> std::io::Result<()> {
+        use std::io::Write;
+        if !self.opened { return Ok(()); }
+        self.opened = false;
+        self.flush_block(true)?;
+        self.out.write_all(&(!self.crc).to_le_bytes())?;
+        self.out.write_all(&self.isize.to_le_bytes())?;
+        self.out.flush()
+    }
+}
+
+impl std::io::Write for GzipWriter {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        if !self.opened { return Ok(data.len()); }
+        for &b in data {
+            self.crc = Self::CRC_TABLE[((self.crc ^ b as u32) & 0xFF) as usize] ^ (self.crc >> 8);
+        }
+        self.isize = self.isize.wrapping_add(data.len() as u32);
+        let mut off = 0usize;
+        while off < data.len() {
+            let space = Self::BLOCK_LIMIT - self.buf.len();
+            let take = space.min(data.len() - off);
+            self.buf.extend_from_slice(&data[off..off + take]);
+            off += take;
+            if self.buf.len() == Self::BLOCK_LIMIT {
+                self.flush_block(false)?;
+            }
+        }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        use std::io::Write;
+        if !self.opened { return Ok(()); }
+        if !self.buf.is_empty() { self.flush_block(false)?; }
+        self.out.flush()
+    }
+}
+
+enum VcdSink {
+    Plain(std::io::BufWriter<std::fs::File>),
+    Gzip(GzipWriter),
+}
+
+impl std::io::Write for VcdSink {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            VcdSink::Plain(w) => w.write(buf),
+            VcdSink::Gzip(w) => w.write(buf),
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            VcdSink::Plain(w) => w.flush(),
+            VcdSink::Gzip(w) => w.flush(),
+        }
+    }
+}
+
+impl VcdSink {
+    fn finish(&mut self) -> std::io::Result<()> {
+        use std::io::Write;
+        match self {
+            VcdSink::Plain(w) => w.flush(),
+            VcdSink::Gzip(w) => w.finish(),
+        }
+    }
+}
+
+pub struct VcdWriter {
+    out: VcdSink,
+    sig_ids: Vec<usize>,
     codes: Vec<String>,
     last: Vec<W64>,
     initial: bool,
 }
 
+impl Drop for VcdWriter {
+    fn drop(&mut self) {
+        let _ = self.out.finish();
+    }
+}
+
 impl VcdWriter {
+    fn matches_selector(full: &str, sel: &str) -> bool {
+        full == sel || (full.len() > sel.len() && full.starts_with(sel) && full.as_bytes()[sel.len()] == b'.')
+    }
+
     fn make_code(mut index: usize) -> String {
         let mut s = String::new();
         loop {
@@ -1639,7 +2197,7 @@ impl VcdWriter {
         s
     }
 
-    fn write_val(out: &mut std::io::BufWriter<std::fs::File>, val: W64, code: &str) -> std::io::Result<()> {
+    fn write_val(out: &mut VcdSink, val: W64, code: &str) -> std::io::Result<()> {
         use std::io::Write;
         if val.w == 1 {
             let ch = if (val.z & 1) != 0 { 'z' } else if (val.x & 1) != 0 { 'x' } else if (val.v & 1) != 0 { '1' } else { '0' };
@@ -1649,59 +2207,87 @@ impl VcdWriter {
         }
     }
 
-    pub fn open(path: &str, top_name: &str, signals: &[(&str, i32)], timescale: &str) -> std::io::Result<Self> {
-        use std::io::Write;
-        let file = std::fs::File::create(path)?;
-        let mut out = std::io::BufWriter::new(file);
+    pub fn open(path: &str, top_name: &str, signals: &[(&str, i32)], timescale: &str, gzip: bool, filter_prefixes: &[&str]) -> std::io::Result<Self> {
+        use std::io::{Error, ErrorKind, Write};
+        if path.is_empty() { return Err(Error::new(ErrorKind::InvalidInput, "VCD output path must not be empty")); }
+        if timescale.is_empty() { return Err(Error::new(ErrorKind::InvalidInput, "VCD timescale must not be empty")); }
+        let mut sig_ids = Vec::with_capacity(signals.len());
+        if filter_prefixes.is_empty() {
+            for i in 0..signals.len() { sig_ids.push(i); }
+        } else {
+            let mut matched = vec![false; filter_prefixes.len()];
+            for &sel in filter_prefixes {
+                if sel.is_empty() { return Err(Error::new(ErrorKind::InvalidInput, "VCD trace selector must not be empty")); }
+            }
+            for (i, (name, _)) in signals.iter().enumerate() {
+                let mut hit = false;
+                for (k, &sel) in filter_prefixes.iter().enumerate() {
+                    if Self::matches_selector(name, sel) { matched[k] = true; hit = true; }
+                }
+                if hit { sig_ids.push(i); }
+            }
+            for (k, &m) in matched.iter().enumerate() {
+                if !m { return Err(Error::new(ErrorKind::InvalidInput, format!("VCD trace selector matched no signals: {}", filter_prefixes[k]))); }
+            }
+        }
+        let mut out = if gzip {
+            VcdSink::Gzip(GzipWriter::open(path)?)
+        } else {
+            VcdSink::Plain(std::io::BufWriter::new(std::fs::File::create(path)?))
+        };
         writeln!(out, "$version VeloSim $end")?;
         writeln!(out, "$timescale {} $end", timescale)?;
         writeln!(out, "$scope module {} $end", if top_name.is_empty() { "top" } else { top_name })?;
-        let mut codes = Vec::with_capacity(signals.len());
-        let mut last = Vec::with_capacity(signals.len());
-        for (i, (name, width)) in signals.iter().enumerate() {
-            let code = Self::make_code(i);
+        let mut codes = Vec::with_capacity(sig_ids.len());
+        let mut last = Vec::with_capacity(sig_ids.len());
+        for (idx, &i) in sig_ids.iter().enumerate() {
+            let (name, width) = signals[i];
+            let code = Self::make_code(idx);
             let leaf = name.replace('.', "_");
-            if *width > 1 {
+            if width > 1 {
                 writeln!(out, "$var wire {} {} {} [{}:0] $end", width, code, leaf, width - 1)?;
             } else {
                 writeln!(out, "$var wire 1 {} {} $end", code, leaf)?;
             }
             codes.push(code);
-            last.push(W64::unknown(*width));
+            last.push(W64::unknown(width));
         }
         writeln!(out, "$upscope $end")?;
         writeln!(out, "$enddefinitions $end")?;
-        Ok(Self { out, codes, last, initial: false })
+        Ok(Self { out, sig_ids, codes, last, initial: false })
     }
 
     pub fn dump(&mut self, time: u64, values: &[W64]) -> std::io::Result<()> {
         use std::io::Write;
         if !self.initial {
             writeln!(self.out, "#{}\n$dumpvars", time)?;
-            for i in 0..self.codes.len().min(values.len()) {
-                self.last[i] = values[i];
-                Self::write_val(&mut self.out, values[i], &self.codes[i])?;
+            for idx in 0..self.sig_ids.len() {
+                let sid = self.sig_ids[idx];
+                if sid >= values.len() { continue; }
+                self.last[idx] = values[sid];
+                Self::write_val(&mut self.out, values[sid], &self.codes[idx])?;
             }
             writeln!(self.out, "$end")?;
             self.initial = true;
             return Ok(());
         }
         let mut wrote_time = false;
-        for i in 0..self.codes.len().min(values.len()) {
-            if w64::exact(values[i], self.last[i]) { continue; }
+        for idx in 0..self.sig_ids.len() {
+            let sid = self.sig_ids[idx];
+            if sid >= values.len() { continue; }
+            if w64::exact(values[sid], self.last[idx]) { continue; }
             if !wrote_time {
                 writeln!(self.out, "#{}", time)?;
                 wrote_time = true;
             }
-            self.last[i] = values[i];
-            Self::write_val(&mut self.out, values[i], &self.codes[i])?;
+            self.last[idx] = values[sid];
+            Self::write_val(&mut self.out, values[sid], &self.codes[idx])?;
         }
         Ok(())
     }
 
-    pub fn flush(&mut self) -> std::io::Result<()> {
-        use std::io::Write;
-        self.out.flush()
+    pub fn finish(&mut self) -> std::io::Result<()> {
+        self.out.finish()
     }
 }
 
@@ -1714,9 +2300,9 @@ impl Clone for VcdSlot {
 impl VcdSlot {
     pub const fn new() -> Self { Self(None) }
     pub fn take(&mut self) -> Self { Self(self.0.take()) }
-    pub fn open(&mut self, path: &str, top_name: &str, signals: &[(&str, i32)], timescale: &str) -> std::io::Result<()> {
+    pub fn open(&mut self, path: &str, top_name: &str, signals: &[(&str, i32)], timescale: &str, gzip: bool, filter_prefixes: &[&str]) -> std::io::Result<()> {
         self.close();
-        self.0 = Some(VcdWriter::open(path, top_name, signals, timescale)?);
+        self.0 = Some(VcdWriter::open(path, top_name, signals, timescale, gzip, filter_prefixes)?);
         Ok(())
     }
     pub fn dump(&mut self, time: u64, values: &[W64]) -> std::io::Result<()> {
@@ -1724,7 +2310,7 @@ impl VcdSlot {
         Ok(())
     }
     pub fn close(&mut self) {
-        if let Some(mut w) = self.0.take() { let _ = w.flush(); }
+        if let Some(mut w) = self.0.take() { let _ = w.finish(); }
     }
 }
 
@@ -1802,10 +2388,16 @@ impl PlusargStore {
 #[derive(Clone, Copy)]
 pub struct SplitMix64Rng {
     pub state: u64,
+    pub lcg_state: u32,
 }
 
 impl SplitMix64Rng {
-    pub const fn new() -> Self { Self { state: 0x9E3779B97F4A7C15u64 } }
+    pub const fn new() -> Self { Self { state: 0x9E3779B97F4A7C15u64, lcg_state: 0x9E3779B9u32 } }
+    #[inline(always)]
+    pub fn set_seed(&mut self, seed: u64) {
+        self.state = seed;
+        self.lcg_state = (seed ^ (seed >> 32)) as u32;
+    }
     #[inline(always)]
     pub fn next_u32(&mut self) -> u32 {
         self.state = self.state.wrapping_add(0x9E3779B97F4A7C15u64);
@@ -1822,6 +2414,11 @@ impl SplitMix64Rng {
         let r = self.next_u32();
         if span >= 0x100000000u64 { return r; }
         min_val + ((r as u64) % span) as u32
+    }
+    #[inline(always)]
+    pub fn next_random(&mut self) -> i32 {
+        self.lcg_state = self.lcg_state.wrapping_mul(69069u32).wrapping_add(1u32);
+        self.lcg_state as i32
     }
 }
 
