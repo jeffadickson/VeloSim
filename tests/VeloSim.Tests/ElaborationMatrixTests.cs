@@ -36,16 +36,18 @@ public class ElaborationMatrixTests
         }
         finally { Directory.Delete(directory, true); }
     }
+    private static string TrueExe => File.Exists("/bin/true") ? "/bin/true" : "/usr/bin/true";
+    private static string FalseExe => File.Exists("/bin/false") ? "/bin/false" : "/usr/bin/false";
     [Test] public async Task MatrixElaboratesFreshCaseWorkerDirectoriesAndRejectsRerunArtifacts()
     {
         var directory = Temp();
         try
         {
             var plan = Plan(directory); var runner = new MatrixRunner(); var output = Path.Combine(directory, "results");
-            var report = await new ElaborationMatrix(runner).RunAsync(plan, output, "/bin/true");
+            var report = await new ElaborationMatrix(runner).RunAsync(plan, output, TrueExe);
             Assert.That(report.Status, Is.EqualTo("pass")); Assert.That(runner.ElaborationDirectories.Distinct().Count(), Is.EqualTo(4));
             Assert.That(report.Records.All(r => File.Exists(r.Uhdm!.Path)), Is.True);
-            Assert.ThrowsAsync<IOException>(async () => await new ElaborationMatrix(runner).RunAsync(plan, output, "/bin/true")); Assert.That(runner.ElaborationDirectories.Count, Is.EqualTo(4));
+            Assert.ThrowsAsync<IOException>(async () => await new ElaborationMatrix(runner).RunAsync(plan, output, TrueExe)); Assert.That(runner.ElaborationDirectories.Count, Is.EqualTo(4));
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -54,7 +56,7 @@ public class ElaborationMatrixTests
         var directory = Temp();
         try
         {
-            var report = await new ElaborationMatrix(new MatrixRunner { FailWorkerTwo = true }).RunAsync(Plan(directory), Path.Combine(directory, "results"), "/bin/true");
+            var report = await new ElaborationMatrix(new MatrixRunner { FailWorkerTwo = true }).RunAsync(Plan(directory), Path.Combine(directory, "results"), TrueExe);
             Assert.That(report.Status, Is.EqualTo("fail")); Assert.That(report.Tool!.Sha256.Length, Is.EqualTo(64)); Assert.That(report.ToolVersion, Does.Contain("test-version"));
             var passed = report.Records.First(r => r.Status == "pass"); var failed = report.Records.First(r => r.Status == "fail");
             Assert.That(passed.Sources.Count, Is.EqualTo(2)); Assert.That(passed.UhdmBytes, Is.GreaterThan(0)); Assert.That(passed.ElapsedSeconds, Is.GreaterThanOrEqualTo(0));
@@ -67,12 +69,12 @@ public class ElaborationMatrixTests
         var directory = Temp();
         try
         {
-            var report = await new ElaborationMatrix(new MatrixRunner()).RunAsync(Plan(directory), Path.Combine(directory, "results"), "/bin/true"); var json = report.ToJson();
+            var report = await new ElaborationMatrix(new MatrixRunner()).RunAsync(Plan(directory), Path.Combine(directory, "results"), TrueExe); var json = report.ToJson();
             Assert.That(ElaborationMatrixReport.Parse(json).ToJson(), Is.EqualTo(json));
             var node = JsonNode.Parse(json)!; node["status"] = "fail"; Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
             node = JsonNode.Parse(json)!; node["records"]!.AsArray().RemoveAt(0); Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
             node = JsonNode.Parse(json)!; node["records"]![0]!["sources"]![0]!["sha256"] = null; Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
-            node = JsonNode.Parse(json)!; node["records"]![0]!["commands"]![0]!["executable"] = "/bin/false"; Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
+            node = JsonNode.Parse(json)!; node["records"]![0]!["commands"]![0]!["executable"] = FalseExe; Assert.Throws<IrValidationException>(() => ElaborationMatrixReport.Parse(node.ToJsonString()));
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -82,7 +84,7 @@ public class ElaborationMatrixTests
         try
         {
             var config = Path.Combine(directory, "matrix-config.json"); File.WriteAllText(config, Plan(directory).ToJson()); var output = Path.Combine(directory, "results"); var text = new StringWriter(); var error = new StringWriter();
-            Assert.That(await ToolCli.RunAsync(["elaboration-matrix", "--config", config, "--output-dir", output, "--workers", "1", "--surelog", "/bin/true"], text, error, new MatrixRunner()), Is.Zero, error.ToString());
+            Assert.That(await ToolCli.RunAsync(["elaboration-matrix", "--config", config, "--output-dir", output, "--workers", "1", "--surelog", TrueExe], text, error, new MatrixRunner()), Is.Zero, error.ToString());
             Assert.That(ElaborationMatrixReport.Parse(File.ReadAllText(Path.Combine(output, "matrix.json"))).Records.Count, Is.EqualTo(2));
             Assert.That(await ToolCli.RunAsync(["matrix-inspect", Path.Combine(output, "matrix.json")], text, error), Is.Zero); Assert.That(text.ToString(), Does.Contain("pass runs=2 elaboration-only"));
         }
@@ -98,7 +100,7 @@ public class ElaborationMatrixTests
         try
         {
             using var canceled = new CancellationTokenSource(); var output = Path.Combine(directory, "results");
-            var report = await new ElaborationMatrix(new VersionCancellation(canceled)).RunAsync(Plan(directory), output, "/bin/true", canceled.Token);
+            var report = await new ElaborationMatrix(new VersionCancellation(canceled)).RunAsync(Plan(directory), output, TrueExe, canceled.Token);
             Assert.That(report.Status, Is.EqualTo("canceled")); Assert.That(report.Records.Count, Is.EqualTo(4)); Assert.That(report.Records.All(r => r.Status == "canceled"), Is.True); Assert.That(File.Exists(Path.Combine(output, "matrix.json")), Is.True);
         }
         finally { Directory.Delete(directory, true); }

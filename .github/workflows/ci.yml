@@ -21,9 +21,9 @@ jobs:
       - name: Install Ninja and LLVM (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ninja-build clang llvm iverilog
-      - name: Install Ninja (macOS)
+      - name: Install Ninja and Icarus Verilog (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja
+        run: brew install ninja icarus-verilog
       - name: Build and test compiled C# and native kernels (macOS)
         if: runner.os == 'macOS'
         run: make test JOBS=4

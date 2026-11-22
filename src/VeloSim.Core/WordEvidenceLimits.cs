@@ -35,7 +35,10 @@ public static class WordEvidenceLimits
     {
         var absolute = Path.GetFullPath(path);
         for (DirectoryInfo? current = new(absolute); current is not null; current = current.Parent)
+        {
+            if (OperatingSystem.IsMacOS() && current.FullName is "/var" or "/tmp" or "/etc") continue;
             if (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Word output cannot traverse a symbolic link or reparse point.");
+        }
         if (File.Exists(absolute) || Directory.Exists(absolute) && Directory.EnumerateFileSystemEntries(absolute).Any()) throw new IOException("Word output must be an empty directory.");
         return absolute;
     }

@@ -12,7 +12,10 @@ public static class RtlExternalSdk
         var design = RtlDesign.Parse(json, effectiveLimits);
         directory = Path.GetFullPath(directory);
         for (DirectoryInfo? parent = new(directory); parent is not null; parent = parent.Parent)
+        {
+            if (OperatingSystem.IsMacOS() && parent.FullName is "/var" or "/tmp" or "/etc") continue;
             if (parent.Exists && (parent.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("External SDK output cannot traverse a symbolic link or reparse point.");
+        }
         if (Directory.Exists(directory) && Directory.EnumerateFileSystemEntries(directory).Any()) throw new ArgumentException("External SDK output directory must be empty.");
 
         if (target == RtlTargetLanguage.CSharp)
