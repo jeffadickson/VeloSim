@@ -1538,12 +1538,12 @@ RELATIONS:
 [REQUIREMENT]
 UID: VS-RTL-W4-PACKED-001
 STATUS: Active
-TITLE: Formally verified 16-byte IEEE 1800 aval/bval 4-state engine and C++/C# zero-overhead fast paths
+TITLE: Formally verified 16-byte IEEE 1800 aval/bval 4-state engine across C++, Rust, and C#
 STATEMENT: >>>
-VeloSim's narrow 64-bit C++ and C# targets shall eliminate per-cycle abstraction overhead while preserving 100% public API compatibility: C++ models shall use flat inline signal/memory arrays with lazy base-model synchronization, direct vsrtl::Port slot pointers, stack rollback snapshots, and fast TLS owner verification; C# models shall store internal 4-state words in a 16-byte IEEE 1800 aval/bval struct (W4) promoted into two 64-bit CPU registers by RyuJIT, emit direct masked 2-state expressions, keep NBA next-state variables in stack locals, split forced-signal evaluation behind a single boolean guard, and pack SVA shift registers into a 64-bit bitmask. The exact bijection and operator homomorphism between W4(aval, bval) and canonical 3-plane 4-state words shall be machine-verified in formal/dafny/FourStateW4Equivalence.dfy.
+VeloSim's narrow 64-bit C++, Rust, and C# targets shall store internal 4-state words in a 16-byte IEEE 1800 aval/bval representation (W4(a, b): 0=(0,0), 1=(1,0), Z=(0,1), X=(1,1)) promoted into two 64-bit CPU registers with compile-time bit-width masks, stack-local NBA next-state variables, and cold-split forced-signal evaluation while preserving 100% public API compatibility (C++ vsrtl::Model/vsrtl::Port/W, Rust W64/VpiModel, C# W64/IVpiModel). C++ models shall additionally use flat inline signal/memory arrays with lazy base-model synchronization, direct vsrtl::Port slot pointers, stack rollback snapshots, and fast TLS owner verification. The exact bijection and operator homomorphism between W4(aval, bval) and canonical 3-plane 4-state words shall be machine-verified in formal/dafny/FourStateW4Equivalence.dfy.
 <<<
 COMMENT: >>>
-Verified with Dafny 4.11.0 (21 additional proof obligations, 88 total across 5 modules, 0 errors, 0 warnings) and apples-to-apples multi-target benchmarks (C++, Rust, C#, Verilator 5.055) confirming bit-for-bit identical checksums.
+Verified with Dafny 4.11.0 (29 proof obligations in FourStateW4Equivalence.dfy, 96 total across 5 modules, 0 errors, 0 warnings), exhaustive C++ native equivalence tests against 256-bit vsrtl::W, and apples-to-apples multi-target benchmarks across the 11-sample examples corpus confirming bit-for-bit identical checksums against Verilator 5.055.
 <<<
 RELATIONS:
 - TYPE: File
@@ -1559,7 +1559,11 @@ RELATIONS:
 - TYPE: File
   VALUE: src/VeloSim.Core/RtlNarrow64.cs
 - TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
   VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: tests/native/rtl_runtime_tests.cpp
 
 [REQUIREMENT]
 UID: VS-RTL-VPI-MULTI-001

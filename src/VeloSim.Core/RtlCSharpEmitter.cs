@@ -1247,8 +1247,9 @@ public static class W4Ops
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 Eq(W4 a, W4 b)
     {
-        if ((a.B | b.B) != 0UL) return new W4(1UL, 1UL);
-        return new W4(a.A == b.A ? 1UL : 0UL, 0UL);
+        ulong u = a.B | b.B;
+        if (((a.A ^ b.A) & ~u) != 0UL) return default;
+        return u != 0UL ? new W4(1UL, 1UL) : new W4(1UL, 0UL);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1325,7 +1326,7 @@ public static class W4Ops
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 Product(W4 a, W4 b, int w, ulong m, int op)
     {
-        if ((a.B | b.B) != 0UL) return new W4(m, m);
+        if (((a.B | b.B) & m) != 0UL) return new W4(m, m);
         ulong av = a.A & m, bv = b.A & m;
         if (op == 0) return new W4(unchecked(av * bv) & m, 0UL);
         if (bv == 0UL) return new W4(m, m);
@@ -1335,7 +1336,7 @@ public static class W4Ops
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 SProduct(W4 a, W4 b, int w, ulong m, int op)
     {
-        if ((a.B | b.B) != 0UL) return new W4(m, m);
+        if (((a.B | b.B) & m) != 0UL) return new W4(m, m);
         long sa = W2Ops.SExt(a.A, w), sb = W2Ops.SExt(b.A, w);
         if (op == 0) return new W4(unchecked((ulong)sa * (ulong)sb) & m, 0UL);
         if (sb == 0L) return new W4(m, m);
@@ -1349,10 +1350,8 @@ public static class W4Ops
         int t = Truth(c);
         if (t == 1) return Resize(a, m);
         if (t == 0) return Resize(b, m);
-        ulong au = a.B & m, bu = b.B & m;
-        ulong av = a.A & ~au & m, bv = b.A & ~bu & m;
-        ulong u = (au | bu | (av ^ bv)) & m;
-        return new W4(((av & ~u) | u) & m, u);
+        ulong diff = ((a.A ^ b.A) | (a.B ^ b.B)) & m;
+        return new W4((a.A & m) | diff, (a.B & m) | diff);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

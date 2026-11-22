@@ -265,7 +265,7 @@ public sealed partial class RtlDesign
             if (Properties[i].Delay > 0)
                 code.AppendLine($"bool _vs_prop_pipe_{i}[{Properties[i].Delay}]{{}};");
         }
-        string wt = twoState ? "uint64_t" : narrow64 ? "w64::W64" : "W";
+        string wt = twoState ? "uint64_t" : narrow64 ? "w4::W4" : "W";
         foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
             code.AppendLine($"{wt} _vs_past_{sid}[{depth}];");
         foreach (int cid in PropertyClockSignalIds())
@@ -279,14 +279,15 @@ public sealed partial class RtlDesign
         foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
         {
             var sig = Signals[sid];
+            string m = sig.Width >= 64 ? "~0ULL" : $"0x{((1UL << sig.Width) - 1UL):x}ULL";
             string initVal = twoState ? "0ULL"
-                : narrow64 ? (sig.TwoState ? $"vsrtl::w64::lit(0ULL,{sig.Width})" : $"vsrtl::w64::unknown({sig.Width})")
+                : narrow64 ? (sig.TwoState ? "vsrtl::w4::lit(0ULL)" : $"vsrtl::w4::unknown({m})")
                 : (sig.TwoState ? $"word(0,0,0,{sig.Width})" : $"unknown({sig.Width})");
             code.AppendLine($"for(int _k=0;_k<{depth};++_k)_vs_past_{sid}[_k]={initVal};");
         }
         foreach (int cid in PropertyClockSignalIds())
         {
-            string zero = twoState ? "0ULL" : narrow64 ? "w64::lit(0ULL,1)" : "lit(0ULL,1)";
+            string zero = twoState ? "0ULL" : narrow64 ? "w4::lit(0ULL)" : "lit(0ULL,1)";
             code.AppendLine($"_vs_pclk_{cid}={zero};");
         }
     }
@@ -362,7 +363,7 @@ public sealed partial class RtlDesign
             if (twoState)
                 sb.Append($"_cgv.push_back({ex});_cgk.push_back(true);");
             else if (narrow64)
-                sb.Append($"{{auto _v={ex};_cgv.push_back(_v.v);_cgk.push_back(((_v.x|_v.z)&mask64_unchecked(_v.w))==0);}}");
+                sb.Append($"{{auto _v={ex};_cgv.push_back(_v.a);_cgk.push_back(_v.b==0ULL);}}");
             else
                 sb.Append($"{{auto _v={ex};_cgv.push_back(_v.v.limb[0]);_cgk.push_back(!has_xz(_v));}}");
         }

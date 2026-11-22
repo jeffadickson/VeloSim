@@ -1472,6 +1472,325 @@ inline size_t load_mem_file_flat(w64::W64* mem, size_t depth, int width, const s
  return loaded;
 }
 
+namespace w4 {
+// Formally verified 16-byte IEEE 1800 aval/bval 4-state word (formal/dafny/FourStateW4Equivalence.dfy):
+//   0=(0,0), 1=(1,0), Z=(0,1), X=(1,1) — fits in two 64-bit registers (rax/rdx) in SysV x86-64 ABI.
+struct W4 { uint64_t a, b; };
+
+inline constexpr W4 lit(uint64_t a, uint64_t b = 0ULL) noexcept { return W4{a, b}; }
+inline constexpr W4 unknown(uint64_t m) noexcept { return W4{m, m}; }
+inline W4 to(const W& w, uint64_t m) noexcept {
+ const uint64_t v = w.v.limb[0], x = w.x.limb[0], z = w.z.limb[0];
+ return W4{(v | x) & m, (x | z) & m};
+}
+inline W from(W4 w, int width) noexcept {
+ return W{Bits(w.a & ~w.b), Bits(w.a & w.b), Bits(~w.a & w.b), width};
+}
+inline void store(W& dst, W4 w) noexcept {
+ dst.v.limb[0] = w.a & ~w.b;
+ dst.x.limb[0] = w.a & w.b;
+ dst.z.limb[0] = ~w.a & w.b;
+}
+inline constexpr W4 resize(W4 w, uint64_t m) noexcept { return W4{w.a & m, w.b & m}; }
+inline constexpr W4 two_state(W4 w, uint64_t m) noexcept { return W4{w.a & ~w.b & m, 0ULL}; }
+inline constexpr W4 sresize(W4 w, int aw, uint64_t am, uint64_t wm) noexcept {
+ if (wm <= am) return W4{w.a & wm, w.b & wm};
+ const uint64_t fill = wm & ~am;
+ const int top = aw - 1;
+ return W4{(w.a & am) | (((w.a >> top) & 1ULL) ? fill : 0ULL),
+           (w.b & am) | (((w.b >> top) & 1ULL) ? fill : 0ULL)};
+}
+inline constexpr bool edge(W4 prev, W4 curr, bool pos) noexcept {
+ const int p = (prev.b & 1ULL) ? 2 : int(prev.a & 1ULL);
+ const int c = (curr.b & 1ULL) ? 2 : int(curr.a & 1ULL);
+ return pos ? ((p == 0 && c != 0) || (p >= 2 && c == 1)) : ((p == 1 && c != 1) || (p >= 2 && c == 0));
+}
+inline constexpr int truth(W4 w) noexcept { return (w.a & ~w.b) ? 1 : (w.b ? 2 : 0); }
+inline constexpr bool yes(W4 w) noexcept { return (w.a & ~w.b) != 0ULL; }
+inline constexpr W4 lnot(W4 w) noexcept {
+ const int t = truth(w);
+ return t == 2 ? W4{1ULL, 1ULL} : W4{t == 0 ? 1ULL : 0ULL, 0ULL};
+}
+inline constexpr W4 land(W4 x, W4 y) noexcept {
+ const int tx = truth(x), ty = truth(y);
+ return (tx == 0 || ty == 0) ? W4{0ULL, 0ULL} : (tx == 1 && ty == 1) ? W4{1ULL, 0ULL} : W4{1ULL, 1ULL};
+}
+inline constexpr W4 lor(W4 x, W4 y) noexcept {
+ const int tx = truth(x), ty = truth(y);
+ return (tx == 1 || ty == 1) ? W4{1ULL, 0ULL} : (tx == 0 && ty == 0) ? W4{0ULL, 0ULL} : W4{1ULL, 1ULL};
+}
+inline constexpr W4 bnot(W4 w, uint64_t m) noexcept {
+ const uint64_t ob = w.b & m;
+ return W4{((~w.a) | ob) & m, ob};
+}
+inline constexpr W4 bbin(W4 a, W4 b, uint64_t m, int op) noexcept {
+ if (op == 2) {
+  const uint64_t ob = (a.b | b.b) & m;
+  return W4{((a.a ^ b.a) | ob) & m, ob};
+ }
+ if (op == 0) {
+  const uint64_t o0 = ((~a.a & ~a.b) | (~b.a & ~b.b)) & m;
+  const uint64_t o1 = (a.a & ~a.b) & (b.a & ~b.b) & m;
+  const uint64_t ox = ~(o0 | o1) & m;
+  return W4{(o1 | ox) & m, ox};
+ }
+ const uint64_t o1 = ((a.a & ~a.b) | (b.a & ~b.b)) & m;
+ const uint64_t o0 = (~a.a & ~a.b) & (~b.a & ~b.b) & m;
+ const uint64_t ox = ~(o0 | o1) & m;
+ return W4{(o1 | ox) & m, ox};
+}
+inline constexpr bool exact(W4 a, W4 b) noexcept { return a.a == b.a && a.b == b.b; }
+inline constexpr bool casez_match(W4 a, W4 b, uint64_t m) noexcept {
+ const uint64_t care = ~((~a.a & a.b) | (~b.a & b.b)) & m;
+ return (((a.a ^ b.a) | (a.b ^ b.b)) & care) == 0ULL;
+}
+inline constexpr bool casex_match(W4 a, W4 b, uint64_t m) noexcept {
+ const uint64_t care = ~(a.b | b.b) & m;
+ return ((a.a ^ b.a) & care) == 0ULL;
+}
+inline constexpr W4 wildeq(W4 a, W4 b, uint64_t m) noexcept {
+ const uint64_t care = ~b.b & m;
+ const uint64_t au = a.b & care;
+ const uint64_t known = care & ~au;
+ if (((a.a ^ b.a) & known) != 0ULL) return W4{0ULL, 0ULL};
+ return au != 0ULL ? W4{1ULL, 1ULL} : W4{1ULL, 0ULL};
+}
+inline constexpr W4 wildneq(W4 a, W4 b, uint64_t m) noexcept { return lnot(wildeq(a, b, m)); }
+inline constexpr W4 eq(W4 a, W4 b) noexcept {
+ const uint64_t u = a.b | b.b;
+ if (((a.a ^ b.a) & ~u) != 0ULL) return W4{0ULL, 0ULL};
+ return u != 0ULL ? W4{1ULL, 1ULL} : W4{1ULL, 0ULL};
+}
+inline constexpr W4 cmp(W4 a, W4 b, int op) noexcept {
+ if ((a.b | b.b) != 0ULL) return W4{1ULL, 1ULL};
+ const bool r = op == 0 ? a.a < b.a : op == 1 ? a.a <= b.a : op == 2 ? a.a > b.a : a.a >= b.a;
+ return W4{r ? 1ULL : 0ULL, 0ULL};
+}
+inline constexpr int64_t sext(uint64_t v, int w) noexcept {
+ if (w >= 64) return int64_t(v);
+ const unsigned sh = unsigned(64 - w);
+ return int64_t(v << sh) >> sh;
+}
+inline constexpr W4 scmp(W4 a, W4 b, int w, int op) noexcept {
+ if ((a.b | b.b) != 0ULL) return W4{1ULL, 1ULL};
+ const int64_t sa = sext(a.a, w), sb = sext(b.a, w);
+ const bool r = op == 0 ? sa < sb : op == 1 ? sa <= sb : op == 2 ? sa > sb : sa >= sb;
+ return W4{r ? 1ULL : 0ULL, 0ULL};
+}
+inline constexpr W4 arith(W4 a, W4 b, uint64_t m, bool sub) noexcept {
+ if ((a.b | b.b) != 0ULL) return W4{m, m};
+ return W4{(sub ? (a.a - b.a) : (a.a + b.a)) & m, 0ULL};
+}
+inline constexpr W4 shift(W4 a, W4 b, uint64_t m, bool right) noexcept {
+ if (b.b != 0ULL) return W4{m, m};
+ if (b.a >= 64ULL) return W4{0ULL, 0ULL};
+ const unsigned sh = unsigned(b.a);
+ if (right) return W4{(a.a & m) >> sh, (a.b & m) >> sh};
+ return W4{(a.a << sh) & m, (a.b << sh) & m};
+}
+inline constexpr W4 sshift(W4 a, W4 b, int w, uint64_t m) noexcept {
+ if (b.b != 0ULL) return W4{m, m};
+ const int top = w - 1;
+ const uint64_t sa = (a.a >> top) & 1ULL, sb = (a.b >> top) & 1ULL;
+ if (b.a >= 64ULL) return W4{sa ? m : 0ULL, sb ? m : 0ULL};
+ const unsigned sh = unsigned(b.a);
+ const uint64_t fill = sh == 0 ? 0ULL : (m & ~(m >> sh));
+ return W4{(((a.a & m) >> sh) | (sa ? fill : 0ULL)) & m,
+           (((a.b & m) >> sh) | (sb ? fill : 0ULL)) & m};
+}
+inline constexpr W4 red(W4 a, uint64_t m, int op) noexcept {
+ const uint64_t u = a.b & m;
+ const uint64_t v = a.a & ~u & m;
+ if (op == 0 || op == 1) {
+  const uint64_t zeros = ~(v | u) & m;
+  if (zeros != 0ULL) return W4{op == 1 ? 1ULL : 0ULL, 0ULL};
+  if (u != 0ULL) return W4{1ULL, 1ULL};
+  return W4{op == 0 ? 1ULL : 0ULL, 0ULL};
+ }
+ if (op == 2 || op == 3) {
+  if (v != 0ULL) return W4{op == 2 ? 1ULL : 0ULL, 0ULL};
+  if (u != 0ULL) return W4{1ULL, 1ULL};
+  return W4{op == 3 ? 1ULL : 0ULL, 0ULL};
+ }
+ if (u != 0ULL) return W4{1ULL, 1ULL};
+ const bool odd = (__builtin_popcountll(v) & 1) != 0;
+ return W4{(odd ^ (op == 5)) ? 1ULL : 0ULL, 0ULL};
+}
+inline constexpr W4 product(W4 a, W4 b, uint64_t m, int op) noexcept {
+ if (((a.b | b.b) & m) != 0ULL) return W4{m, m};
+ const uint64_t av = a.a & m, bv = b.a & m;
+ if (op == 0) return W4{(av * bv) & m, 0ULL};
+ if (bv == 0ULL) return W4{m, m};
+ return W4{(op == 1 ? (av / bv) : (av % bv)) & m, 0ULL};
+}
+inline constexpr W4 sproduct(W4 a, W4 b, int w, uint64_t m, int op) noexcept {
+ if (((a.b | b.b) & m) != 0ULL) return W4{m, m};
+ const int64_t sa = sext(a.a, w), sb = sext(b.a, w);
+ if (op == 0) return W4{(uint64_t(sa) * uint64_t(sb)) & m, 0ULL};
+ if (sb == 0) return W4{m, m};
+ if (sa == INT64_MIN && sb == -1) return W4{op == 1 ? (uint64_t(sa) & m) : 0ULL, 0ULL};
+ return W4{uint64_t(op == 1 ? (sa / sb) : (sa % sb)) & m, 0ULL};
+}
+inline constexpr W4 cond(W4 c, W4 a, W4 b, uint64_t m) noexcept {
+ const int t = truth(c);
+ if (t == 1) return resize(a, m);
+ if (t == 0) return resize(b, m);
+ const uint64_t diff = ((a.a ^ b.a) | (a.b ^ b.b)) & m;
+ return W4{(a.a & m) | diff, (a.b & m) | diff};
+}
+inline constexpr W4 concat(W4 a, W4 b, int bw) noexcept {
+ const uint64_t bm = mask64_unchecked(bw);
+ if (bw >= 64) return W4{b.a & bm, b.b & bm};
+ return W4{(a.a << bw) | (b.a & bm), (a.b << bw) | (b.b & bm)};
+}
+inline constexpr W4 selbit(W4 a, int aw, W4 idx) noexcept {
+ if (idx.b != 0ULL || idx.a >= uint64_t(aw)) return W4{1ULL, 1ULL};
+ const unsigned i = unsigned(idx.a);
+ return W4{(a.a >> i) & 1ULL, (a.b >> i) & 1ULL};
+}
+inline constexpr W4 selpart(W4 a, int aw, int left, int right) noexcept {
+ const int n = left - right + 1;
+ const uint64_t m = mask64_unchecked(n);
+ if (right >= aw) return W4{m, m};
+ const int avail = aw - right;
+ const uint64_t am = mask64_unchecked(avail < n ? avail : n);
+ const uint64_t oob = m & ~am;
+ return W4{((a.a >> right) & am) | oob, ((a.b >> right) & am) | oob};
+}
+inline W4 selidx(W4 a, int aw, W4 b, int width, bool desc) {
+ const uint64_t wm = mask64_unchecked(width);
+ if (b.b != 0ULL) return W4{wm, wm};
+ if (b.a > 2147483647ULL) throw std::out_of_range("known indexed select base exceeds qualified range 0..INT32_MAX");
+ const int64_t lo = desc ? int64_t(b.a) - (width - 1) : int64_t(b.a);
+ const int64_t srcLo = lo < 0 ? 0 : lo;
+ const int64_t srcHi = (lo + width) < aw ? (lo + width) : aw;
+ if (srcLo >= srcHi) return W4{wm, wm};
+ const int count = int(srcHi - srcLo);
+ const int dstLo = int(srcLo - lo);
+ const int sLo = int(srcLo);
+ const uint64_t cm = mask64_unchecked(count);
+ const uint64_t dstMask = cm << dstLo;
+ const uint64_t oob = wm & ~dstMask;
+ return W4{(((a.a >> sLo) & cm) << dstLo) | oob, (((a.b >> sLo) & cm) << dstLo) | oob};
+}
+inline W4 depidx(W4 before, int bw, W4 b, int width, bool desc, W4 value) {
+ if (b.b != 0ULL) return before;
+ if (b.a > 2147483647ULL) throw std::out_of_range("known selected write base exceeds qualified range 0..INT32_MAX");
+ const uint64_t wm = mask64_unchecked(width);
+ const W4 val{value.a & wm, value.b & wm};
+ const int64_t lo = desc ? int64_t(b.a) - (width - 1) : int64_t(b.a);
+ const int64_t dstLo = lo < 0 ? 0 : lo;
+ const int64_t dstHi = (lo + width) < bw ? (lo + width) : bw;
+ if (dstLo >= dstHi) return before;
+ const int count = int(dstHi - dstLo);
+ const int srcLo = int(dstLo - lo);
+ const int dLo = int(dstLo);
+ const uint64_t cm = mask64_unchecked(count);
+ const uint64_t dmask = cm << dLo;
+ return W4{(before.a & ~dmask) | (((val.a >> srcLo) & cm) << dLo),
+           (before.b & ~dmask) | (((val.b >> srcLo) & cm) << dLo)};
+}
+inline constexpr W4 memidx(W4 index, int lower) noexcept {
+ if (index.b != 0ULL || index.a < uint64_t(lower)) return W4{1ULL, 1ULL};
+ return W4{index.a - uint64_t(lower), 0ULL};
+}
+inline W4 read_flat(const W4* m, size_t depth, W4 idx, uint64_t wm) noexcept {
+ if (idx.b != 0ULL || idx.a >= depth) return W4{wm, wm};
+ return m[size_t(idx.a)];
+}
+inline constexpr W4 countones(W4 a, uint64_t m) noexcept {
+ return W4{uint64_t(__builtin_popcountll(a.a & ~a.b & m)), 0ULL};
+}
+inline constexpr W4 onehot(W4 a, uint64_t m) noexcept {
+ return W4{__builtin_popcountll(a.a & ~a.b & m) == 1 ? 1ULL : 0ULL, 0ULL};
+}
+inline constexpr W4 onehot0(W4 a, uint64_t m) noexcept {
+ return W4{__builtin_popcountll(a.a & ~a.b & m) <= 1 ? 1ULL : 0ULL, 0ULL};
+}
+inline constexpr W4 isunknown(W4 a, uint64_t m) noexcept {
+ return W4{(a.b & m) != 0ULL ? 1ULL : 0ULL, 0ULL};
+}
+inline constexpr W4 clog2(W4 a, uint64_t m) noexcept {
+ if ((a.b & m) != 0ULL) return W4{0ULL, 0ULL};
+ const uint64_t x = a.a & m;
+ if (x <= 1ULL) return W4{0ULL, 0ULL};
+ return W4{uint64_t(64 - __builtin_clzll(x - 1ULL)), 0ULL};
+}
+inline constexpr W4 resolve_pair(W4 a, W4 b, int net_kind, uint64_t m) noexcept {
+ const uint64_t va = a.a & ~a.b & m, za = ~a.a & a.b & m, a0 = ~a.a & ~a.b & m;
+ const uint64_t vb = b.a & ~b.b & m, zb = ~b.a & b.b & m, b0 = ~b.a & ~b.b & m;
+ const uint64_t z_out = za & zb;
+ uint64_t v_out = 0, o0 = 0;
+ if (net_kind == 1) {
+  o0 = (a0 | b0) & m;
+  v_out = (~o0) & ((va & (vb | zb)) | (za & vb)) & m;
+ } else if (net_kind == 2) {
+  v_out = (va | vb) & m;
+  o0 = (~v_out) & ((a0 & (b0 | zb)) | (za & b0)) & m;
+ } else {
+  v_out = ((va & (vb | zb)) | (za & vb)) & m;
+  o0 = ((a0 & (b0 | zb)) | (za & b0)) & m;
+ }
+ const uint64_t x_out = ~(z_out | v_out | o0) & m;
+ return W4{(v_out | x_out) & m, (x_out | z_out) & m};
+}
+inline constexpr W4 resolve_finalize(W4 acc, int net_kind, uint64_t m) noexcept {
+ if (net_kind == 3) return W4{acc.a & m, (acc.a & acc.b) & m};
+ if (net_kind == 4) return W4{(acc.a | acc.b) & m, (acc.a & acc.b) & m};
+ return acc;
+}
+inline constexpr W4 resolve_net2(int net_kind, W4 a, W4 b, uint64_t m) noexcept {
+ return resolve_finalize(resolve_pair(a, b, net_kind, m), net_kind, m);
+}
+inline W4 resolve_net(int net_kind, std::initializer_list<W4> drivers, uint64_t m) noexcept {
+ if (drivers.size() == 0) return resolve_finalize(W4{0ULL, m}, net_kind, m);
+ auto it = drivers.begin();
+ W4 acc = resize(*it, m);
+ for (++it; it != drivers.end(); ++it) acc = resolve_pair(acc, *it, net_kind, m);
+ return resolve_finalize(acc, net_kind, m);
+}
+inline unsigned repeat_count(W4 a, int w, bool is_signed) {
+ if (a.b != 0ULL) return 0u;
+ if (is_signed && w > 0 && ((a.a >> (w - 1)) & 1ULL)) return 0u;
+ if (a.a > 20000ULL) throw std::runtime_error("runtime repeat count exceeds budget");
+ return unsigned(a.a);
+}
+inline void check_assert(W4 cond, const char* msg) {
+ if (!yes(cond)) throw std::runtime_error(msg && msg[0] ? msg : "RTL assertion failed");
+}
+template<size_t N = 16>
+struct MemLog4 {
+ struct Entry { uint32_t mem; uint32_t idx; W4 val; };
+ Entry buf[N];
+ size_t count = 0;
+ std::vector<Entry> overflow;
+ inline void push(uint32_t mem_id, size_t depth, W4 idx, W4 val, uint64_t m) {
+  if (idx.b != 0ULL || idx.a >= depth) return;
+  const Entry e{mem_id, uint32_t(idx.a), W4{val.a & m, val.b & m}};
+  if (count < N) [[likely]] buf[count++] = e;
+  else overflow.push_back(e);
+ }
+ inline void commit_flat(W4** mems) {
+  for (size_t i = 0; i < count; ++i) mems[buf[i].mem][buf[i].idx] = buf[i].val;
+  if (!overflow.empty()) [[unlikely]] {
+   for (const auto& e : overflow) mems[e.mem][e.idx] = e.val;
+   overflow.clear();
+  }
+  count = 0;
+ }
+};
+} // namespace w4
+
+inline size_t load_mem_file_flat(w4::W4* mem, size_t depth, int width, const std::string& path, bool hex,
+                                 size_t start_addr = 0, size_t end_addr = SIZE_MAX, bool two_state_mem = false) {
+ std::vector<W> tmp(depth);
+ for (size_t i = 0; i < depth; ++i) tmp[i] = w4::from(mem[i], width);
+ size_t loaded = load_mem_file(tmp, width, path, hex, start_addr, end_addr, two_state_mem);
+ const uint64_t m = mask64_unchecked(width);
+ for (size_t i = 0; i < depth; ++i) mem[i] = w4::to(tmp[i], m);
+ return loaded;
+}
+
 // IEEE 1364 $display / $write formatter supporting %d, %u, %x/%h, %b, %0d/%0x/%0b, and %%.
 inline std::string format_display(const std::string& fmt, const std::vector<W>& args, bool newline) {
  std::string out;

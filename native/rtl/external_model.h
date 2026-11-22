@@ -146,6 +146,7 @@ class Port {
  const uint64_t mask64;
  uint64_t* const fast_v2;
  w64::W64* const fast_w64;
+ w4::W4* const fast_w4;
  static uint64_t toUint64Checked(const W& v) {
   uint64_t xz = 0;
   for (int i = 0; i < Bits::kLimbs; ++i) xz |= v.x.limb[i] | v.z.limb[i];
@@ -156,19 +157,27 @@ class Port {
   return v.v.limb[0];
  }
 public:
- Port(Model& owner, size_t index, uint64_t* v2_slot = nullptr, w64::W64* w64_slot = nullptr)
+ Port(Model& owner, size_t index, uint64_t* v2_slot = nullptr, w64::W64* w64_slot = nullptr, w4::W4* w4_slot = nullptr)
   : model(&owner), id(index),
     width(index < owner.signals().size() ? owner.signals()[index].width : 0),
     is_input(index < owner.signals().size() && owner.signals()[index].direction == vpiInput),
     mask64(width >= 64 ? ~uint64_t(0) : (width > 0 ? ((uint64_t(1) << width) - 1) : 0ULL)),
-    fast_v2(v2_slot), fast_w64(w64_slot) {}
+    fast_v2(v2_slot), fast_w64(w64_slot), fast_w4(w4_slot) {}
  Port(Model& owner, size_t index, w64::W64* w64_slot)
-  : Port(owner, index, nullptr, w64_slot) {}
+  : Port(owner, index, nullptr, w64_slot, nullptr) {}
+ Port(Model& owner, size_t index, w4::W4* w4_slot)
+  : Port(owner, index, nullptr, nullptr, w4_slot) {}
  Port(const Port&) = delete; Port& operator=(const Port&) = delete;
  inline Port& operator=(uint64_t value) {
   if (model->canFastPortWrite() && is_input) [[likely]] {
    if (fast_v2) {
     *fast_v2 = value & mask64;
+    model->markDirty();
+    return *this;
+   }
+   if (fast_w4) {
+    fast_w4->a = value & mask64;
+    fast_w4->b = 0;
     model->markDirty();
     return *this;
    }
@@ -204,6 +213,7 @@ public:
  std::string bits() const {
   if (model->isOwnerThreadFast()) [[likely]] {
    if (fast_v2) return text(w2::from(*fast_v2, width));
+   if (fast_w4) return text(w4::from(*fast_w4, width));
    if (fast_w64) return text(w64::from(*fast_w64));
   }
   return text(model->fastGet(id));
@@ -211,6 +221,7 @@ public:
  W value() const {
   if (model->isOwnerThreadFast()) [[likely]] {
    if (fast_v2) return w2::from(*fast_v2, width);
+   if (fast_w4) return w4::from(*fast_w4, width);
    if (fast_w64) return w64::from(*fast_w64);
   }
   return model->fastGet(id);
@@ -218,6 +229,10 @@ public:
  inline explicit operator uint64_t() const {
   if (model->isOwnerThreadFast()) [[likely]] {
    if (fast_v2) return *fast_v2;
+   if (fast_w4) {
+    if (fast_w4->b != 0) throw std::runtime_error("integer conversion of X/Z port");
+    return fast_w4->a;
+   }
    if (fast_w64) {
     if ((fast_w64->x | fast_w64->z) != 0) throw std::runtime_error("integer conversion of X/Z port");
     return fast_w64->v;
