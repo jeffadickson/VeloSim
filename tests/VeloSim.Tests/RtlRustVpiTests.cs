@@ -427,7 +427,10 @@ public sealed class RtlRustVpiTests
                 void (*vlog_startup_routines[])(void) = { register_plugin, NULL };
                 """);
 
-            var (gccCode, gccOut, gccErr) = await RunAsync("gcc", ["-shared", "-fPIC", "-O2", $"-I{sdkDir}", pluginC, "-o", pluginSo], root);
+            string[] pluginArgs = OperatingSystem.IsMacOS()
+                ? ["-shared", "-fPIC", "-O2", "-undefined", "dynamic_lookup", $"-I{sdkDir}", pluginC, "-o", pluginSo]
+                : ["-shared", "-fPIC", "-O2", $"-I{sdkDir}", pluginC, "-o", pluginSo];
+            var (gccCode, gccOut, gccErr) = await RunAsync("gcc", pluginArgs, root);
             Assert.That(gccCode, Is.Zero, gccErr + "\n" + gccOut);
 
             // 2. Build the Rust workspace (both core crate and vpi_ffi cdylib/rlib).
@@ -435,7 +438,8 @@ public sealed class RtlRustVpiTests
             Assert.That(buildCode, Is.Zero, buildErr + "\n" + buildOut);
 
             string cdylibDir = Path.Combine(sdkDir, "target", "release");
-            string cdylibPath = Path.Combine(cdylibDir, "libvelosim_vpi_dut_vpi.so");
+            string cdylibExt = OperatingSystem.IsMacOS() ? ".dylib" : ".so";
+            string cdylibPath = Path.Combine(cdylibDir, "libvelosim_vpi_dut_vpi" + cdylibExt);
             Assert.That(File.Exists(cdylibPath), Is.True, "Expected Rust VPI cdylib at " + cdylibPath);
 
             // 3. Test loading the C plugin directly from a Rust test inside vpi_ffi!

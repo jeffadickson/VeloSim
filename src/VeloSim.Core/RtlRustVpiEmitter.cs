@@ -671,6 +671,9 @@ pub const cbEndOfSimulation: PLI_INT32 = 12;
 mod dynload {
     use std::ffi::{c_char, c_int, c_void, CStr, CString};
     const RTLD_NOW: c_int = 2;
+    #[cfg(target_os = "macos")]
+    const RTLD_LOCAL: c_int = 4;
+    #[cfg(not(target_os = "macos"))]
     const RTLD_LOCAL: c_int = 0;
     extern "C" {
         fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;

@@ -343,7 +343,10 @@ public sealed class RtlCSharpVpiTests
                 void (*vlog_startup_routines[])(void) = { register_plugin, NULL };
                 """);
 
-            var (pCode, pOut, pErr) = await RunAsync("gcc", ["-shared", "-fPIC", "-O2", $"-I{sdkDir}", pluginC, "-o", pluginSo], root);
+            string[] pluginArgs = OperatingSystem.IsMacOS()
+                ? ["-shared", "-fPIC", "-O2", "-undefined", "dynamic_lookup", $"-I{sdkDir}", pluginC, "-o", pluginSo]
+                : ["-shared", "-fPIC", "-O2", $"-I{sdkDir}", pluginC, "-o", pluginSo];
+            var (pCode, pOut, pErr) = await RunAsync("gcc", pluginArgs, root);
             Assert.That(pCode, Is.Zero, pErr + "\n" + pOut);
 
             // 3. Build & run a .NET 11 host referencing vpi_ffi/Vvpi_dut.VpiFfi.csproj with TreatWarningsAsErrors=true.
