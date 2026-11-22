@@ -398,6 +398,141 @@ public sealed class RtlCSharpVpiTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task CSharpInlineMemoryAndPureInternalSettleFastPath(bool twoState)
+    {
+        const string fifoIr = """
+            {
+              "format": "velosim.rtl.v1",
+              "clock": "clk",
+              "signals": [
+                {"name": "clk", "width": 1, "direction": "input"},
+                {"name": "rst", "width": 1, "direction": "input"},
+                {"name": "we", "width": 1, "direction": "input"},
+                {"name": "waddr", "width": 2, "direction": "input"},
+                {"name": "din", "width": 8, "direction": "input"},
+                {"name": "raddr", "width": 2, "direction": "internal"},
+                {"name": "dout", "width": 8, "direction": "output"}
+              ],
+              "memories": [{"name": "mem", "width": 8, "depth": 4}],
+              "continuous": [
+                {"target": {"kind": "ref", "name": "dout"}, "value": {"kind": "index", "name": "mem", "index": {"kind": "ref", "name": "raddr"}}}
+              ],
+              "body": {
+                "kind": "process",
+                "events": [{"signal": "clk", "edge": "posedge"}],
+                "body": {
+                  "kind": "if",
+                  "condition": {"kind": "ref", "name": "rst"},
+                  "then": {"kind": "nba", "target": {"kind": "ref", "name": "raddr"}, "value": {"kind": "const", "bits": "00"}},
+                  "else": {
+                    "kind": "block",
+                    "items": [
+                      {
+                        "kind": "if",
+                        "condition": {"kind": "ref", "name": "we"},
+                        "then": {"kind": "nba", "target": {"kind": "index", "name": "mem", "index": {"kind": "ref", "name": "waddr"}}, "value": {"kind": "ref", "name": "din"}},
+                        "else": {"kind": "block", "items": []}
+                      },
+                      {"kind": "nba", "target": {"kind": "ref", "name": "raddr"}, "value": {"kind": "ref", "name": "waddr"}}
+                    ]
+                  }
+                }
+              }
+            }
+            """;
+
+        string root = Path.Combine(Path.GetTempPath(), "velosim-cs-inline-mem-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            string irPath = Path.Combine(root, "inline_mem.rtl.json");
+            string sdkDir = Path.Combine(root, "sdk");
+            string hostDir = Path.Combine(root, "host");
+            string ckptPath = Path.Combine(root, "state.ckpt");
+            await File.WriteAllTextAsync(irPath, fifoIr);
+
+            string[] cliArgs = twoState
+                ? ["rtl-export", irPath, "--top", "inline_mem", "--output-dir", sdkDir, "--target", "csharp", "--two-state"]
+                : ["rtl-export", irPath, "--top", "inline_mem", "--output-dir", sdkDir, "--target", "csharp"];
+            var err = new StringWriter();
+            Assert.That(await ToolCli.RunAsync(cliArgs, new StringWriter(), err), Is.Zero, err.ToString());
+
+            string modelCs = await File.ReadAllTextAsync(Path.Combine(sdkDir, "Vinline_mem.cs"));
+            Assert.That(modelCs, Does.Contain("[InlineArray(4)]"));
+            Assert.That(modelCs, Does.Contain("Unsafe.Add(ref _m0[0]"));
+            Assert.That(modelCs, Does.Contain("_mw0_idx"));
+            Assert.That(modelCs, Does.Contain("_evalSlow"));
+            Assert.That(modelCs, Does.Not.Contain("MemLog"));
+            Assert.That(modelCs, Does.Not.Contain("unsafe "));
+
+            Directory.CreateDirectory(hostDir);
+            await File.WriteAllTextAsync(Path.Combine(hostDir, "Host.csproj"), $"""
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <OutputType>Exe</OutputType>
+                    <TargetFramework>net11.0</TargetFramework>
+                    <Nullable>enable</Nullable>
+                    <LangVersion>15.0</LangVersion>
+                    <AnalysisLevel>11.0</AnalysisLevel>
+                    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+                  </PropertyGroup>
+                  <ItemGroup>
+                    <ProjectReference Include="{Path.Combine(sdkDir, "Vinline_mem.csproj")}" />
+                  </ItemGroup>
+                </Project>
+                """);
+
+            await File.WriteAllTextAsync(Path.Combine(hostDir, "Program.cs"), $$"""
+                using System;
+                using VeloSim.Generated;
+
+                var dut = new Vinline_mem();
+                dut.rst = 1; dut.we = 0; dut.waddr = 0; dut.din = 0;
+                dut.clk = 0; dut.Eval();
+                dut.clk = 1; dut.Eval();
+                dut.clk = 0; dut.Eval();
+
+                // Write 0xA5 at addr 2 via single-write stack-local NBA path
+                dut.rst = 0; dut.we = 1; dut.waddr = 2; dut.din = 0xA5;
+                dut.clk = 1; dut.Eval();
+                dut.clk = 0; dut.Eval();
+                if (dut.dout != 0xA5) throw new Exception("NBA readback mismatch: " + dut.dout);
+
+                dut.SaveCheckpoint({{JsonSerializer.Serialize(ckptPath)}});
+
+                // Backdoor WriteMemory must invalidate _evalSlow and reflect on next Eval() even without clock edge
+                dut.WriteMemory(0, 2, new W64(0x3C, 0, 0, 8));
+                dut.Eval();
+                if (dut.dout != 0x3C) throw new Exception("WriteMemory settle mismatch: " + dut.dout);
+
+                // ForceSignal / ReleaseSignal must re-settle combinational output
+                int doutId = dut.SignalByName("dout");
+                dut.ForceSignal(doutId, new W64(0x77, 0, 0, 8));
+                dut.Eval();
+                if (dut.dout != 0x77) throw new Exception("Force mismatch: " + dut.dout);
+                dut.ReleaseSignal(doutId);
+                dut.Eval();
+                if (dut.dout != 0x3C) throw new Exception("Release settle mismatch: " + dut.dout);
+
+                // RestoreCheckpoint must invalidate _evalSlow and restore 0xA5 on next Eval()
+                dut.RestoreCheckpoint({{JsonSerializer.Serialize(ckptPath)}});
+                dut.Eval();
+                if (dut.dout != 0xA5) throw new Exception("RestoreCheckpoint settle mismatch: " + dut.dout);
+
+                Console.WriteLine("CS_INLINE_MEM_OK");
+                """);
+
+            var (bCode, bOut, bErr) = await RunAsync("dotnet", ["build", hostDir, "-c", "Release", "--disable-build-servers", "--nologo"], root);
+            Assert.That(bCode, Is.Zero, bErr + "\n" + bOut);
+            var (runCode, runOut, runErr) = await RunAsync("dotnet", [Path.Combine(hostDir, "bin", "Release", "net11.0", "Host.dll")], root);
+            Assert.That(runCode, Is.Zero, runErr + "\n" + runOut);
+            Assert.That(runOut, Does.Contain("CS_INLINE_MEM_OK"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static bool ToolExists(string name)
     {
         try

@@ -91,11 +91,174 @@ public sealed partial class RtlDesign
         return true;
     }
 
+    private const int CsInlineMemMaxDepth = 4096;
+    private bool CsIsInlineMem(int id) => Memories[id].Depth is >= 1 and <= CsInlineMemMaxDepth;
+
+    private int CsMaxMemWrites(JsonElement e, int memId, bool inLoop, out bool hitInLoop)
+    {
+        hitInLoop = false;
+        switch (Kind(e))
+        {
+            case "nba":
+            {
+                var t = e.GetProperty("target");
+                if (Kind(t) == "index" && MemoryId(Name(t)) == memId) { hitInLoop = inLoop; return 1; }
+                return 0;
+            }
+            case "block":
+            case "parallel":
+            {
+                int sum = 0;
+                foreach (var item in e.GetProperty("items").EnumerateArray())
+                {
+                    sum += CsMaxMemWrites(item, memId, inLoop, out bool sub);
+                    hitInLoop |= sub;
+                }
+                return sum;
+            }
+            case "process":
+                return CsMaxMemWrites(e.GetProperty("body"), memId, inLoop, out hitInLoop);
+            case "if":
+            {
+                int a = CsMaxMemWrites(e.GetProperty("then"), memId, inLoop, out bool sa);
+                int b = CsMaxMemWrites(e.GetProperty("else"), memId, inLoop, out bool sb);
+                hitInLoop = sa || sb;
+                return Math.Max(a, b);
+            }
+            case "case":
+            {
+                int max = 0;
+                foreach (var item in e.GetProperty("items").EnumerateArray())
+                {
+                    int c = CsMaxMemWrites(item.GetProperty("body"), memId, inLoop, out bool sc);
+                    if (c > max) max = c;
+                    hitInLoop |= sc;
+                }
+                return max;
+            }
+            case "while":
+            case "do":
+            case "repeat":
+            case "runtime_repeat":
+                return CsMaxMemWrites(e.GetProperty("body"), memId, true, out hitInLoop);
+            default:
+                return 0;
+        }
+    }
+
     private string CsMemIdx(JsonElement access, int id, bool twoState)
     {
         string idx = twoState ? CsExpr2(access.GetProperty("index")) : CsExpr64(access.GetProperty("index"));
         if (Memories[id].LowerBound == 0) return idx;
         return twoState ? $"W2Ops.MemIdx({idx},{Memories[id].LowerBound})" : $"W4Ops.MemIdx({idx},{Memories[id].LowerBound})";
+    }
+
+    private bool CsExprIsPureInternal(JsonElement e)
+    {
+        string k = Kind(e);
+        if (k == "ref") return Signals[SignalId(Name(e))].Direction != "input";
+        if (k is "urandom" or "urandom_range" or "random" or "test_plusargs" or "past" or "rose" or "fell" or "stable") return false;
+        if (e.TryGetProperty("value", out var v) && !CsExprIsPureInternal(v)) return false;
+        if (e.TryGetProperty("index", out var ix) && !CsExprIsPureInternal(ix)) return false;
+        if (e.TryGetProperty("base", out var bs) && !CsExprIsPureInternal(bs)) return false;
+        if (e.TryGetProperty("args", out var args))
+            foreach (var a in args.EnumerateArray()) if (!CsExprIsPureInternal(a)) return false;
+        if (e.TryGetProperty("items", out var items))
+            foreach (var it in items.EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var lo) && !CsExprIsPureInternal(lo)) return false;
+                if (it.TryGetProperty("hi", out var hi) && !CsExprIsPureInternal(hi)) return false;
+                if (!it.TryGetProperty("lo", out _) && !CsExprIsPureInternal(it)) return false;
+            }
+        return true;
+    }
+
+    private static bool CsHasSideEffect(JsonElement e)
+    {
+        string k = Kind(e);
+        if (k is "urandom" or "urandom_range" or "random") return true;
+        if (e.TryGetProperty("value", out var v) && CsHasSideEffect(v)) return true;
+        if (e.TryGetProperty("index", out var ix) && CsHasSideEffect(ix)) return true;
+        if (e.TryGetProperty("base", out var bs) && CsHasSideEffect(bs)) return true;
+        if (e.TryGetProperty("args", out var args))
+            foreach (var a in args.EnumerateArray()) if (CsHasSideEffect(a)) return true;
+        return false;
+    }
+
+    private string CsCond64(JsonElement e)
+    {
+        string k = Kind(e);
+        if (k == "not")
+        {
+            var a = e.GetProperty("args")[0];
+            return $"W4Ops.IsZero({CsExpr64(a)})";
+        }
+        if (k is "and" or "or")
+        {
+            var args = e.GetProperty("args");
+            var a = args[0];
+            var b = args[1];
+            if (!CsHasSideEffect(b))
+                return $"({CsCond64(a)}{(k == "and" ? "&&" : "||")}{CsCond64(b)})";
+        }
+        if (k is "eq" or "neq" or "caseeq" or "caseneq")
+        {
+            var args = e.GetProperty("args");
+            var a = args[0];
+            var b = args[1];
+            int cw = Math.Max(ExpressionWidth(a), ExpressionWidth(b));
+            bool cs = ExpressionSigned(a) && ExpressionSigned(b);
+            string sa = CsExpr64(a, cw, cs), sb = CsExpr64(b, cw, cs);
+            return k switch
+            {
+                "eq" => $"W4Ops.EqYes({sa},{sb})",
+                "neq" => $"W4Ops.NeqYes({sa},{sb})",
+                "caseeq" => $"W4Ops.Exact({sa},{sb})",
+                _ => $"!W4Ops.Exact({sa},{sb})"
+            };
+        }
+        return $"W4Ops.Yes({CsExpr64(e)})";
+    }
+
+    private string CsCond2(JsonElement e)
+    {
+        string k = Kind(e);
+        if (k == "not")
+        {
+            var a = e.GetProperty("args")[0];
+            return $"({CsExpr2(a)}==0UL)";
+        }
+        if (k is "and" or "or")
+        {
+            var args = e.GetProperty("args");
+            var a = args[0];
+            var b = args[1];
+            if (!CsHasSideEffect(b))
+                return $"({CsCond2(a)}{(k == "and" ? "&&" : "||")}{CsCond2(b)})";
+        }
+        if (k is "eq" or "neq" or "caseeq" or "caseneq")
+        {
+            var args = e.GetProperty("args");
+            var a = args[0];
+            var b = args[1];
+            int cw = Math.Max(ExpressionWidth(a), ExpressionWidth(b));
+            bool cs = ExpressionSigned(a) && ExpressionSigned(b);
+            string op = k is "eq" or "caseeq" ? "==" : "!=";
+            return $"({CsExpr2(a, cw, cs)}{op}{CsExpr2(b, cw, cs)})";
+        }
+        if (k is "lt" or "le" or "gt" or "ge")
+        {
+            var args = e.GetProperty("args");
+            var a = args[0];
+            var b = args[1];
+            if (!(ExpressionSigned(a) && ExpressionSigned(b)))
+            {
+                int cw = Math.Max(ExpressionWidth(a), ExpressionWidth(b));
+                string op = k switch { "lt" => "<", "le" => "<=", "gt" => ">", _ => ">=" };
+                return $"({CsExpr2(a, cw, false)}{op}{CsExpr2(b, cw, false)})";
+            }
+        }
+        return $"({CsExpr2(e)}!=0UL)";
     }
 
     private string CsExpr64(JsonElement e, int context = 0, bool? forceSigned = null)
@@ -109,17 +272,29 @@ public sealed partial class RtlDesign
         if (kind == "index")
         {
             int id = MemoryId(Name(e));
-            return Extend($"W4Ops.Read(_m{id},{CsMemIdx(e, id, false)},{CsMaskHex(Memories[id].Width)})");
+            return Extend($"_ReadMem{id}({CsMemIdx(e, id, false)})");
         }
         if (kind == "bitselect")
         {
             var valEl = e.GetProperty("value");
-            return $"W4Ops.SelBit({CsExpr64(valEl)},{ExpressionWidth(valEl)},{CsExpr64(e.GetProperty("index"))})";
+            var idxEl = e.GetProperty("index");
+            int aw = ExpressionWidth(valEl);
+            if (TryConstShift(idxEl, out int bi) && bi < aw)
+                return bi == 0 ? $"W4Ops.Resize({CsExpr64(valEl)},0x1UL)" : $"W4Ops.SelPartFast({CsExpr64(valEl)},{bi},0x1UL)";
+            return $"W4Ops.SelBit({CsExpr64(valEl)},{aw},{CsExpr64(idxEl)})";
         }
         if (kind == "partselect")
         {
             var valEl = e.GetProperty("value");
-            return $"W4Ops.SelPart({CsExpr64(valEl)},{ExpressionWidth(valEl)},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
+            int aw = ExpressionWidth(valEl), left = e.GetProperty("left").GetInt32(), right = e.GetProperty("right").GetInt32();
+            if (right >= 0 && left < aw)
+            {
+                string m = CsMaskHex(left - right + 1);
+                return right == 0
+                    ? $"W4Ops.Resize({CsExpr64(valEl)},{m})"
+                    : $"W4Ops.SelPartFast({CsExpr64(valEl)},{right},{m})";
+            }
+            return $"W4Ops.SelPart({CsExpr64(valEl)},{aw},{left},{right})";
         }
         if (kind == "indexedselect")
         {
@@ -224,7 +399,7 @@ public sealed partial class RtlDesign
             "lt" or "le" or "gt" or "ge" => args.All(ExpressionSigned)
                 ? $"W4Ops.SCmp({CsExpr64(args[0], args.Max(ExpressionWidth), true)},{CsExpr64(args[1], args.Max(ExpressionWidth), true)},{args.Max(ExpressionWidth)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})"
                 : $"W4Ops.Cmp({CsExpr64(args[0], args.Max(ExpressionWidth), false)},{CsExpr64(args[1], args.Max(ExpressionWidth), false)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
-            "concat" => $"W4Ops.Concat({CsExpr64(args[0])},{CsExpr64(args[1])},{ExpressionWidth(args[1])})",
+            "concat" => $"W4Ops.Concat({CsExpr64(args[0])},{CsExpr64(args[1])},{ExpressionWidth(args[1])},{CsMaskHex(ExpressionWidth(args[1]))})",
             _ => throw new IrValidationException("Unsupported C# expression.")
         };
     }
@@ -240,17 +415,27 @@ public sealed partial class RtlDesign
         if (kind == "index")
         {
             int id = MemoryId(Name(e));
-            return Extend($"W2Ops.Read(_m{id},{CsMemIdx(e, id, true)})");
+            return Extend($"_ReadMem{id}({CsMemIdx(e, id, true)})");
         }
         if (kind == "bitselect")
         {
             var valEl = e.GetProperty("value");
-            return $"W2Ops.SelBit({CsExpr2(valEl)},{ExpressionWidth(valEl)},{CsExpr2(e.GetProperty("index"))})";
+            var idxEl = e.GetProperty("index");
+            int aw = ExpressionWidth(valEl);
+            if (TryConstShift(idxEl, out int bi) && bi < aw)
+                return bi == 0 ? $"(({CsExpr2(valEl)})&0x1UL)" : $"((({CsExpr2(valEl)})>>{bi})&0x1UL)";
+            return $"W2Ops.SelBit({CsExpr2(valEl)},{aw},{CsExpr2(idxEl)})";
         }
         if (kind == "partselect")
         {
             var valEl = e.GetProperty("value");
-            return $"W2Ops.SelPart({CsExpr2(valEl)},{ExpressionWidth(valEl)},{e.GetProperty("left").GetInt32()},{e.GetProperty("right").GetInt32()})";
+            int aw = ExpressionWidth(valEl), left = e.GetProperty("left").GetInt32(), right = e.GetProperty("right").GetInt32();
+            if (right >= 0 && left < aw)
+            {
+                string m = CsMaskHex(left - right + 1);
+                return right == 0 ? $"(({CsExpr2(valEl)})&{m})" : $"((({CsExpr2(valEl)})>>{right})&{m})";
+            }
+            return $"W2Ops.SelPart({CsExpr2(valEl)},{aw},{left},{right})";
         }
         if (kind == "indexedselect")
         {
@@ -363,7 +548,9 @@ public sealed partial class RtlDesign
                 args.All(ExpressionSigned)
                     ? $"W2Ops.SCmp({CsExpr2(args[0], args.Max(ExpressionWidth), true)},{CsExpr2(args[1], args.Max(ExpressionWidth), true)},{args.Max(ExpressionWidth)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})"
                     : $"W2Ops.Cmp({CsExpr2(args[0], args.Max(ExpressionWidth), false)},{CsExpr2(args[1], args.Max(ExpressionWidth), false)},{(kind == "lt" ? 0 : kind == "le" ? 1 : kind == "gt" ? 2 : 3)})",
-            "concat" => $"W2Ops.Concat({CsExpr2(args[0])},{CsExpr2(args[1])},{ExpressionWidth(args[1])})",
+            "concat" => ExpressionWidth(args[1]) >= 64
+                ? CsExpr2(args[1])
+                : $"(({CsExpr2(args[0])}<<{ExpressionWidth(args[1])})|({CsExpr2(args[1])}&{CsMaskHex(ExpressionWidth(args[1]))}))",
             _ => throw new IrValidationException("Unsupported C# two-state expression.")
         };
     }
@@ -408,18 +595,18 @@ public sealed partial class RtlDesign
         }
     }
 
-    private void CsStmt(StringBuilder code, JsonElement e, ref int unique, bool twoState, bool trackBudget)
+    private void CsStmt(StringBuilder code, JsonElement e, ref int unique, bool twoState, bool trackBudget, HashSet<int> singleWriteMems)
     {
         if (trackBudget) code.AppendLine("W64Ops.Step(ref _budget);");
         switch (Kind(e))
         {
             case "while":
             case "do":
-                string cond = twoState ? $"({CsExpr2(e.GetProperty("condition"))}!=0UL)" : $"W4Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
+                string cond = twoState ? CsCond2(e.GetProperty("condition")) : CsCond64(e.GetProperty("condition"));
                 if (Kind(e) == "do") code.AppendLine("do{");
                 else code.AppendLine($"while({cond}){{");
                 code.AppendLine("W64Ops.Step(ref _budget);");
-                CsStmt(code, e.GetProperty("body"), ref unique, twoState, trackBudget);
+                CsStmt(code, e.GetProperty("body"), ref unique, twoState, trackBudget, singleWriteMems);
                 code.AppendLine(Kind(e) == "do" ? $"}}while({cond});" : "}");
                 break;
             case "runtime_repeat":
@@ -430,17 +617,17 @@ public sealed partial class RtlDesign
                     : $"W4Ops.RepeatCount({CsExpr64(cntEl)},{ExpressionWidth(cntEl)},{(ExpressionSigned(cntEl) ? "true" : "false")})";
                 code.AppendLine($"for(uint {rl}={cnt};{rl}>0;--{rl}){{");
                 code.AppendLine("W64Ops.Step(ref _budget);");
-                CsStmt(code, e.GetProperty("body"), ref unique, twoState, trackBudget);
+                CsStmt(code, e.GetProperty("body"), ref unique, twoState, trackBudget, singleWriteMems);
                 code.AppendLine("}");
                 break;
             case "repeat":
                 string lp = "rep" + unique++;
                 code.AppendLine($"for(int {lp}=0;{lp}<{e.GetProperty("count").GetInt32()};++{lp}){{");
-                CsStmt(code, e.GetProperty("body"), ref unique, twoState, trackBudget);
+                CsStmt(code, e.GetProperty("body"), ref unique, twoState, trackBudget, singleWriteMems);
                 code.AppendLine("}");
                 break;
             case "block":
-                foreach (var item in e.GetProperty("items").EnumerateArray()) CsStmt(code, item, ref unique, twoState, trackBudget);
+                foreach (var item in e.GetProperty("items").EnumerateArray()) CsStmt(code, item, ref unique, twoState, trackBudget, singleWriteMems);
                 break;
             case "nba":
                 var target = e.GetProperty("target");
@@ -457,7 +644,7 @@ public sealed partial class RtlDesign
                         remaining -= width;
                         string part = twoState
                             ? $"W2Ops.SelPart({rhs},{total},{remaining + width - 1},{remaining})"
-                            : $"W4Ops.SelPart({rhs},{total},{remaining + width - 1},{remaining})";
+                            : $"W4Ops.SelPartFast({rhs},{remaining},{CsMaskHex(width)})";
                         CsWordWrite(code, leaf, part, twoState, width);
                     }
                     code.AppendLine("}");
@@ -474,28 +661,45 @@ public sealed partial class RtlDesign
                 else
                 {
                     int id = MemoryId(Name(target));
-                    if (twoState)
-                        code.AppendLine($"_mlog.Push({id},_m{id}.Length,{CsMemIdx(target, id, true)},{CsExpr2(e.GetProperty("value"), Memories[id].Width)},{Memories[id].Width});");
+                    int depth = Memories[id].Depth;
+                    if (singleWriteMems.Contains(id))
+                    {
+                        if (twoState)
+                        {
+                            string v = CsExpr2(e.GetProperty("value"), Memories[id].Width);
+                            string vm = Memories[id].Width >= 64 ? v : $"(({v})&{CsMaskHex(Memories[id].Width)})";
+                            code.AppendLine($"{{ulong _mi={CsMemIdx(target, id, true)};if(_mi<{depth}UL){{_mw{id}_idx=(int)_mi;_mw{id}_val={vm};}}}}");
+                        }
+                        else
+                        {
+                            string mm = CsMaskHex(Memories[id].Width);
+                            string v = CsExpr64(e.GetProperty("value"), Memories[id].Width);
+                            v = Memories[id].TwoState ? $"W4Ops.TwoState({v},{mm})" : $"W4Ops.Resize({v},{mm})";
+                            code.AppendLine($"{{W4 _mi={CsMemIdx(target, id, false)};if(_mi.B==0UL&&_mi.A<{depth}UL){{_mw{id}_idx=(int)_mi.A;_mw{id}_val={v};}}}}");
+                        }
+                    }
+                    else if (twoState)
+                        code.AppendLine($"_mlog.Push({id},{depth},{CsMemIdx(target, id, true)},{CsExpr2(e.GetProperty("value"), Memories[id].Width)},{Memories[id].Width});");
                     else
                     {
                         string v = CsExpr64(e.GetProperty("value"), Memories[id].Width);
                         string mm = CsMaskHex(Memories[id].Width);
                         if (Memories[id].TwoState) v = $"W4Ops.TwoState({v},{mm})";
-                        code.AppendLine($"_mlog.Push({id},_m{id}.Length,{CsMemIdx(target, id, false)},{v},{mm});");
+                        code.AppendLine($"_mlog.Push({id},{depth},{CsMemIdx(target, id, false)},{v},{mm});");
                     }
                 }
                 break;
             case "if":
-                string ifCond = twoState ? $"({CsExpr2(e.GetProperty("condition"))}!=0UL)" : $"W4Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
+                string ifCond = twoState ? CsCond2(e.GetProperty("condition")) : CsCond64(e.GetProperty("condition"));
                 code.AppendLine($"if({ifCond}){{");
-                CsStmt(code, e.GetProperty("then"), ref unique, twoState, trackBudget);
+                CsStmt(code, e.GetProperty("then"), ref unique, twoState, trackBudget, singleWriteMems);
                 code.AppendLine("}else{");
-                CsStmt(code, e.GetProperty("else"), ref unique, twoState, trackBudget);
+                CsStmt(code, e.GetProperty("else"), ref unique, twoState, trackBudget, singleWriteMems);
                 code.AppendLine("}");
                 break;
             case "assert":
             {
-                string condExpr = twoState ? $"({CsExpr2(e.GetProperty("condition"))}!=0UL)" : $"W4Ops.Yes({CsExpr64(e.GetProperty("condition"))})";
+                string condExpr = twoState ? CsCond2(e.GetProperty("condition")) : CsCond64(e.GetProperty("condition"));
                 string msg = CppStringLiteral(e.TryGetProperty("message", out var am) ? am.GetString()! : "");
                 code.AppendLine($"if (!{condExpr}) throw new InvalidOperationException(\"RTL assertion failed: \" + {msg});");
                 break;
@@ -585,7 +789,7 @@ public sealed partial class RtlDesign
                             _ => $"W4Ops.Exact({lbl},{CsExpr64(m, cw, csSigned)})"
                         }));
                     code.AppendLine($"{(first ? "if" : "else if")}({cmp}){{");
-                    CsStmt(code, item.GetProperty("body"), ref unique, twoState, trackBudget);
+                    CsStmt(code, item.GetProperty("body"), ref unique, twoState, trackBudget, singleWriteMems);
                     code.AppendLine("}");
                     first = false;
                 }
@@ -593,7 +797,7 @@ public sealed partial class RtlDesign
                 if (defItem.ValueKind != JsonValueKind.Undefined)
                 {
                     code.AppendLine(first ? "{" : "else{");
-                    CsStmt(code, defItem.GetProperty("body"), ref unique, twoState, trackBudget);
+                    CsStmt(code, defItem.GetProperty("body"), ref unique, twoState, trackBudget, singleWriteMems);
                     code.AppendLine("}");
                 }
                 code.AppendLine("}");
@@ -624,8 +828,23 @@ public sealed partial class RtlDesign
                     ? new[] { SignalId(e.GetProperty("target").GetString()!), SignalId(m.GetString()!) }
                     : new[] { SignalId(e.GetProperty("target").GetString()!) }))
             .Distinct().Order().ToArray();
-        bool hasFixedMemWrites = !CombinationalOnly && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index");
+        var singleWriteMems = new HashSet<int>();
+        bool needsMemLog = false;
+        if (!CombinationalOnly)
+        {
+            for (int i = 0; i < Memories.Count; ++i)
+            {
+                int maxW = CsMaxMemWrites(Body, i, false, out bool inLoop);
+                if (maxW == 1 && !inLoop) singleWriteMems.Add(i);
+                else if (maxW > 0) needsMemLog = true;
+            }
+        }
+        bool hasHeapMems = Enumerable.Range(0, Memories.Count).Any(i => !CsIsInlineMem(i));
         bool bodyUsesForces = Statements(Body).Any(e => Kind(e) is "force" or "release");
+        bool combPureInternal = !CombinationalOnly && !bodyUsesForces && !canThrow && !hasRuntimeLoops
+            && Properties.Count == 0 && PastDepths.Count == 0
+            && SettledSteps.Count > 0
+            && SettledSteps.All(s => CsExprIsPureInternal(s.GetProperty("value")));
 
         var code = new StringBuilder();
         code.AppendLine("// <auto-generated/>");
@@ -633,6 +852,7 @@ public sealed partial class RtlDesign
         code.AppendLine("using System;");
         code.AppendLine("using System.Collections.Generic;");
         code.AppendLine("using System.Runtime.CompilerServices;");
+        if (hasHeapMems) code.AppendLine("using System.Runtime.InteropServices;");
         code.AppendLine($"namespace {@namespace};");
         code.AppendLine();
         code.AppendLine($"public sealed class {className} : IVpiModel");
@@ -646,6 +866,7 @@ public sealed partial class RtlDesign
         code.AppendLine("    private SplitMix64Rng _rng = new();");
         code.AppendLine($"    private Dictionary<int, {wordType}>? _forced;");
         code.AppendLine("    private bool _hasForces;");
+        if (combPureInternal) code.AppendLine("    private bool _evalSlow = true;");
         code.AppendLine("    public bool GotFinish => _finished;");
         code.AppendLine("    public void Finish() => _finished = true;");
         code.AppendLine("    public IReadOnlyList<string> Plusargs => _plusargs.List;");
@@ -681,22 +902,23 @@ public sealed partial class RtlDesign
         code.AppendLine("        _forced ??= new();");
         code.AppendLine("        switch (signalId)");
         code.AppendLine("        {");
+        string markSlow = combPureInternal ? " _evalSlow = true;" : "";
         for (int i = 0; i < Signals.Count; ++i)
         {
             var sig = Signals[i];
             if (twoState)
-                code.AppendLine($"            case {i}: {{ ulong fv = W2Ops.Resize(value.V, {sig.Width}); _forced[{i}] = fv; _s{i} = fv; _hasForces = true; break; }}");
+                code.AppendLine($"            case {i}: {{ ulong fv = W2Ops.Resize(value.V, {sig.Width}); _forced[{i}] = fv; _s{i} = fv; _hasForces = true;{markSlow} break; }}");
             else
             {
                 string sm = CsMaskHex(sig.Width);
                 string fv = sig.TwoState ? $"W4Ops.TwoState(W4.FromW64(value,{sm}),{sm})" : $"W4.FromW64(value,{sm})";
-                code.AppendLine($"            case {i}: {{ W4 fv = {fv}; _forced[{i}] = fv; _s{i} = fv; _hasForces = true; break; }}");
+                code.AppendLine($"            case {i}: {{ W4 fv = {fv}; _forced[{i}] = fv; _s{i} = fv; _hasForces = true;{markSlow} break; }}");
             }
         }
         code.AppendLine("            default: throw new ArgumentOutOfRangeException(nameof(signalId));");
         code.AppendLine("        }");
         code.AppendLine("    }");
-        code.AppendLine("    public void ReleaseSignal(int signalId) { if (_forced is not null) { _forced.Remove(signalId); _hasForces = _forced.Count > 0; } }");
+        code.AppendLine($"    public void ReleaseSignal(int signalId) {{ if (_forced is not null) {{ _forced.Remove(signalId); _hasForces = _forced.Count > 0; }}{markSlow} }}");
         code.AppendLine("    private void ApplyForces()");
         code.AppendLine("    {");
         code.AppendLine("        if (_forced is null || _forced.Count == 0) return;");
@@ -714,11 +936,69 @@ public sealed partial class RtlDesign
         foreach (int id in eventIds)
             code.AppendLine($"    private {wordType} _prev{id};");
         for (int i = 0; i < Memories.Count; ++i)
-            code.AppendLine($"    private readonly {wordType}[] _m{i} = new {wordType}[{Memories[i].Depth}];");
-        if (hasFixedMemWrites)
         {
-            code.AppendLine($"    private readonly {wordType}[][] _mems;");
+            int depth = Memories[i].Depth;
+            string mm = CsMaskHex(Memories[i].Width);
+            if (CsIsInlineMem(i))
+            {
+                code.AppendLine($"    [InlineArray({depth})] private struct _MemBuf{i} {{ private {wordType} _e0; }}");
+                code.AppendLine($"    private _MemBuf{i} _m{i};");
+                if (twoState)
+                {
+                    code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private ulong _ReadMem{i}(ulong idx) => idx < {depth}UL ? Unsafe.Add(ref _m{i}[0], (nint)idx) : 0UL;");
+                    code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private void _WriteMem{i}(int idx, ulong val) => Unsafe.Add(ref _m{i}[0], (nint)idx) = val;");
+                }
+                else
+                {
+                    code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private W4 _ReadMem{i}(W4 idx) => (idx.B == 0UL && idx.A < {depth}UL) ? Unsafe.Add(ref _m{i}[0], (nint)idx.A) : new W4({mm}, {mm});");
+                    code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private void _WriteMem{i}(int idx, W4 val) => Unsafe.Add(ref _m{i}[0], (nint)idx) = val;");
+                }
+            }
+            else
+            {
+                code.AppendLine($"    private readonly {wordType}[] _m{i} = new {wordType}[{depth}];");
+                if (twoState)
+                {
+                    code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private ulong _ReadMem{i}(ulong idx) => W2Ops.Read(_m{i}, idx);");
+                    code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private void _WriteMem{i}(int idx, ulong val) => Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_m{i}), (nint)idx) = val;");
+                }
+                else
+                {
+                    code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private W4 _ReadMem{i}(W4 idx) => W4Ops.Read(_m{i}, idx, {mm});");
+                    code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private void _WriteMem{i}(int idx, W4 val) => Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_m{i}), (nint)idx) = val;");
+                }
+            }
+        }
+        if (needsMemLog)
+        {
             code.AppendLine($"    private readonly {(twoState ? "MemLog2" : "MemLog4")} _mlog = new();");
+            code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)]");
+            code.AppendLine("    private void _CommitMemLog()");
+            code.AppendLine("    {");
+            code.AppendLine("        int c = _mlog.Count;");
+            code.AppendLine("        for (int i = 0; i < c; ++i)");
+            code.AppendLine("        {");
+            code.AppendLine("            switch (_mlog.MemAt(i))");
+            code.AppendLine("            {");
+            for (int i = 0; i < Memories.Count; ++i)
+                code.AppendLine($"                case {i}: _WriteMem{i}(_mlog.IdxAt(i), _mlog.ValAt(i)); break;");
+            code.AppendLine("            }");
+            code.AppendLine("        }");
+            code.AppendLine("        var ov = _mlog.Overflow;");
+            code.AppendLine("        if (ov is { Count: > 0 })");
+            code.AppendLine("        {");
+            code.AppendLine("            foreach (var e in ov)");
+            code.AppendLine("            {");
+            code.AppendLine("                switch (e.mem)");
+            code.AppendLine("                {");
+            for (int i = 0; i < Memories.Count; ++i)
+                code.AppendLine($"                    case {i}: _WriteMem{i}(e.idx, e.val); break;");
+            code.AppendLine("                }");
+            code.AppendLine("            }");
+            code.AppendLine("            ov.Clear();");
+            code.AppendLine("        }");
+            code.AppendLine("        _mlog.ResetCount();");
+            code.AppendLine("    }");
         }
         code.AppendLine();
         code.AppendLine($"    public {className}()");
@@ -741,7 +1021,12 @@ public sealed partial class RtlDesign
         {
             var mem = Memories[i];
             if (!twoState && !mem.TwoState)
-                code.AppendLine($"        Array.Fill(_m{i}, W4Ops.Unknown({CsMaskHex(mem.Width)}));");
+            {
+                if (CsIsInlineMem(i))
+                    code.AppendLine($"        for (int j = 0; j < {mem.Depth}; ++j) _m{i}[j] = W4Ops.Unknown({CsMaskHex(mem.Width)});");
+                else
+                    code.AppendLine($"        Array.Fill(_m{i}, W4Ops.Unknown({CsMaskHex(mem.Width)}));");
+            }
         }
         foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
         {
@@ -751,12 +1036,6 @@ public sealed partial class RtlDesign
         }
         foreach (int cid in PropertyClockSignalIds())
             code.AppendLine(twoState ? $"        _pclk_{cid} = 0UL;" : $"        _pclk_{cid} = default;");
-        if (hasFixedMemWrites)
-        {
-            code.Append("        _mems = [");
-            code.AppendJoin(", ", Enumerable.Range(0, Memories.Count).Select(i => $"_m{i}"));
-            code.AppendLine("];");
-        }
         code.AppendLine("    }");
         code.AppendLine();
         code.AppendLine("    public ulong Time => _time;");
@@ -798,10 +1077,11 @@ public sealed partial class RtlDesign
         code.AppendLine($"        W64[][] mems = new W64[{Memories.Count}][];");
         for (int i = 0; i < Memories.Count; ++i)
         {
+            int depth = Memories[i].Depth;
             if (twoState)
-                code.AppendLine($"        mems[{i}] = Array.ConvertAll(_m{i}, v => new W64(v, 0UL, 0UL, {Memories[i].Width}));");
+                code.AppendLine($"        {{ var a = new W64[{depth}]; for (int j = 0; j < {depth}; ++j) a[j] = new W64(_m{i}[j], 0UL, 0UL, {Memories[i].Width}); mems[{i}] = a; }}");
             else
-                code.AppendLine($"        mems[{i}] = Array.ConvertAll(_m{i}, v => v.ToW64({Memories[i].Width}));");
+                code.AppendLine($"        {{ var a = new W64[{depth}]; for (int j = 0; j < {depth}; ++j) a[j] = _m{i}[j].ToW64({Memories[i].Width}); mems[{i}] = a; }}");
         }
         code.AppendLine("        CheckpointIO.Save(path, CheckpointSchemaHash(), _time, _rng.State, sigs, prevs, mems);");
         code.AppendLine("    }");
@@ -815,11 +1095,13 @@ public sealed partial class RtlDesign
             code.AppendLine(twoState ? $"        _prev{eventIds[i]} = prevs[{i}].V & 1UL;" : $"        _prev{eventIds[i]} = W4.FromW64(prevs[{i}], 1UL);");
         for (int i = 0; i < Memories.Count; ++i)
         {
+            int depth = Memories[i].Depth;
             if (twoState)
-                code.AppendLine($"        for (int j = 0; j < _m{i}.Length; ++j) _m{i}[j] = W2Ops.Resize(mems[{i}][j].V, {Memories[i].Width});");
+                code.AppendLine($"        for (int j = 0; j < {depth}; ++j) _m{i}[j] = W2Ops.Resize(mems[{i}][j].V, {Memories[i].Width});");
             else
-                code.AppendLine($"        for (int j = 0; j < _m{i}.Length; ++j) _m{i}[j] = W4.FromW64(mems[{i}][j], {CsMaskHex(Memories[i].Width)});");
+                code.AppendLine($"        for (int j = 0; j < {depth}; ++j) _m{i}[j] = W4.FromW64(mems[{i}][j], {CsMaskHex(Memories[i].Width)});");
         }
+        if (combPureInternal) code.AppendLine("        _evalSlow = true;");
         code.AppendLine("    }");
         code.AppendLine();
         foreach (var sig in Signals.Where(s => s.Direction != "internal"))
@@ -878,18 +1160,60 @@ public sealed partial class RtlDesign
         code.AppendLine("    }");
         code.AppendLine();
 
-        void EmitEvalBody(bool withForces)
+        bool canOutlineEdge = !CombinationalOnly && !bodyUsesForces && !canThrow && !hasRuntimeLoops
+            && Properties.Count == 0 && PastDepths.Count == 0;
+
+        string RenderSeqEdgeBody(bool withForces)
+        {
+            var sb = new StringBuilder();
+            foreach (int id in seqIds) sb.AppendLine($"        {wordType} _next{id} = _s{id};");
+            foreach (int id in singleWriteMems.Order())
+            {
+                sb.AppendLine($"        int _mw{id}_idx = -1;");
+                sb.AppendLine($"        {wordType} _mw{id}_val = default;");
+            }
+            int unique = 0;
+            for (int p = 0; p < procs.Length; ++p)
+            {
+                if (procs.Length > 1) sb.AppendLine($"        if (ev{p}) {{");
+                CsStmt(sb, procs[p].GetProperty("body"), ref unique, twoState, hasRuntimeLoops, singleWriteMems);
+                if (procs.Length > 1) sb.AppendLine("        }");
+            }
+            foreach (int id in seqIds) sb.AppendLine($"        _s{id} = _next{id};");
+            foreach (int id in singleWriteMems.Order())
+                sb.AppendLine($"        if ((uint)_mw{id}_idx < {Memories[id].Depth}U) _WriteMem{id}(_mw{id}_idx, _mw{id}_val);");
+            if (needsMemLog) sb.AppendLine("        _CommitMemLog();");
+            sb.AppendLine("        Settle();");
+            if (withForces) sb.AppendLine("        if (_hasForces) ApplyForces();");
+            return sb.ToString();
+        }
+
+        string fastSeqBody = canOutlineEdge ? RenderSeqEdgeBody(withForces: false) : "";
+        bool outlineEdge = canOutlineEdge && fastSeqBody.Length > (twoState ? 2500 : 750);
+
+        if (outlineEdge)
+        {
+            string evParams = procs.Length > 1 ? string.Join(", ", Enumerable.Range(0, procs.Length).Select(p => $"bool ev{p}")) : "";
+            code.AppendLine($"    private void EvalEdge({evParams})");
+            code.AppendLine("    {");
+            code.Append(fastSeqBody);
+            code.AppendLine("    }");
+            code.AppendLine();
+        }
+
+        void EmitEvalBody(bool withForces, bool skipPreSettle, bool useOutlineEdge)
         {
             if (hasRuntimeLoops) code.AppendLine("        _budget = 20000;");
             if (canThrow)
             {
                 for (int i = 0; i < Signals.Count; ++i) code.AppendLine($"        var sv_s{i} = _s{i};");
                 foreach (int id in eventIds) code.AppendLine($"        var sv_p{id} = _prev{id};");
-                for (int i = 0; i < Memories.Count; ++i) code.AppendLine($"        var sv_m{i} = ({wordType}[])_m{i}.Clone();");
+                for (int i = 0; i < Memories.Count; ++i)
+                    code.AppendLine(CsIsInlineMem(i) ? $"        var sv_m{i} = _m{i};" : $"        var sv_m{i} = ({wordType}[])_m{i}.Clone();");
                 code.AppendLine("        try {");
             }
             if (withForces) code.AppendLine("        if (_hasForces) ApplyForces();");
-            code.AppendLine("        Settle();");
+            if (!skipPreSettle) code.AppendLine("        Settle();");
             if (withForces) code.AppendLine("        if (_hasForces) ApplyForces();");
             if (Properties.Count > 0 || PastDepths.Count > 0)
             {
@@ -962,21 +1286,18 @@ public sealed partial class RtlDesign
                     code.AppendLine($"        bool ev{p} = {cond};");
                 }
                 string anyEv = string.Join(" || ", Enumerable.Range(0, procs.Length).Select(p => $"ev{p}"));
-                code.AppendLine($"        if ({anyEv})");
-                code.AppendLine("        {");
-                foreach (int id in seqIds) code.AppendLine($"            {wordType} _next{id} = _s{id};");
-                int unique = 0;
-                for (int p = 0; p < procs.Length; ++p)
+                if (useOutlineEdge)
                 {
-                    if (procs.Length > 1) code.AppendLine($"            if (ev{p}) {{");
-                    CsStmt(code, procs[p].GetProperty("body"), ref unique, twoState, hasRuntimeLoops);
-                    if (procs.Length > 1) code.AppendLine("            }");
+                    string evArgs = procs.Length > 1 ? string.Join(", ", Enumerable.Range(0, procs.Length).Select(p => $"ev{p}")) : "";
+                    code.AppendLine($"        if ({anyEv}) EvalEdge({evArgs});");
                 }
-                foreach (int id in seqIds) code.AppendLine($"            _s{id} = _next{id};");
-                if (hasFixedMemWrites) code.AppendLine("            _mlog.Commit(_mems);");
-                code.AppendLine("            Settle();");
-                if (withForces) code.AppendLine("            if (_hasForces) ApplyForces();");
-                code.AppendLine("        }");
+                else
+                {
+                    code.AppendLine($"        if ({anyEv})");
+                    code.AppendLine("        {");
+                    code.Append(!withForces && canOutlineEdge ? fastSeqBody : RenderSeqEdgeBody(withForces));
+                    code.AppendLine("        }");
+                }
                 foreach (int id in eventIds) code.AppendLine($"        _prev{id} = _s{id};");
             }
             if (canThrow)
@@ -984,8 +1305,9 @@ public sealed partial class RtlDesign
                 code.AppendLine("        } catch {");
                 for (int i = 0; i < Signals.Count; ++i) code.AppendLine($"            _s{i} = sv_s{i};");
                 foreach (int id in eventIds) code.AppendLine($"            _prev{id} = sv_p{id};");
-                for (int i = 0; i < Memories.Count; ++i) code.AppendLine($"            Array.Copy(sv_m{i}, _m{i}, _m{i}.Length);");
-                if (hasFixedMemWrites) code.AppendLine("            _mlog.Clear();");
+                for (int i = 0; i < Memories.Count; ++i)
+                    code.AppendLine(CsIsInlineMem(i) ? $"            _m{i} = sv_m{i};" : $"            Array.Copy(sv_m{i}, _m{i}, {Memories[i].Depth});");
+                if (needsMemLog) code.AppendLine("            _mlog.Clear();");
                 code.AppendLine("            throw;");
                 code.AppendLine("        }");
             }
@@ -996,7 +1318,7 @@ public sealed partial class RtlDesign
             code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)]");
             code.AppendLine("    public void Eval()");
             code.AppendLine("    {");
-            EmitEvalBody(withForces: true);
+            EmitEvalBody(withForces: true, skipPreSettle: false, useOutlineEdge: false);
             code.AppendLine("    }");
         }
         else
@@ -1004,14 +1326,15 @@ public sealed partial class RtlDesign
             code.AppendLine("    [MethodImpl(MethodImplOptions.NoInlining)]");
             code.AppendLine("    private void EvalForced()");
             code.AppendLine("    {");
-            EmitEvalBody(withForces: true);
+            EmitEvalBody(withForces: true, skipPreSettle: false, useOutlineEdge: false);
+            if (combPureInternal) code.AppendLine("        _evalSlow = _hasForces;");
             code.AppendLine("    }");
             code.AppendLine();
             code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)]");
             code.AppendLine("    public void Eval()");
             code.AppendLine("    {");
-            code.AppendLine("        if (_hasForces) { EvalForced(); return; }");
-            EmitEvalBody(withForces: false);
+            code.AppendLine($"        if ({(combPureInternal ? "_evalSlow" : "_hasForces")}) {{ EvalForced(); return; }}");
+            EmitEvalBody(withForces: false, skipPreSettle: combPureInternal, useOutlineEdge: outlineEdge);
             code.AppendLine("    }");
         }
         code.AppendLine($"    public string ModelName => {CppStringLiteral(top)};");
@@ -1061,8 +1384,8 @@ public sealed partial class RtlDesign
         code.AppendLine("        {");
         for (int i = 0; i < Memories.Count; ++i)
             code.AppendLine(twoState
-                ? $"            case {i}: if ((uint)addr >= (uint)_m{i}.Length) throw new ArgumentOutOfRangeException(nameof(addr)); return new W64(_m{i}[addr], 0UL, 0UL, {Memories[i].Width});"
-                : $"            case {i}: if ((uint)addr >= (uint)_m{i}.Length) throw new ArgumentOutOfRangeException(nameof(addr)); return _m{i}[addr].ToW64({Memories[i].Width});");
+                ? $"            case {i}: if ((uint)addr >= {Memories[i].Depth}U) throw new ArgumentOutOfRangeException(nameof(addr)); return new W64(_m{i}[addr], 0UL, 0UL, {Memories[i].Width});"
+                : $"            case {i}: if ((uint)addr >= {Memories[i].Depth}U) throw new ArgumentOutOfRangeException(nameof(addr)); return _m{i}[addr].ToW64({Memories[i].Width});");
         code.AppendLine("            default: throw new ArgumentOutOfRangeException(nameof(memId), \"Invalid memory id.\");");
         code.AppendLine("        }");
         code.AppendLine("    }");
@@ -1075,11 +1398,12 @@ public sealed partial class RtlDesign
         {
             string m = CsMaskHex(Memories[i].Width);
             code.AppendLine(twoState
-                ? $"            case {i}: if ((uint)addr >= (uint)_m{i}.Length) throw new ArgumentOutOfRangeException(nameof(addr)); _m{i}[addr] = value.V & ~(value.X | value.Z) & {m}; break;"
-                : $"            case {i}: if ((uint)addr >= (uint)_m{i}.Length) throw new ArgumentOutOfRangeException(nameof(addr)); _m{i}[addr] = {(Memories[i].TwoState ? $"new W4(value.V & ~(value.X | value.Z) & {m}, 0UL)" : $"W4.FromW64(in value, {m})")}; break;");
+                ? $"            case {i}: if ((uint)addr >= {Memories[i].Depth}U) throw new ArgumentOutOfRangeException(nameof(addr)); _m{i}[addr] = value.V & ~(value.X | value.Z) & {m}; break;"
+                : $"            case {i}: if ((uint)addr >= {Memories[i].Depth}U) throw new ArgumentOutOfRangeException(nameof(addr)); _m{i}[addr] = {(Memories[i].TwoState ? $"new W4(value.V & ~(value.X | value.Z) & {m}, 0UL)" : $"W4.FromW64(in value, {m})")}; break;");
         }
         code.AppendLine("            default: throw new ArgumentOutOfRangeException(nameof(memId), \"Invalid memory id.\");");
         code.AppendLine("        }");
+        if (combPureInternal) code.AppendLine("        _evalSlow = true;");
         code.AppendLine("    }");
         code.AppendLine("}");
         return code.ToString();
@@ -1092,6 +1416,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace {{@namespace}};
 
@@ -1150,12 +1475,9 @@ public static class W4Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Edge(W4 prev, W4 curr, bool pos)
-    {
-        int p = (prev.B & 1UL) != 0UL ? -1 : (int)(prev.A & 1UL);
-        int c = (curr.B & 1UL) != 0UL ? -1 : (int)(curr.A & 1UL);
-        return pos ? ((p == 0 && c != 0) || (p < 0 && c == 1)) : ((p == 1 && c != 1) || (p < 0 && c == 0));
-    }
+    public static bool Edge(W4 prev, W4 curr, bool pos) => pos
+        ? ((((~prev.A & ~prev.B) & (curr.A | curr.B)) | (prev.B & curr.A & ~curr.B)) & 1UL) != 0UL
+        : ((((prev.A & ~prev.B) & (~curr.A | curr.B)) | (prev.B & ~curr.A & ~curr.B)) & 1UL) != 0UL;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int Truth(W4 a) => (a.A & ~a.B) != 0UL ? 1 : (a.B != 0UL ? -1 : 0);
@@ -1164,24 +1486,29 @@ public static class W4Ops
     public static bool Yes(W4 a) => (a.A & ~a.B) != 0UL;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsZero(W4 a) => (a.A | a.B) == 0UL;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 LNot(W4 a)
     {
-        int t = Truth(a);
-        return t < 0 ? new W4(1UL, 1UL) : new W4(t == 0 ? 1UL : 0UL, 0UL);
+        ulong nt = (a.A & ~a.B) == 0UL ? 1UL : 0UL;
+        return new W4(nt, a.B != 0UL ? nt : 0UL);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 LAnd(W4 a, W4 b)
     {
-        int x = Truth(a), y = Truth(b);
-        return (x == 0 || y == 0) ? default : (x == 1 && y == 1) ? new W4(1UL, 0UL) : new W4(1UL, 1UL);
+        ulong nz = ((a.A | a.B) != 0UL && (b.A | b.B) != 0UL) ? 1UL : 0UL;
+        ulong unk = ((a.A & ~a.B) != 0UL && (b.A & ~b.B) != 0UL) ? 0UL : nz;
+        return new W4(nz, unk);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 LOr(W4 a, W4 b)
     {
-        int x = Truth(a), y = Truth(b);
-        return (x == 1 || y == 1) ? new W4(1UL, 0UL) : (x == 0 && y == 0) ? default : new W4(1UL, 1UL);
+        ulong nz = (a.A | a.B | b.A | b.B) != 0UL ? 1UL : 0UL;
+        ulong unk = ((a.A & ~a.B) != 0UL || (b.A & ~b.B) != 0UL) ? 0UL : nz;
+        return new W4(nz, unk);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1245,11 +1572,17 @@ public static class W4Ops
     public static W4 WildNeq(W4 a, W4 b, ulong m) => LNot(WildEq(a, b, m));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool EqYes(W4 a, W4 b) => (a.B | b.B) == 0UL && a.A == b.A;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool NeqYes(W4 a, W4 b) => ((a.A ^ b.A) & ~(a.B | b.B)) != 0UL;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 Eq(W4 a, W4 b)
     {
         ulong u = a.B | b.B;
-        if (((a.A ^ b.A) & ~u) != 0UL) return default;
-        return u != 0UL ? new W4(1UL, 1UL) : new W4(1UL, 0UL);
+        ulong eq = (((a.A ^ b.A) & ~u) == 0UL) ? 1UL : 0UL;
+        return new W4(eq, u != 0UL ? eq : 0UL);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1363,12 +1696,20 @@ public static class W4Ops
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 Concat(W4 a, W4 b, int bw, ulong bm) =>
+        bw >= 64 ? new W4(b.A & bm, b.B & bm) : new W4((a.A << bw) | (b.A & bm), (a.B << bw) | (b.B & bm));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 SelBit(W4 a, int aw, W4 idx)
     {
         if (idx.B != 0UL || idx.A >= (ulong)aw) return new W4(1UL, 1UL);
         int i = (int)idx.A;
         return new W4((a.A >> i) & 1UL, (a.B >> i) & 1UL);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static W4 SelPartFast(W4 a, int right, ulong m) =>
+        new W4((a.A >> right) & m, (a.B >> right) & m);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 SelPart(W4 a, int aw, int left, int right)
@@ -1382,6 +1723,7 @@ public static class W4Ops
         return new W4(((a.A >> right) & am) | oob, ((a.B >> right) & am) | oob);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 SelIdx(W4 a, int aw, W4 b, int width, bool desc)
     {
         ulong wm = W2Ops.Mask(width);
@@ -1400,6 +1742,7 @@ public static class W4Ops
         return new W4((((a.A >> sLo) & cm) << dstLo) | oob, (((a.B >> sLo) & cm) << dstLo) | oob);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4 DepIdx(W4 before, int bw, W4 b, int width, bool desc, W4 value)
     {
         if (b.B != 0UL) return before;
@@ -1430,7 +1773,7 @@ public static class W4Ops
     public static W4 Read(W4[] m, W4 idx, ulong wm)
     {
         if (idx.B != 0UL || idx.A >= (ulong)m.Length) return new W4(wm, wm);
-        return m[(int)idx.A];
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(m), (nint)idx.A);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1513,6 +1856,17 @@ public sealed class MemLog4
     private readonly W4[] _val = new W4[16];
     private List<(int mem, int idx, W4 val)>? _overflow;
     private int _count;
+
+    public int Count => _count;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int MemAt(int i) => _mem[i];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int IdxAt(int i) => _idx[i];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public W4 ValAt(int i) => _val[i];
+    public List<(int mem, int idx, W4 val)>? Overflow => _overflow;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ResetCount() => _count = 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Push(int memId, int memLen, W4 idx, W4 val, ulong m)
@@ -2161,6 +2515,7 @@ public static class W2Ops
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong SelPart(ulong a, int aw, int left, int right) => right >= aw ? 0UL : (((a & Mask(aw)) >> right) & Mask(left - right + 1));
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong SelIdx(ulong a, int aw, ulong b, int width, bool desc)
     {
         if (b > 2147483647UL) throw new ArgumentOutOfRangeException(nameof(b), "known indexed select base exceeds qualified range 0..INT32_MAX");
@@ -2174,6 +2529,7 @@ public static class W2Ops
         return (((a & Mask(aw)) >> (int)srcLo) & cm) << dstLo;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong DepIdx(ulong before, int tw, ulong b, int width, bool desc, ulong value)
     {
         if (b > 2147483647UL) throw new ArgumentOutOfRangeException(nameof(b), "known selected write base exceeds qualified range 0..INT32_MAX");
@@ -2194,7 +2550,8 @@ public static class W2Ops
     public static ulong MemIdx(ulong index, int lower) => index >= (ulong)lower ? (index - (ulong)lower) : ulong.MaxValue;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ulong Read(ulong[] m, ulong idx) => idx < (ulong)m.Length ? m[(int)idx] : 0UL;
+    public static ulong Read(ulong[] m, ulong idx) =>
+        idx < (ulong)m.Length ? Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(m), (nint)idx) : 0UL;
 
     public static uint RepeatCount(ulong a, int w, bool isSigned)
     {
@@ -2255,6 +2612,17 @@ public sealed class MemLog2
     private readonly ulong[] _val = new ulong[16];
     private List<(int mem, int idx, ulong val)>? _overflow;
     private int _count;
+
+    public int Count => _count;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int MemAt(int i) => _mem[i];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int IdxAt(int i) => _idx[i];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ulong ValAt(int i) => _val[i];
+    public List<(int mem, int idx, ulong val)>? Overflow => _overflow;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void ResetCount() => _count = 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Push(int memId, int memLen, ulong idx, ulong val, int w)

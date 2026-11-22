@@ -75,10 +75,10 @@ public sealed class RtlTwoStateTests
         string fourState = design.EmitModelHeader("counter");
         string twoState = design.EmitModelHeader("counter", RtlStateMode.TwoState);
 
-        Assert.That(fourState, Does.Contain("vsrtl::w64::"));
+        Assert.That(fourState, Does.Contain("vsrtl::w4::"));
         Assert.That(fourState, Does.Not.Contain("vsrtl::w2::"));
         Assert.That(twoState, Does.Contain("vsrtl::w2::"));
-        Assert.That(twoState, Does.Not.Contain("vsrtl::w64::"));
+        Assert.That(twoState, Does.Not.Contain("vsrtl::w4::"));
     }
 
     [Test]
