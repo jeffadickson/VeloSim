@@ -43,7 +43,9 @@ public static class RtlExternalSdk
         await File.WriteAllTextAsync(Path.Combine(directory,"timing-diagnostics.txt"),
             "Conservative timed-process analysis; warnings do not prove races, and absence does not prove race freedom.\n"+string.Join('\n',design.TimingDiagnostics)+"\n",token).ConfigureAwait(false);
         int maxWordBits = design.MaxWordBits;
-        string wideDef = maxWordBits > 256 ? $"\ntarget_compile_definitions(velosim_vpi PUBLIC VSRTL_MAX_WORD_BITS={maxWordBits})" : "";
+        string wideDef = maxWordBits > 256
+            ? $"\ntarget_compile_definitions(velosim_vpi PUBLIC VSRTL_MAX_WORD_BITS={maxWordBits})\nset_target_properties(velosim_vpi PROPERTIES OUTPUT_NAME \"velosim_vpi_w{maxWordBits}\")"
+            : "";
         string cmake = $$"""
             cmake_minimum_required(VERSION 3.20)
             project(VeloSimExternal LANGUAGES C CXX)
