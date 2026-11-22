@@ -1,10 +1,11 @@
 // VeloSim formal specification: Exact isomorphism between canonical 3-plane 4-state words
 // `Bit4(v, x, z)` (`W64`) and IEEE 1800 2-plane `aval`/`bval` packed words `W4(a, b)`
-// (`src/VeloSim.Core/RtlCSharpEmitter.cs`: `W4` / `W4Ops`).
+// shared across C++ (`native/rtl/runtime.h`: `vsrtl::w4`), C# (`src/VeloSim.Core/RtlCSharpEmitter.cs`: `W4`/`W4Ops`),
+// and Rust (`src/VeloSim.Core/RtlRustEmitter.cs`: `W4`/`w4`).
 //
 // Proves:
 //   1. Bijection: Every 2-bit pair `(a, b)` maps uniquely to a canonical `Bit4` (zero invalid states).
-//   2. Operator Homomorphism: Exact bitwise formulas for `BNot`, `BAnd`, `BOr`, `BXor`, `Cond`,
+//   2. Operator Homomorphism: Exact bitwise formulas for `BNot`, `BAnd`, `BOr`, `BXor`, `Cond`, `Eq`,
 //      `CasezMatch`, `CasexMatch`, `WildEq`, `ResolvePair` (all 5 IEEE 1800 net kinds), and
 //      2-instruction `ResolveFinalize` (`tri0`/`tri1`) match `FourStateResolution` identically
 //      at both the bit-lane level and arbitrary-width word level (`seq<W4Bit>`).
@@ -139,31 +140,86 @@ module FourStateW4Equivalence {
   {
   }
 
-  // Exact W4Ops.Cond unknown-selector merge formula (c is X/Z).
+  // Exact W4 Cond unknown-selector merge formula (c is X/Z), matching vsrtl::conditional.
   function W4CondMerge(x: W4Bit, y: W4Bit): W4Bit {
-    var au := x.b;
-    var bu := y.b;
-    var av := x.a && !au;
-    var bv := y.a && !bu;
-    var u := au || bu || (av != bv);
-    W4Bit((av && !u) || u, u)
+    var diff := (x.a != y.a) || (x.b != y.b);
+    W4Bit(x.a || diff, x.b || diff)
   }
 
   function RefCondMerge(x: F.Bit4, y: F.Bit4): F.Bit4
     requires F.CanonicalBit(x) && F.CanonicalBit(y)
   {
-    var au := x.x || x.z;
-    var bu := y.x || y.z;
-    var av := x.v && !au;
-    var bv := y.v && !bu;
-    var u := au || bu || (av != bv);
-    F.Bit4(av && !u, u, false)
+    var diff := (x.v != y.v) || (x.x != y.x) || (x.z != y.z);
+    var same := !diff;
+    F.Bit4(x.v && same, (x.x && same) || diff, x.z && same)
   }
 
-  // Theorem 3: Exact homomorphism for unknown-selector ternary merge.
+  // Theorem 3: Exact homomorphism for unknown-selector ternary merge (including Z/Z preservation).
   lemma W4CondMergeEquivalence(x: W4Bit, y: W4Bit)
     ensures ToBit4(W4CondMerge(x, y)) == RefCondMerge(ToBit4(x), ToBit4(y))
   {
+  }
+
+  // Exact W4 Eq (==) formula matching vsrtl::equal: known-lane mismatch returns 0 even if other lanes are X/Z.
+  predicate W4EqDefiniteMismatch(a: W4Word, b: W4Word)
+    requires |a| == |b|
+  {
+    exists i | 0 <= i < |a| ::
+      var u := a[i].b || b[i].b;
+      (!u) && (a[i].a != b[i].a)
+  }
+
+  predicate RefEqDefiniteMismatch(a: F.Word4, b: F.Word4)
+    requires |a| == |b| && F.CanonicalWord(a) && F.CanonicalWord(b)
+  {
+    exists i | 0 <= i < |a| ::
+      var u := a[i].x || a[i].z || b[i].x || b[i].z;
+      (!u) && (a[i].v != b[i].v)
+  }
+
+  predicate W4EqHasUnknown(a: W4Word, b: W4Word)
+    requires |a| == |b|
+  {
+    exists i | 0 <= i < |a| :: a[i].b || b[i].b
+  }
+
+  predicate RefEqHasUnknown(a: F.Word4, b: F.Word4)
+    requires |a| == |b| && F.CanonicalWord(a) && F.CanonicalWord(b)
+  {
+    exists i | 0 <= i < |a| :: a[i].x || a[i].z || b[i].x || b[i].z
+  }
+
+  function W4Eq(a: W4Word, b: W4Word): W4Bit
+    requires |a| == |b|
+  {
+    if W4EqDefiniteMismatch(a, b) then W4Bit(false, false)
+    else if W4EqHasUnknown(a, b) then W4Bit(true, true)
+    else W4Bit(true, false)
+  }
+
+  function RefEq(a: F.Word4, b: F.Word4): F.Bit4
+    requires |a| == |b| && F.CanonicalWord(a) && F.CanonicalWord(b)
+  {
+    if RefEqDefiniteMismatch(a, b) then F.B0
+    else if RefEqHasUnknown(a, b) then F.BX
+    else F.B1
+  }
+
+  // Theorem 3b: Exact homomorphism for 4-state logical equality (==) across arbitrary-width words.
+  lemma W4EqEquivalence(a: W4Word, b: W4Word)
+    requires |a| == |b|
+    ensures ToBit4(W4Eq(a, b)) == RefEq(ToWord4(a), ToWord4(b))
+  {
+    var ta := ToWord4(a);
+    var tb := ToWord4(b);
+    forall i | 0 <= i < |a|
+      ensures (a[i].b || b[i].b) == (ta[i].x || ta[i].z || tb[i].x || tb[i].z)
+      ensures (!(a[i].b || b[i].b) && (a[i].a != b[i].a)) ==
+              (!(ta[i].x || ta[i].z || tb[i].x || tb[i].z) && (ta[i].v != tb[i].v))
+    {
+    }
+    assert W4EqDefiniteMismatch(a, b) <==> RefEqDefiniteMismatch(ta, tb);
+    assert W4EqHasUnknown(a, b) <==> RefEqHasUnknown(ta, tb);
   }
 
   // Exact W4Ops.ResolvePair & W4Ops.ResolveFinalize formulas.

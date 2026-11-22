@@ -204,6 +204,74 @@ int main(){
   log64.commit(mems);
   check(mems[0][0].v==0xab&&mems[0][1].v==0x42&&mems[0][2].v==0xef&&mems[0][3].x==0xff);
  }
+ // Verify 16-byte IEEE 1800 aval/bval vsrtl::w4 matches 256-bit vsrtl::W across widths 1..64 and all 4-state cases.
+ {
+  static_assert(sizeof(w4::W4)==16);
+  auto same4=[](w4::W4 a,int w,const W& b){return exact(w4::from(a,w),b)&&w==b.w;};
+  const W samples[]={parse("0"),parse("1"),parse("x"),parse("z"),parse("1011"),parse("1x0z"),parse("1z0x"),parse("1z1x"),parse("1111111111111101"),parse("0000000000000111"),parse(std::string(64,'1')),parse("1"+std::string(62,'0')+"1"),parse("10xz"+std::string(60,'1'))};
+  for(const W& a:samples){
+   uint64_t am=mask64_unchecked(a.w);
+   auto a4=w4::to(a,am);
+   check(w4::truth(a4)==truth(a)&&w4::yes(a4)==yes(a));
+   check(same4(w4::lnot(a4),1,logical_not(a)));
+   check(same4(w4::two_state(a4,am),a.w,two_state(a)));
+   for(int rw:{1,4,16,32,64}){
+    uint64_t rm=mask64_unchecked(rw);
+    check(same4(w4::resize(a4,rm),rw,resize(a,rw)));
+    check(same4(w4::sresize(a4,a.w,am,rm),rw,signed_resize(a,rw)));
+    check(same4(w4::bnot(a4,rm),rw,bit_not(a,rw)));
+   }
+   for(int op=0;op<6;++op)check(same4(w4::red(a4,am,op),1,reduce(a,op)));
+   for(const W& b:samples){
+    uint64_t bm=mask64_unchecked(b.w);
+    auto b4=w4::to(b,bm);
+    check(same4(w4::land(a4,b4),1,logical_and(a,b)));
+    check(same4(w4::lor(a4,b4),1,logical_or(a,b)));
+    check(same4(w4::eq(a4,b4),1,equal(a,b)));
+    check(w4::exact(a4,b4)==exact(a,b));
+    int mw=std::max(a.w,b.w);
+    uint64_t mm=mask64_unchecked(mw);
+    check(w4::casez_match(a4,b4,mm)==casez_match(a,b));
+    check(w4::casex_match(a4,b4,mm)==casex_match(a,b));
+    check(same4(w4::wildeq(a4,b4,mm),1,wildeq(a,b)));
+    check(same4(w4::wildneq(a4,b4,mm),1,wildneq(a,b)));
+    if(a.w==b.w){
+     for(int op=0;op<4;++op){
+      check(same4(w4::cmp(a4,b4,op),1,compare(a,b,op)));
+      check(same4(w4::scmp(a4,b4,a.w,op),1,signed_compare(a,b,op)));
+     }
+    }
+    auto sa4=w4::sresize(a4,a.w,am,mm),sb4=w4::sresize(b4,b.w,bm,mm);
+    for(int op=0;op<3;++op){
+     check(same4(w4::bbin(a4,b4,mm,op),mw,bit_binary(a,b,mw,op)));
+     check(same4(w4::product(a4,b4,mm,op),mw,product(a,b,mw,op)));
+     check(same4(w4::sproduct(sa4,sb4,mw,mm,op),mw,signed_product(a,b,mw,op)));
+    }
+    check(same4(w4::arith(a4,b4,mm,false),mw,arithmetic(a,b,mw,false)));
+    check(same4(w4::arith(a4,b4,mm,true),mw,arithmetic(a,b,mw,true)));
+    check(same4(w4::cond(w4::lit(1ULL,1ULL),a4,b4,mm),mw,conditional(parse("x"),a,b,mw)));
+    if(a.w+b.w<=64)check(same4(w4::concat(a4,b4,b.w),a.w+b.w,concat(a,b)));
+    if(a.w==1&&b.w==1){
+     check(w4::edge(a4,b4,true)==edge_event(a,b,true));
+     check(w4::edge(a4,b4,false)==edge_event(a,b,false));
+    }
+    for(int nk=0;nk<=4;++nk){
+     auto ra=w4::resize(a4,mm),rb=w4::resize(b4,mm);
+     check(same4(w4::resolve_net2(nk,ra,rb,mm),mw,resolve_net(nk,{resize(a,mw),resize(b,mw)},mw)));
+    }
+   }
+  }
+  w4::W4 m0[4]{w4::unknown(0xffULL),w4::unknown(0xffULL),w4::unknown(0xffULL),w4::unknown(0xffULL)};
+  w4::W4* ptrs[1]{m0};
+  w4::MemLog4<2> log4;
+  log4.push(0,4,w4::lit(0ULL),w4::lit(0xabULL),0xffULL);
+  log4.push(0,4,w4::lit(1ULL),w4::lit(0xcdULL),0xffULL);
+  log4.push(0,4,w4::lit(2ULL),w4::lit(0xefULL),0xffULL);
+  log4.push(0,4,w4::lit(1ULL),w4::lit(0x42ULL),0xffULL);
+  log4.push(0,4,w4::lit(1ULL,1ULL),w4::lit(0xffULL),0xffULL);
+  log4.commit_flat(ptrs);
+  check(m0[0].a==0xabULL&&m0[0].b==0ULL&&m0[1].a==0x42ULL&&m0[1].b==0ULL&&m0[2].a==0xefULL&&m0[2].b==0ULL&&m0[3].a==0xffULL&&m0[3].b==0xffULL);
+ }
  // Verify opt-in 64-bit two-state vsrtl::w2 matches 256-bit vsrtl::W on all known operands plus edge cases.
  {
   auto same2=[](uint64_t v,int w,const W& b){return exact(w2::from(v,w),b);};
