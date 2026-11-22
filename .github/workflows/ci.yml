@@ -10,6 +10,7 @@ jobs:
       VELOSIM_MIN_MANAGED_BRANCH: 60
       VELOSIM_MIN_NATIVE_BRANCH: 80
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
