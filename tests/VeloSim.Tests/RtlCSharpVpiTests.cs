@@ -362,6 +362,7 @@ public sealed class RtlCSharpVpiTests
                     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
                   </PropertyGroup>
                   <ItemGroup>
+                    <ProjectReference Include="{Path.Combine(sdkDir, "Vvpi_dut.csproj")}" />
                     <ProjectReference Include="{Path.Combine(sdkDir, "vpi_ffi", "Vvpi_dut.VpiFfi.csproj")}" />
                   </ItemGroup>
                 </Project>
