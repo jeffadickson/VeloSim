@@ -10,7 +10,7 @@ Current RTL development: [explicit-time SDK execution](docs/timed-execution.md),
 
 Library planning: [reuse review for existing code and remaining features](docs/library-opportunities.md), mapped into the existing GitHub work packages. Recommendations require compatibility and behavioral qualification before adoption.
 
-Current planning: [detailed Verilator gap analysis](docs/verilator-gap-analysis.md), [20 work packages](docs/verilator-work-packages.md), and [live GitHub task epic](https://github.com/jeffadickson/VeloSim/issues/1). The audit separates current worktree support, historical evidence and open requirements; milestone descriptions below retain their historical scope.
+Current planning: [multi-target C++/Rust/C# parity matrix](docs/target-parity-matrix.md), [detailed Verilator gap analysis](docs/verilator-gap-analysis.md), [20 work packages](docs/verilator-work-packages.md), and [live GitHub task epic](https://github.com/jeffadickson/VeloSim/issues/1). The audit separates current worktree support, historical evidence and open requirements; milestone descriptions below retain their historical scope.
 
 Earlier RTL milestones: [bounded HDL queues](docs/queues.md), [clockless models, function control flow and constant captures](docs/functions-100.md), [combinational and automatic-subroutine qualification](docs/combinational-subroutines-200.md), [200 requirement and coverage qualification cases](docs/requirements-200.md) with [stable StrictDoc requirements](requirements/velosim.sdoc), [100 open-item iterations](docs/open-items-100.md), and [process, hierarchy and signed-word bounds](docs/rtl-processes-hierarchy-signed.md).
 

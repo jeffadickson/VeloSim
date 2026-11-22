@@ -1543,7 +1543,7 @@ STATEMENT: >>>
 VeloSim's narrow 64-bit C++, Rust, and C# targets shall store internal 4-state words in a 16-byte IEEE 1800 aval/bval representation (W4(a, b): 0=(0,0), 1=(1,0), Z=(0,1), X=(1,1)) promoted into two 64-bit CPU registers with compile-time bit-width masks, stack-local NBA next-state variables, and cold-split forced-signal evaluation while preserving 100% public API compatibility (C++ vsrtl::Model/vsrtl::Port/W, Rust W64/VpiModel, C# W64/IVpiModel). C++ models shall additionally use flat inline signal/memory arrays with lazy base-model synchronization, direct vsrtl::Port slot pointers, stack rollback snapshots, and fast TLS owner verification. The exact bijection and operator homomorphism between W4(aval, bval) and canonical 3-plane 4-state words shall be machine-verified in formal/dafny/FourStateW4Equivalence.dfy.
 <<<
 COMMENT: >>>
-Verified with Dafny 4.11.0 (29 proof obligations in FourStateW4Equivalence.dfy, 96 total across 5 modules, 0 errors, 0 warnings), exhaustive C++ native equivalence tests against 256-bit vsrtl::W, and apples-to-apples multi-target benchmarks across the 11-sample examples corpus confirming bit-for-bit identical checksums against Verilator 5.055.
+Verified with Dafny 4.11.0 (29 proof obligations in FourStateW4Equivalence.dfy, 96 total across 5 modules, 0 errors, 0 warnings), exhaustive C++ native equivalence tests against 256-bit vsrtl::W, PR #53's safe C# [InlineArray] memory storage + stack-local single-write NBA commits + pure-internal Settle() skipping + branchless W4Ops + adaptive EvalEdge() outlining, and apples-to-apples multi-target benchmarks across the portable examples corpus confirming bit-for-bit identical checksums against Verilator 5.055.
 <<<
 RELATIONS:
 - TYPE: File
@@ -1564,6 +1564,8 @@ RELATIONS:
   VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
 - TYPE: File
   VALUE: tests/native/rtl_runtime_tests.cpp
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlCSharpVpiTests.cs
 
 [REQUIREMENT]
 UID: VS-RTL-VPI-MULTI-001
@@ -1595,4 +1597,105 @@ RELATIONS:
   VALUE: tests/VeloSim.Tests/RtlRustVpiTests.cs
 - TYPE: File
   VALUE: tests/VeloSim.Tests/RtlCSharpVpiTests.cs
+
+[REQUIREMENT]
+UID: VS-RTL-PARITY-001
+STATUS: Active
+TITLE: Cross-target feature and example parity ledger across C++, Rust, and C#
+STATEMENT: >>>
+VeloSim shall track every RTL language feature, runtime capability, and examples/*.sv design across all three exported backends (C++20, Rust 2021, and C# 15 / .NET 11) in docs/target-parity-matrix.md and in StrictDoc requirements. Any capability not yet implemented on Rust or C# shall fail closed at export time via CanUsePortable64 or RtlExternalSdk.ExportAsync rather than silently producing mismatched simulation semantics.
+<<<
+COMMENT: >>>
+Baseline as of PR #53: 13/13 examples/*.sv supported on C++, 10/13 supported on Rust and C# with 100% bit-for-bit Verilator 5.055 checksum parity across all portable examples. Remaining gaps are tracked individually in VS-RTL-PARITY-002 through VS-RTL-PARITY-005.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlNarrow64.cs
+
+[REQUIREMENT]
+UID: VS-RTL-PARITY-002
+STATUS: Draft
+TITLE: Rust and C# parity for initial blocks and procedural blocking assignments
+STATEMENT: >>>
+The Rust and C# codegen backends shall support bounded startup initial blocks and sequential procedural blocking (=) statements inside always processes while preserving register-resident W4/u64 fast paths and zero-unsafe core safety (#![forbid(unsafe_code)] in Rust; no unsafe blocks in C#) when designs do not use blocking state or dynamic containers.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: examples/dynamic_array.sv
+- TYPE: File
+  VALUE: examples/queue_demo.sv
+- TYPE: File
+  VALUE: examples/timed_counter.sv
+
+[REQUIREMENT]
+UID: VS-RTL-PARITY-003
+STATUS: Draft
+TITLE: Rust and C# parity for dynamic arrays, queues, associative, multidimensional arrays, and $readmem loaders
+STATEMENT: >>>
+The Rust and C# codegen backends shall support bounded SystemVerilog dynamic arrays (m[]: new[n], new[n](m), delete, size, indexed R/W), bounded queues (q[$]: push_front, push_back, pop_front, pop_back, delete, size), associative arrays, rank 2-4 fixed multidimensional arrays, and IEEE 1364 $readmemh/$readmemb memory loaders with bounded resource ceilings matching the C++ runtime so examples/dynamic_array.sv and examples/queue_demo.sv execute identically across C++, Rust, and C#.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+- TYPE: File
+  VALUE: docs/dynamic-arrays.md
+- TYPE: File
+  VALUE: docs/queues.md
+- TYPE: File
+  VALUE: docs/associative-arrays.md
+- TYPE: File
+  VALUE: examples/dynamic_array.sv
+- TYPE: File
+  VALUE: examples/queue_demo.sv
+
+[REQUIREMENT]
+UID: VS-RTL-PARITY-004
+STATUS: Draft
+TITLE: Rust and C# parity for explicit-time #delay discrete-event scheduler
+STATEMENT: >>>
+The Rust and C# codegen backends shall implement VeloSim's bounded discrete-event timed scheduler (active/inactive/NBA regions, integer and quantized decimal #delay waits, delayed NBAs <= #d, internal clock generators, eventsPending, and nextTimeSlot) matching native/rtl/hdl_scheduler.h semantics so examples/timed_counter.sv executes identically across C++, Rust, and C# (achieving 13/13 examples/*.sv parity).
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+- TYPE: File
+  VALUE: docs/timed-execution.md
+- TYPE: File
+  VALUE: native/rtl/hdl_scheduler.h
+- TYPE: File
+  VALUE: examples/timed_counter.sv
+
+[REQUIREMENT]
+UID: VS-RTL-PARITY-005
+STATUS: Draft
+TITLE: Rust and C# parity for >64-bit wide words, DPI-C imports, covergroups, DUT coverage, and multi-threaded settle
+STATEMENT: >>>
+The Rust and C# codegen backends shall achieve parity with the full C++20 runtime for packed words wider than 64 bits (256-bit default and 512-bit --large-design), IEEE 1800 Annex I DPI-C imports (isolated in an opt-in FFI companion crate/project to preserve zero-unsafe core models), functional covergroups with bins and 2-way crosses, opt-in DUT branch/case/toggle coverage export (--coverage), and opt-in multi-threaded combinational DAG settling (--threads > 1).
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlVerification.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCombinational.cs
+- TYPE: File
+  VALUE: native/rtl/svdpi.h
+
 
