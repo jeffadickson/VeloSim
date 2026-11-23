@@ -44,6 +44,21 @@ public static class ToolCli
             int lanes = options.Int("--lanes", 1);
             output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage, threads, enableVpi, lanes).ConfigureAwait(false)); return 0;
         }
+        if (args.Length > 0 && args[0] == "slang-lower")
+        {
+            var options = CliOptions.Parse(args, 1);
+            string? top = options.String("--top"), outputPath = options.String("--output"), slangExe = options.String("--slang"), astJsonPath = options.String("--ast-json");
+            if (top is null || outputPath is null)
+                throw new ArgumentException("Usage: slang-lower [<file.sv> ... | --ast-json <ast.json>] --top <module> --output <design.rtl.json> [--slang <path>]");
+            string irJson = astJsonPath is not null
+                ? SlangAstLowerer.LowerAstJson(await File.ReadAllTextAsync(astJsonPath, cancellationToken).ConfigureAwait(false), top)
+                : await SlangAstLowerer.LowerSystemVerilogAsync(options.Sources, top, slangExe, cancellationToken).ConfigureAwait(false);
+            string fullOut = Path.GetFullPath(outputPath);
+            if (Path.GetDirectoryName(fullOut) is { Length: > 0 } dir) Directory.CreateDirectory(dir);
+            await File.WriteAllTextAsync(fullOut, irJson, cancellationToken).ConfigureAwait(false);
+            output.WriteLine(fullOut);
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "coverage-merge")
         {
             if (args.Length < 3) throw new ArgumentException("Usage: coverage-merge <output.json> <input1.json> [<input2.json> ...]");

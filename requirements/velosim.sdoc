@@ -1740,4 +1740,27 @@ RELATIONS:
 - TYPE: File
   VALUE: docs/target-parity-matrix.md
 
+[REQUIREMENT]
+UID: VS-RTL-SLANG-RV32I-001
+STATUS: Implemented
+TITLE: Direct MikePopoloski/slang SystemVerilog frontend (no Surelog/UHDM/Python) and verified RV32I RISC-V processor execution
+STATEMENT: >>>
+VeloSim shall provide a direct SystemVerilog-to-velosim.rtl.v1 frontend backed by MIT-licensed MikePopoloski/slang (via SlangAstLowerer.cs and the velosim slang-lower CLI, plus an optional in-process C++20 bridge gated by VELOSIM_SLANG_FRONTEND) that bypasses Surelog, UHDM, and Python completely. Lowered IR shall fail closed through RtlDesign.Parse. The frontend and all three compiled targets (C++20, Rust #![forbid(unsafe_code)], C# 15 zero-unsafe, and lockstep 8-lane SIMD) shall be verified bit-for-bit on a real RV32I RISC-V processor (examples/rv32i_core.sv) executing RV32I machine code against Verilator 5.055.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/SlangAstLowerer.cs
+- TYPE: File
+  VALUE: native/slang/velosim_slang_lower.cpp
+- TYPE: File
+  VALUE: native/slang/CMakeLists.txt
+- TYPE: File
+  VALUE: examples/rv32i_core.sv
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/SlangFrontendRv32iTests.cs
+- TYPE: File
+  VALUE: docs/slang_frontend.md
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+
 
