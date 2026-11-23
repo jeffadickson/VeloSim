@@ -63,7 +63,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/uhdm-net11-parity
           # 1. Counter: inspect + normalize + rtl parity on real Surelog .uhdm
-          artifacts/toolchain/bin/surelog -parse -nobuiltin -d uhdm -o artifacts/uhdm-net11-parity/counter_sl examples/slang_counter.sv
+          artifacts/toolchain/bin/surelog -parse -elabuhdm -sverilog -odir artifacts/uhdm-net11-parity/counter_sl -top slang_counter examples/slang_counter.sv
           COUNTER_UHDM=artifacts/uhdm-net11-parity/counter_sl/slpp_all/surelog.uhdm
           artifacts/with-uhdm/bin/velosim-uhdm-inspect "$COUNTER_UHDM" > artifacts/uhdm-net11-parity/counter_cpp_inspect.json
           artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-inspect "$COUNTER_UHDM" --output artifacts/uhdm-net11-parity/counter_cs_inspect.json
@@ -75,7 +75,7 @@ jobs:
           artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-rtl "$COUNTER_UHDM" --top slang_counter --output artifacts/uhdm-net11-parity/counter_cs_rtl.json
           diff -u artifacts/uhdm-net11-parity/counter_cpp_rtl.json artifacts/uhdm-net11-parity/counter_cs_rtl.json
           # 2. FIFO: inspect + rtl parity on real Surelog .uhdm + full builtin fifo-differential
-          artifacts/toolchain/bin/surelog -parse -nobuiltin -d uhdm -o artifacts/uhdm-net11-parity/fifo_sl examples/surelog_fifo.sv
+          artifacts/toolchain/bin/surelog -parse -elabuhdm -sverilog -odir artifacts/uhdm-net11-parity/fifo_sl -top surelog_fifo examples/surelog_fifo.sv
           FIFO_UHDM=artifacts/uhdm-net11-parity/fifo_sl/slpp_all/surelog.uhdm
           artifacts/with-uhdm/bin/velosim-uhdm-inspect "$FIFO_UHDM" > artifacts/uhdm-net11-parity/fifo_cpp_inspect.json
           artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-inspect "$FIFO_UHDM" --output artifacts/uhdm-net11-parity/fifo_cs_inspect.json
