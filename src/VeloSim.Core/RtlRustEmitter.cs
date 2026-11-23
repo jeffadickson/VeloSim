@@ -7,7 +7,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> RustPortNames()
     {
         var reserved = (
-            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model finish time time_inc default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint snapshot restore fork got_finish exit_code property_passes property_failures property_vacuous signals_info memories_info signal_by_name get_signal put_signal read_memory write_memory"
+            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model finish time time_inc events_pending next_time_slot load_memory_hex load_memory_bin default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint snapshot restore fork got_finish exit_code property_passes property_failures property_vacuous signals_info memories_info signal_by_name get_signal put_signal read_memory write_memory"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -53,9 +53,17 @@ public sealed partial class RtlDesign
 
     private string RsMemIdx(JsonElement access, int id, bool twoState)
     {
-        string idx = twoState ? RsExpr2(access.GetProperty("index")) : RsExpr64(access.GetProperty("index"));
-        if (Memories[id].LowerBound == 0) return idx;
-        return twoState ? $"w2::memidx({idx},{Memories[id].LowerBound})" : $"w4::memidx({idx},{Memories[id].LowerBound})";
+        var m = Memories[id];
+        if (m.Dimensions is { } shape)
+        {
+            string coords = string.Join(", ", MemoryIndices(access).Select(i => twoState ? RsExpr2(i) : RsExpr64(i)));
+            string dims = string.Join(", ", shape.Select(d => $"({d.Left},{d.Right})"));
+            return twoState ? $"runtime::container::array_index2(&[{coords}],&[{dims}])" : $"runtime::container::array_index(&[{coords}],&[{dims}])";
+        }
+        int ctx = m.Associative ? m.KeyWidth : 0;
+        string idx = twoState ? RsExpr2(access.GetProperty("index"), ctx) : RsExpr64(access.GetProperty("index"), ctx);
+        if (m.LowerBound == 0) return idx;
+        return twoState ? $"w2::memidx({idx},{m.LowerBound})" : $"w4::memidx({idx},{m.LowerBound})";
     }
 
     private string RsExpr64(JsonElement e, int context = 0, bool? forceSigned = null)
@@ -69,7 +77,21 @@ public sealed partial class RtlDesign
         if (kind == "index")
         {
             int id = MemoryId(Name(e));
-            return Extend($"w4::read(&self.m{id},{RsMemIdx(e, id, false)},{RsMaskHex(Memories[id].Width)})");
+            var m = Memories[id];
+            if (m.Associative) return Extend($"runtime::container::assoc_read(&self.m{id},{RsMemIdx(e, id, false)},{m.KeyWidth},{(m.KeySigned ? "true" : "false")},{m.Width},{(m.TwoState ? "true" : "false")})");
+            if (m.Dynamic || m.Queue) return Extend($"runtime::container::dyn_read(&self.m{id},{RsMemIdx(e, id, false)},{m.Width},{(m.TwoState ? "true" : "false")})");
+            return Extend($"w4::read(&self.m{id},{RsMemIdx(e, id, false)},{RsMaskHex(m.Width)})");
+        }
+        if (kind == "size")
+        {
+            int id = MemoryId(Name(e));
+            return Extend($"W4::lit(self.m{id}.len() as u64)");
+        }
+        if (kind == "exists")
+        {
+            int id = MemoryId(Name(e));
+            var m = Memories[id];
+            return Extend($"runtime::container::assoc_exists(&self.m{id},{RsExpr64(e.GetProperty("index"), m.KeyWidth)},{m.KeyWidth},{(m.KeySigned ? "true" : "false")})");
         }
         if (kind == "bitselect")
         {
@@ -204,7 +226,21 @@ public sealed partial class RtlDesign
         if (kind == "index")
         {
             int id = MemoryId(Name(e));
+            var m = Memories[id];
+            if (m.Associative) return Extend($"runtime::container::assoc_read2(&self.m{id},{RsMemIdx(e, id, true)},{m.KeyWidth},{(m.KeySigned ? "true" : "false")})");
+            if (m.Dynamic || m.Queue) return Extend($"runtime::container::dyn_read2(&self.m{id},{RsMemIdx(e, id, true)})");
             return Extend($"w2::read(&self.m{id},{RsMemIdx(e, id, true)})");
+        }
+        if (kind == "size")
+        {
+            int id = MemoryId(Name(e));
+            return Extend($"(self.m{id}.len() as u64)");
+        }
+        if (kind == "exists")
+        {
+            int id = MemoryId(Name(e));
+            var m = Memories[id];
+            return Extend($"runtime::container::assoc_exists2(&self.m{id},{RsExpr2(e.GetProperty("index"), m.KeyWidth)},{m.KeyWidth},{(m.KeySigned ? "true" : "false")})");
         }
         if (kind == "bitselect")
         {
@@ -406,7 +442,88 @@ public sealed partial class RtlDesign
             case "block":
                 foreach (var item in e.GetProperty("items").EnumerateArray()) RsStmt(code, item, ref unique, twoState, trackBudget);
                 break;
+            case "allocate":
+            {
+                int id = MemoryId(Name(e)); var m = Memories[id]; var allocCnt = e.GetProperty("count");
+                string pres = e.GetProperty("preserve").GetBoolean() ? "true" : "false";
+                string csig = ExpressionSigned(allocCnt) ? "true" : "false";
+                code.AppendLine(twoState
+                    ? $"runtime::container::dyn_alloc2(&mut self.m{id},{RsExpr2(allocCnt)},{ExpressionWidth(allocCnt)},{pres},{csig})?;"
+                    : $"runtime::container::dyn_alloc(&mut self.m{id},{RsExpr64(allocCnt)},{ExpressionWidth(allocCnt)},{m.Width},{(m.TwoState ? "true" : "false")},{pres},{csig})?;");
+                break;
+            }
+            case "delete":
+            {
+                int id = MemoryId(Name(e)); var m = Memories[id];
+                if (e.TryGetProperty("index", out var ix))
+                {
+                    if (m.Associative)
+                        code.AppendLine(twoState
+                            ? $"runtime::container::assoc_delete2(&mut self.m{id},{RsExpr2(ix, m.KeyWidth)},{m.KeyWidth},{(m.KeySigned ? "true" : "false")});"
+                            : $"runtime::container::assoc_delete(&mut self.m{id},{RsExpr64(ix, m.KeyWidth)},{m.KeyWidth},{(m.KeySigned ? "true" : "false")});");
+                    else
+                        code.AppendLine(twoState
+                            ? $"runtime::container::queue_delete2(&mut self.m{id},{RsExpr2(ix)});"
+                            : $"runtime::container::queue_delete(&mut self.m{id},{RsExpr64(ix)});");
+                }
+                else code.AppendLine($"self.m{id}.clear();");
+                break;
+            }
+            case "queue_push":
+            {
+                int id = MemoryId(Name(e)); var m = Memories[id];
+                string fr = e.GetProperty("front").GetBoolean() ? "true" : "false";
+                code.AppendLine(twoState
+                    ? $"runtime::container::queue_push2(&mut self.m{id},{RsExpr2(e.GetProperty("value"), m.Width)},{m.Width},{fr})?;"
+                    : $"runtime::container::queue_push(&mut self.m{id},{RsExpr64(e.GetProperty("value"), m.Width)},{m.Width},{(m.TwoState ? "true" : "false")},{fr})?;");
+                break;
+            }
+            case "queue_pop":
+            {
+                int id = MemoryId(Name(e)); var m = Memories[id];
+                string fr = e.GetProperty("front").GetBoolean() ? "true" : "false";
+                string res = "qpop" + unique++;
+                code.AppendLine(twoState
+                    ? $"{{ let {res} = runtime::container::queue_pop2(&mut self.m{id},{fr});"
+                    : $"{{ let {res} = runtime::container::queue_pop(&mut self.m{id},{m.Width},{(m.TwoState ? "true" : "false")},{fr});");
+                if (e.TryGetProperty("target", out var qt))
+                {
+                    int qtid = SignalId(Name(qt)); int tw = ExpressionWidth(qt);
+                    string qv = m.Signed && tw > m.Width
+                        ? (twoState ? $"w2::sresize({res},{m.Width},{tw})" : $"w4::sresize({res},{m.Width},{RsMaskHex(m.Width)},{RsMaskHex(tw)})")
+                        : res;
+                    RsWordWrite(code, qt, qv, twoState, tw == m.Width ? tw : -1);
+                    code.AppendLine($"self.s{qtid} = next{qtid};");
+                }
+                code.AppendLine("}");
+                break;
+            }
+            case "assoc_traverse":
+            {
+                int id = MemoryId(Name(e)); var m = Memories[id];
+                var idxTarget = e.GetProperty("index"); int idxSig = SignalId(Name(idxTarget));
+                int op = e.GetProperty("operation").GetString() switch { "first" => 0, "last" => 1, "next" => 2, _ => 3 };
+                string kv = "akey" + unique++, rv = "ares" + unique++;
+                code.AppendLine(twoState
+                    ? $"{{ let mut {kv} = self.s{idxSig}; let {rv} = runtime::container::assoc_traverse2(&self.m{id},&mut {kv},{m.KeyWidth},{(m.KeySigned ? "true" : "false")},{op});"
+                    : $"{{ let mut {kv} = self.s{idxSig}; let {rv} = runtime::container::assoc_traverse(&self.m{id},&mut {kv},{m.KeyWidth},{(m.KeySigned ? "true" : "false")},{op});");
+                RsWordWrite(code, idxTarget, kv, twoState, m.KeyWidth);
+                code.AppendLine($"self.s{idxSig} = next{idxSig};");
+                if (e.TryGetProperty("target", out var outT))
+                {
+                    int outId = SignalId(Name(outT)); int outW = ExpressionWidth(outT);
+                    string ov = outW > 32
+                        ? (twoState ? $"w2::sresize({rv},32,{outW})" : $"w4::sresize({rv},32,0xffffffffu64,{RsMaskHex(outW)})")
+                        : rv;
+                    RsWordWrite(code, outT, ov, twoState);
+                    code.AppendLine($"self.s{outId} = next{outId};");
+                }
+                code.AppendLine("}");
+                break;
+            }
+            case "blocking":
             case "nba":
+                bool isBlocking = Kind(e) == "blocking";
                 var target = e.GetProperty("target");
                 if (Kind(target) == "concat")
                 {
@@ -438,16 +555,58 @@ public sealed partial class RtlDesign
                 else
                 {
                     int id = MemoryId(Name(target));
-                    if (twoState)
-                        code.AppendLine($"self.mlog.push({id},{Memories[id].Depth},{RsMemIdx(target, id, true)},{RsExpr2(e.GetProperty("value"), Memories[id].Width)},{Memories[id].Width});");
+                    var mem = Memories[id];
+                    if (mem.Associative)
+                    {
+                        code.AppendLine(twoState
+                            ? $"runtime::container::assoc_write2(&mut self.m{id},{RsMemIdx(target, id, true)},{RsExpr2(e.GetProperty("value"), mem.Width)},{mem.KeyWidth},{(mem.KeySigned ? "true" : "false")},{mem.Width})?;"
+                            : $"runtime::container::assoc_write(&mut self.m{id},{RsMemIdx(target, id, false)},{RsExpr64(e.GetProperty("value"), mem.Width)},{mem.KeyWidth},{(mem.KeySigned ? "true" : "false")},{mem.Width},{(mem.TwoState ? "true" : "false")})?;");
+                    }
+                    else if (mem.Queue)
+                    {
+                        code.AppendLine(twoState
+                            ? $"runtime::container::queue_write2(&mut self.m{id},{RsMemIdx(target, id, true)},{RsExpr2(e.GetProperty("value"), mem.Width)},{mem.Width})?;"
+                            : $"runtime::container::queue_write(&mut self.m{id},{RsMemIdx(target, id, false)},{RsExpr64(e.GetProperty("value"), mem.Width)},{mem.Width},{(mem.TwoState ? "true" : "false")})?;");
+                    }
+                    else if (mem.Dynamic)
+                    {
+                        code.AppendLine(twoState
+                            ? $"runtime::container::dyn_write2(&mut self.m{id},{RsMemIdx(target, id, true)},{RsExpr2(e.GetProperty("value"), mem.Width)},{mem.Width});"
+                            : $"runtime::container::dyn_write(&mut self.m{id},{RsMemIdx(target, id, false)},{RsExpr64(e.GetProperty("value"), mem.Width)},{mem.Width},{(mem.TwoState ? "true" : "false")});");
+                    }
+                    else if (isBlocking)
+                    {
+                        if (twoState)
+                        {
+                            string v = RsExpr2(e.GetProperty("value"), mem.Width);
+                            string vm = mem.Width >= 64 ? v : $"(({v}) & {RsMaskHex(mem.Width)})";
+                            code.AppendLine($"{{ let _mi = {RsMemIdx(target, id, true)} as usize; if _mi < {mem.Depth} {{ self.m{id}[_mi] = {vm}; }} }}");
+                        }
+                        else
+                        {
+                            string mm = RsMaskHex(mem.Width);
+                            string v = RsExpr64(e.GetProperty("value"), mem.Width);
+                            v = mem.TwoState ? $"w4::two_state({v},{mm})" : $"w4::resize({v},{mm})";
+                            code.AppendLine($"{{ let _mi = {RsMemIdx(target, id, false)}; if _mi.b == 0 && (_mi.a as usize) < {mem.Depth} {{ self.m{id}[_mi.a as usize] = {v}; }} }}");
+                        }
+                    }
+                    else if (twoState)
+                        code.AppendLine($"self.mlog.push({id},{mem.Depth},{RsMemIdx(target, id, true)},{RsExpr2(e.GetProperty("value"), mem.Width)},{mem.Width});");
                     else
                     {
-                        string mm = RsMaskHex(Memories[id].Width);
-                        string v = RsExpr64(e.GetProperty("value"), Memories[id].Width);
-                        if (Memories[id].TwoState) v = $"w4::two_state({v},{mm})";
-                        code.AppendLine($"self.mlog.push({id},{Memories[id].Depth},{RsMemIdx(target, id, false)},{v},{mm});");
+                        string mm = RsMaskHex(mem.Width);
+                        string v = RsExpr64(e.GetProperty("value"), mem.Width);
+                        if (mem.TwoState) v = $"w4::two_state({v},{mm})";
+                        code.AppendLine($"self.mlog.push({id},{mem.Depth},{RsMemIdx(target, id, false)},{v},{mm});");
                     }
                 }
+                if (isBlocking)
+                    foreach (var leaf in TargetLeaves(target))
+                        if (Kind(leaf) != "index")
+                        {
+                            int sid = SignalId(TargetOwner(leaf));
+                            code.AppendLine($"self.s{sid} = next{sid};");
+                        }
                 break;
             case "if":
                 string ifCond = twoState ? $"w2::yes({RsExpr2(e.GetProperty("condition"))})" : $"w4::yes({RsExpr64(e.GetProperty("condition"))})";
@@ -562,25 +721,32 @@ public sealed partial class RtlDesign
     {
         if (!Identifier(top) || ("V" + top).Contains("__", StringComparison.Ordinal)) throw new ArgumentException("Invalid external model top name.", nameof(top));
         if (!CanUsePortable64(stateMode))
-            throw new IrValidationException("Rust target currently supports non-timed <=64-bit event-driven and combinational designs without initialization blocks or dynamic, queue, associative, or multidimensional arrays.");
+            throw new IrValidationException("Rust target currently supports <=64-bit event-driven, combinational, and 4-state explicit-time designs without DPI-C or covergroups.");
+        if (Timed) return EmitRustTimedModel(top);
         bool twoState = stateMode == RtlStateMode.TwoState;
         string structName = "V" + top;
         var names = RustPortNames();
         if (names.Values.Contains(structName)) throw new ArgumentException("Port conflicts with generated struct name.", nameof(top));
         string wordType = twoState ? "u64" : "W4";
         bool hasRuntimeLoops = StatementsHaveRuntimeLoops(SettledSteps.Append(Body));
-        bool canThrow = CanEvaluateThrow();
+        bool hasContainers = Memories.Any(IsContainerMem);
+        bool canThrow = CanEvaluateThrow() || hasContainers;
         bool bodyUsesForces = !CombinationalOnly && Statements(Body).Any(e => Kind(e) is "force" or "release");
         var procs = CombinationalOnly ? Array.Empty<JsonElement>() : (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]);
         var eventIds = CombinationalOnly ? Array.Empty<int>() : EventSignals.Select(SignalId).ToArray();
-        int[] seqIds = CombinationalOnly ? [] : Statements(Body).Where(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) != "index")
+        int[] seqIds = CombinationalOnly ? [] : Statements(Body).Where(e => Kind(e) is "nba" or "blocking" && Kind(e.GetProperty("target")) != "index")
             .SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(t => SignalId(TargetOwner(t)))
+            .Concat(Statements(Body).Where(e => Kind(e) == "queue_pop" && e.TryGetProperty("target", out _)).Select(e => SignalId(Name(e.GetProperty("target")))))
+            .Concat(Statements(Body).Where(e => Kind(e) == "assoc_traverse").SelectMany(e =>
+                e.TryGetProperty("target", out var at)
+                    ? new[] { SignalId(Name(e.GetProperty("index"))), SignalId(Name(at)) }
+                    : new[] { SignalId(Name(e.GetProperty("index"))) }))
             .Concat(Statements(Body).Where(e => Kind(e) == "value_plusargs").SelectMany(e =>
                 e.TryGetProperty("matched", out var m) && m.ValueKind != JsonValueKind.Null
                     ? new[] { SignalId(e.GetProperty("target").GetString()!), SignalId(m.GetString()!) }
                     : new[] { SignalId(e.GetProperty("target").GetString()!) }))
             .Distinct().Order().ToArray();
-        bool hasFixedMemWrites = !CombinationalOnly && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index");
+        bool hasFixedMemWrites = !CombinationalOnly && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index" && !IsContainerMem(Memories[MemoryId(Name(e.GetProperty("target")))]));
 
         void EmitEvalBody(StringBuilder sb, bool emitForces)
         {
@@ -676,7 +842,8 @@ public sealed partial class RtlDesign
                     sb.AppendLine("                let e = self.mlog.buf[i];");
                     sb.AppendLine("                match e.mem_id {");
                     for (int m = 0; m < Memories.Count; ++m)
-                        sb.AppendLine($"                    {m} => self.m{m}[e.index as usize] = e.value,");
+                        if (!IsContainerMem(Memories[m]))
+                            sb.AppendLine($"                    {m} => self.m{m}[e.index as usize] = e.value,");
                     sb.AppendLine("                    _ => {}");
                     sb.AppendLine("                }");
                     sb.AppendLine("            }");
@@ -684,7 +851,8 @@ public sealed partial class RtlDesign
                     sb.AppendLine("                for e in self.mlog.overflow.drain(..) {");
                     sb.AppendLine("                    match e.mem_id {");
                     for (int m = 0; m < Memories.Count; ++m)
-                        sb.AppendLine($"                        {m} => self.m{m}[e.index as usize] = e.value,");
+                        if (!IsContainerMem(Memories[m]))
+                            sb.AppendLine($"                        {m} => self.m{m}[e.index as usize] = e.value,");
                     sb.AppendLine("                        _ => {}");
                     sb.AppendLine("                    }");
                     sb.AppendLine("                }");
@@ -733,7 +901,12 @@ public sealed partial class RtlDesign
         foreach (int id in eventIds)
             code.AppendLine($"    prev{id}: {wordType},");
         for (int i = 0; i < Memories.Count; ++i)
-            code.AppendLine($"    m{i}: [{wordType}; {Memories[i].Depth}],");
+        {
+            var mem = Memories[i];
+            if (mem.Associative) code.AppendLine($"    m{i}: std::collections::BTreeMap<u64, {wordType}>,");
+            else if (mem.Dynamic || mem.Queue) code.AppendLine($"    m{i}: Vec<{wordType}>,");
+            else code.AppendLine($"    m{i}: [{wordType}; {mem.Depth}],");
+        }
         if (hasFixedMemWrites)
             code.AppendLine($"    mlog: {(twoState ? "MemLog2" : "MemLog4")},");
         code.AppendLine("}");
@@ -744,7 +917,7 @@ public sealed partial class RtlDesign
         code.AppendLine();
         code.AppendLine($"impl {structName} {{");
         code.AppendLine("    pub fn new() -> Self {");
-        code.AppendLine("        Self {");
+        code.AppendLine(HasInitBlock() ? "        let mut m = Self {" : "        Self {");
         code.AppendLine("            time: 0,");
         code.AppendLine("            finished: false,");
         code.AppendLine("            exit_code: 0,");
@@ -786,13 +959,31 @@ public sealed partial class RtlDesign
         for (int i = 0; i < Memories.Count; ++i)
         {
             var mem = Memories[i];
-            if (twoState) code.AppendLine($"            m{i}: [0u64; {mem.Depth}],");
+            if (mem.Associative) code.AppendLine($"            m{i}: std::collections::BTreeMap::new(),");
+            else if (mem.Dynamic || mem.Queue) code.AppendLine($"            m{i}: Vec::new(),");
+            else if (twoState) code.AppendLine($"            m{i}: [0u64; {mem.Depth}],");
             else code.AppendLine($"            m{i}: [{(mem.TwoState ? "W4::lit(0u64)" : $"W4::unknown({RsMaskHex(mem.Width)})")}; {mem.Depth}],");
         }
         if (hasFixedMemWrites)
             code.AppendLine($"            mlog: {(twoState ? "MemLog2::new()" : "MemLog4::new()")},");
-        code.AppendLine("        }");
-        code.AppendLine("    }");
+        if (HasInitBlock())
+        {
+            code.AppendLine("        };");
+            code.AppendLine("        m.run_init().expect(\"initial block failed\");");
+            code.AppendLine("        m");
+            code.AppendLine("    }");
+            code.AppendLine("    fn run_init(&mut self) -> Result<(), &'static str> {");
+            for (int sid = 0; sid < Signals.Count; ++sid) code.AppendLine($"        let mut next{sid} = self.s{sid};");
+            int initU = 0;
+            RsStmt(code, Initialization, ref initU, twoState, false);
+            code.AppendLine("        Ok(())");
+            code.AppendLine("    }");
+        }
+        else
+        {
+            code.AppendLine("        }");
+            code.AppendLine("    }");
+        }
         code.AppendLine();
         code.AppendLine("    #[inline(always)] pub fn time(&self) -> u64 { self.time }");
         code.AppendLine("    #[inline(always)] pub fn time_inc(&mut self, delta: u64) { self.time = self.time.wrapping_add(delta); }");
@@ -874,7 +1065,8 @@ public sealed partial class RtlDesign
         code.AppendLine($"        let mut mems: Vec<Vec<W64>> = Vec::with_capacity({Memories.Count});");
         for (int i = 0; i < Memories.Count; ++i)
         {
-            if (twoState)
+            if (IsContainerMem(Memories[i])) code.AppendLine("        mems.push(Vec::new());");
+            else if (twoState)
                 code.AppendLine($"        mems.push(self.m{i}.iter().map(|&v| W64::lit(v, {Memories[i].Width})).collect());");
             else
                 code.AppendLine($"        mems.push(self.m{i}.iter().map(|&v| v.to_w64({Memories[i].Width})).collect());");
@@ -882,7 +1074,7 @@ public sealed partial class RtlDesign
         code.AppendLine("        checkpoint::save(path, Self::checkpoint_schema_hash(), self.time, self.rng.state, &sigs, &prevs, &mems)");
         code.AppendLine("    }");
         code.AppendLine("    pub fn restore_checkpoint(&mut self, path: &str) -> std::io::Result<()> {");
-        code.AppendLine($"        let (t, rng_state, sigs, prevs, mems) = checkpoint::load(path, Self::checkpoint_schema_hash(), {Signals.Count}, {eventIds.Length}, &[{string.Join(", ", Memories.Select(m => m.Depth))}])?;");
+        code.AppendLine($"        let (t, rng_state, sigs, prevs, mems) = checkpoint::load(path, Self::checkpoint_schema_hash(), {Signals.Count}, {eventIds.Length}, &[{string.Join(", ", Memories.Select(m => IsContainerMem(m) ? 0 : m.Depth))}])?;");
         code.AppendLine("        self.time = t; self.rng.state = rng_state;");
         for (int i = 0; i < Signals.Count; ++i)
             code.AppendLine(twoState
@@ -894,6 +1086,7 @@ public sealed partial class RtlDesign
                 : $"        self.prev{eventIds[i]} = W4::from_w64(prevs[{i}], 1u64);");
         for (int i = 0; i < Memories.Count; ++i)
         {
+            if (IsContainerMem(Memories[i])) continue;
             if (twoState)
                 code.AppendLine($"        for j in 0..self.m{i}.len() {{ self.m{i}[j] = w2::resize(mems[{i}][j].v, {Memories[i].Width}); }}");
             else
@@ -1082,9 +1275,14 @@ public sealed partial class RtlDesign
         code.AppendLine("    pub fn read_memory(&self, mem_id: usize, addr: usize) -> Result<W64, &'static str> {");
         code.AppendLine("        match mem_id {");
         for (int i = 0; i < Memories.Count; ++i)
-            code.AppendLine(twoState
-                ? $"            {i} => self.m{i}.get(addr).map(|&v| W64::lit(v, {Memories[i].Width})).ok_or(\"memory word address out of range\"),"
-                : $"            {i} => self.m{i}.get(addr).map(|&v| v.to_w64({Memories[i].Width})).ok_or(\"memory word address out of range\"),");
+        {
+            if (Memories[i].Associative)
+                code.AppendLine($"            {i} => Err(\"indexed VPI read is not supported for associative arrays\"),");
+            else
+                code.AppendLine(twoState
+                    ? $"            {i} => self.m{i}.get(addr).map(|&v| W64::lit(v, {Memories[i].Width})).ok_or(\"memory word address out of range\"),"
+                    : $"            {i} => self.m{i}.get(addr).map(|&v| v.to_w64({Memories[i].Width})).ok_or(\"memory word address out of range\"),");
+        }
         code.AppendLine("            _ => Err(\"memory word address out of range\"),");
         code.AppendLine("        }");
         code.AppendLine("    }");
@@ -1094,11 +1292,31 @@ public sealed partial class RtlDesign
         for (int i = 0; i < Memories.Count; ++i)
         {
             string mm = RsMaskHex(Memories[i].Width);
-            code.AppendLine(twoState
-                ? $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = w2::resize(value.v & !(value.x | value.z), {Memories[i].Width}); Ok(()) }}"
-                : $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = {(Memories[i].TwoState ? $"W4::lit(value.v & !(value.x | value.z) & {mm})" : $"W4::from_w64(value, {mm})")}; Ok(()) }}");
+            if (Memories[i].Associative)
+                code.AppendLine($"            {i} => Err(\"indexed VPI write is not supported for associative arrays\"),");
+            else
+                code.AppendLine(twoState
+                    ? $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = w2::resize(value.v & !(value.x | value.z), {Memories[i].Width}); Ok(()) }}"
+                    : $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = {(Memories[i].TwoState ? $"W4::lit(value.v & !(value.x | value.z) & {mm})" : $"W4::from_w64(value, {mm})")}; Ok(()) }}");
         }
         code.AppendLine("            _ => Err(\"memory word address out of range\"),");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("    pub fn load_memory_hex(&mut self, mem_id: usize, path: &str, start: usize, end: usize) -> std::io::Result<usize> { self.load_mem(mem_id, path, true, start, end) }");
+        code.AppendLine("    pub fn load_memory_bin(&mut self, mem_id: usize, path: &str, start: usize, end: usize) -> std::io::Result<usize> { self.load_mem(mem_id, path, false, start, end) }");
+        code.AppendLine("    fn load_mem(&mut self, mem_id: usize, path: &str, hex: bool, start: usize, end: usize) -> std::io::Result<usize> {");
+        code.AppendLine("        match mem_id {");
+        for (int i = 0; i < Memories.Count; ++i)
+        {
+            var mem = Memories[i];
+            if (IsContainerMem(mem))
+                code.AppendLine($"            {i} => Err(std::io::Error::new(std::io::ErrorKind::Unsupported, \"file memory loading requires a fixed memory\")),");
+            else if (twoState)
+                code.AppendLine($"            {i} => runtime::load_mem_file_u64(&mut self.m{i}, {mem.Width}, path, hex, start, end),");
+            else
+                code.AppendLine($"            {i} => runtime::load_mem_file_w4(&mut self.m{i}, {mem.Width}, path, hex, start, end, {(mem.TwoState ? "true" : "false")}),");
+        }
+        code.AppendLine("            _ => Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, \"invalid mem_id\")),");
         code.AppendLine("        }");
         code.AppendLine("    }");
         code.AppendLine("}");
@@ -3338,5 +3556,5 @@ impl<M: TimeTravelModel> TimeTravelRecorder<M> {
         self.dump_vcd(path, timescale, gzip, filter_prefixes)
     }
 }
-""" + EmitRustSafeVpiRuntime();
+""" + EmitRustSafeVpiRuntime() + "\n" + EmitRustParityRuntimeHelpers();
 }

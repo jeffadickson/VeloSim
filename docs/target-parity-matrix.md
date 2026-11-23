@@ -47,20 +47,20 @@ Status legend:
 | Feature | C++ | Rust | C# | Requirement UID |
 |---|---|---|---|---|
 | Fixed 1D unpacked word memories (`<= 64`-bit, zero & non-zero lower bound) | Supported | Supported | Supported | `VS-RTL-PARITY-001` |
-| Fixed multidimensional arrays (rank 2–4) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-003` |
-| Dynamic arrays (`m[]`: `new[n]`, `new[n](m)`, `delete()`, `size()`, `m[i]`) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-003` |
-| Bounded queues (`q[$]`: `push_front`/`back`, `pop_front`/`back`, `delete()`, `size()`) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-003` |
-| Associative arrays (traversal/lookup) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-003` |
-| `$readmemh` / `$readmemb` file loaders (`loadMemoryHex`/`Bin`) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-003` |
+| Fixed multidimensional arrays (rank 2–4) | Supported | Supported | Supported | `VS-RTL-PARITY-003` |
+| Dynamic arrays (`m[]`: `new[n]`, `new[n](m)`, `delete()`, `size()`, `m[i]`) | Supported | Supported | Supported | `VS-RTL-PARITY-003` |
+| Bounded queues (`q[$]`: `push_front`/`back`, `pop_front`/`back`, `delete()`, `size()`) | Supported | Supported | Supported | `VS-RTL-PARITY-003` |
+| Associative arrays (traversal/lookup) | Supported | Supported | Supported | `VS-RTL-PARITY-003` |
+| `$readmemh` / `$readmemb` file loaders (`loadMemoryHex`/`Bin`) | Supported | Supported | Supported | `VS-RTL-PARITY-003` |
 
 ### 2.3 Control Flow, Startup & Explicit-Time Scheduling
 
 | Feature | C++ | Rust | C# | Requirement UID |
 |---|---|---|---|---|
 | Static `repeat` and bounded runtime `while`/`do`/`repeat` loops | Supported | Supported | Supported | `VS-RTL-PARITY-001` |
-| `initial` startup blocks | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-002` |
-| Procedural blocking (`=`) statements inside `always` processes | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-002` |
-| Discrete-event `#delay` timed scheduler (`hdl_scheduler.h`, `eventsPending`, `nextTimeSlot`, delayed NBA `<= #d`) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-004` |
+| `initial` startup blocks | Supported | Supported | Supported | `VS-RTL-PARITY-002` |
+| Procedural blocking (`=`) statements inside `always` processes | Supported | Supported | Supported | `VS-RTL-PARITY-002` |
+| Discrete-event `#delay` timed scheduler (`hdl_scheduler.h`, `eventsPending`, `nextTimeSlot`, delayed NBA `<= #d`) | Supported | Supported | Supported | `VS-RTL-PARITY-004` |
 
 ### 2.4 Verification, System Tasks & State Persistence
 
@@ -76,7 +76,7 @@ Status legend:
 | Functional `covergroup`s, bins, 2-way crosses, merge | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-005` |
 | DUT branch/case/toggle coverage (`--coverage`) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-005` |
 
-### 2.5 Interop, VPI & Parallelism
+### 2.5 Interop, VPI, Parallelism & Browser WASM
 
 | Feature | C++ | Rust | C# | Requirement UID |
 |---|---|---|---|---|
@@ -85,10 +85,11 @@ Status legend:
 | IEEE 1800 Annex I DPI-C (`svdpi.h` imports) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-005` |
 | Multi-threaded combinational settle (`--threads > 1`) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-005` |
 | Lockstep N-lane SIMD multi-seed & fault-injection (`--lanes 4\|8`, `DivergedMask_*`) | Supported (`alignas(32/64)`) | Supported (`#![forbid(unsafe_code)]`) | Supported (`Vector256`/`Vector512`, 0 `unsafe`) | `VS-RTL-SIMD-LANES-001` |
+| Client-side Browser RTL-in-WASM (`apps/SchematicLab/Web`, zero server round-trip) | — | — | Supported (Blazor WebAssembly, RV32I live core) | `VS-RTL-WASM-BROWSER-001` |
 
 ---
 
-## 3. Complete `examples/*.sv` Corpus Parity (13 SystemVerilog Samples)
+## 3. Complete `examples/*.sv` Corpus Parity (14 SystemVerilog Samples)
 
 | # | Example File | Top Module | C++ (4s / 2s) | Rust (4s / 2s) | C# (4s / 2s) | Verilator 5.055 Checksum | Gap / Blocker |
 |---|---|---|---|---|---|---|---|
@@ -102,12 +103,12 @@ Status legend:
 | 8 | `examples/surelog_fifo.sv` | `surelog_fifo` | Supported | Supported | Supported | Match (all 7 engines) | — |
 | 9 | `examples/surelog_fifo_operators.sv` | `surelog_fifo_ops` | Supported | Supported | Supported | Match (all 7 engines) | — |
 | 10 | `examples/surelog_fifo_selections.sv` | `surelog_fifo_selections` | Supported | Supported | Supported | Match (all 7 engines) | — |
-| 11 | `examples/dynamic_array.sv` | `dut` | Supported | Gap (`VS-RTL-PARITY-002`, `003`) | Gap (`VS-RTL-PARITY-002`, `003`) | C++ qualified | Dynamic array `m[]`, `initial`, blocking `=` |
-| 12 | `examples/queue_demo.sv` | `queue_demo` | Supported | Gap (`VS-RTL-PARITY-002`, `003`) | Gap (`VS-RTL-PARITY-002`, `003`) | C++ qualified | Queue `pending[$]`, blocking `=` |
-| 13 | `examples/timed_counter.sv` | `timed_counter` | Supported | Gap (`VS-RTL-PARITY-002`, `004`) | Gap (`VS-RTL-PARITY-002`, `004`) | C++ qualified | Explicit `#delay` time wheel, `initial`, `always #2`, `<= #1` |
+| 11 | `examples/dynamic_array.sv` | `dut` | Supported | Supported | Supported | C++/Rust/C# exact match | — (`VS-RTL-PARITY-002`, `003`) |
+| 12 | `examples/queue_demo.sv` | `queue_demo` | Supported | Supported | Supported | C++/Rust/C# exact match | — (`VS-RTL-PARITY-002`, `003`) |
+| 13 | `examples/timed_counter.sv` | `timed_counter` | Supported (4s) | Supported (4s) | Supported (4s) | C++/Rust/C# exact match | — (`VS-RTL-PARITY-002`, `004`) |
 | 14 | `examples/rv32i_core.sv` | `rv32i_core` | Supported | Supported | Supported | Match (all 7 engines + 8-lane SIMD) | — (direct `slang` frontend, zero UHDM) |
 
-**Current `examples/*.sv` coverage:** **14/14** C++, **11/14** Rust, **11/14** C#.
+**Current `examples/*.sv` coverage:** **14/14** C++, **14/14** Rust, **14/14** C#.
 
 ---
 

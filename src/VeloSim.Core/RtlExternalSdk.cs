@@ -208,7 +208,7 @@ public static class RtlExternalSdk
         string manifest = Path.Combine(directory, "external-model.json");
         var names = design.CSharpPortNames();
         bool twoState = stateMode == RtlStateMode.TwoState;
-        string semantics = $"csharp; {(twoState ? "two-state" : "four-state")}; {(enableVpi ? "vpi; " : "")}{(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
+        string semantics = $"csharp; {(twoState ? "two-state" : "four-state")}; {(enableVpi ? "vpi; " : "")}{(design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
         var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
             design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
             inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
@@ -274,7 +274,7 @@ public static class RtlExternalSdk
         string manifest = Path.Combine(directory, "external-model.json");
         var names = design.RustPortNames();
         bool twoState = stateMode == RtlStateMode.TwoState;
-        string semantics = $"rust; {(twoState ? "two-state" : "four-state")}; {(enableVpi ? "vpi; " : "")}{(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
+        string semantics = $"rust; {(twoState ? "two-state" : "four-state")}; {(enableVpi ? "vpi; " : "")}{(design.Timed ? "bounded explicit-time processes; active/inactive/NBA; serial; explicit eval" : design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
         var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
             design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
             inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
