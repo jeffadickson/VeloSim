@@ -13,6 +13,9 @@ internal sealed class CliOptions
     {
         ["rtl-export"] = new("top output-dir target threads lanes", "two-state large-design coverage vpi", Unique: true),
         ["slang-lower"] = new("top output slang ast-json", "", Sources: true, Unique: true),
+        ["uhdm-inspect"] = new("output", "", Unique: true),
+        ["uhdm-normalize"] = new("top output", "", Unique: true),
+        ["uhdm-rtl"] = new("top output", "large-design", Unique: true),
         ["fifo-differential"] = new("top output-dir exporter surelog build-jobs cycles seed workers", Unique: true),
         ["word-seeded-conformance"] = new("output-dir iverilog vvp seed steps repetitions workers", Unique: true),
         ["word-inspect"] = new(""), ["word-replay"] = new("output-dir"), ["word-reduce"] = new("output-dir"),

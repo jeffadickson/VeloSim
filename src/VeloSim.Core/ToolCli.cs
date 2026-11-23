@@ -59,6 +59,45 @@ public static class ToolCli
             output.WriteLine(fullOut);
             return 0;
         }
+        if (args.Length > 0 && args[0] == "uhdm-inspect")
+        {
+            if (args.Length < 2) throw new ArgumentException("Usage: uhdm-inspect <design.uhdm> [--output <inventory.json>]");
+            var options = CliOptions.Parse(args, 2);
+            string json = Uhdm.UhdmInspector.InspectFile(args[1]);
+            if (options.String("--output") is { } outPath)
+            {
+                string fullOut = Path.GetFullPath(outPath);
+                if (Path.GetDirectoryName(fullOut) is { Length: > 0 } dir) Directory.CreateDirectory(dir);
+                await File.WriteAllTextAsync(fullOut, json, cancellationToken).ConfigureAwait(false);
+                output.WriteLine(fullOut);
+            }
+            else
+            {
+                output.Write(json);
+            }
+            return 0;
+        }
+        if (args.Length > 0 && args[0] is "uhdm-normalize" or "uhdm-rtl")
+        {
+            bool structural = args[0] == "uhdm-rtl";
+            if (args.Length < 2) throw new ArgumentException($"Usage: {args[0]} <design.uhdm> --top <module> --output <file.json>{(structural ? " [--large-design]" : "")}");
+            var options = CliOptions.Parse(args, 2);
+            string? top = options.String("--top"), outputPath = options.String("--output");
+            if (top is null || outputPath is null)
+                throw new ArgumentException($"Usage: {args[0]} <design.uhdm> --top <module> --output <file.json>{(structural ? " [--large-design]" : "")}");
+            string fullOut = Path.GetFullPath(outputPath);
+            if (structural)
+            {
+                var limits = options.Flag("--large-design") ? Uhdm.UhdmRtlLimits.Large : Uhdm.UhdmRtlLimits.FromEnvironment();
+                Uhdm.UhdmRtlLowerer.LowerFileTo(args[1], fullOut, top, limits);
+            }
+            else
+            {
+                Uhdm.UhdmNormalizer.NormalizeFileTo(args[1], fullOut, top);
+            }
+            output.WriteLine(fullOut);
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "coverage-merge")
         {
             if (args.Length < 3) throw new ArgumentException("Usage: coverage-merge <output.json> <input1.json> [<input2.json> ...]");

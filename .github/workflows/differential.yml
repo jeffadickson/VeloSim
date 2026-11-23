@@ -56,6 +56,35 @@ jobs:
         run: |
           dotnet test tests/VeloSim.Tests -c Release -m:4 --filter 'FullyQualifiedName~FifoTests|FullyQualifiedName~RtlBitwiseTests|FullyQualifiedName~RtlOperatorTests|FullyQualifiedName~RtlSelectionTests|FullyQualifiedName~ExternalInterfaceTests|FullyQualifiedName~RtlIndexed|FullyQualifiedName~RtlConcat'
           artifacts/publish/VeloSim.Tools/VeloSim.Tools fifo-differential examples/surelog_fifo.sv --top surelog_fifo --output-dir artifacts/fifo-native-cli --workers 1,4,8 --cycles 1000 --build-jobs 4
+      - name: Verify pure .NET 11 C# UHDM layer parity against native C++ libuhdm on real Surelog binaries
+        env:
+          VELOSIM_SURELOG: ${{ github.workspace }}/artifacts/toolchain/bin/surelog
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/uhdm-net11-parity
+          # 1. Counter: inspect + normalize + rtl parity on real Surelog .uhdm
+          artifacts/toolchain/bin/surelog -parse -nobuiltin -d uhdm -o artifacts/uhdm-net11-parity/counter_sl examples/slang_counter.sv
+          COUNTER_UHDM=artifacts/uhdm-net11-parity/counter_sl/slpp_all/surelog.uhdm
+          artifacts/with-uhdm/bin/velosim-uhdm-inspect "$COUNTER_UHDM" > artifacts/uhdm-net11-parity/counter_cpp_inspect.json
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-inspect "$COUNTER_UHDM" --output artifacts/uhdm-net11-parity/counter_cs_inspect.json
+          diff -u artifacts/uhdm-net11-parity/counter_cpp_inspect.json artifacts/uhdm-net11-parity/counter_cs_inspect.json
+          artifacts/with-uhdm/bin/velosim-uhdm-normalize "$COUNTER_UHDM" artifacts/uhdm-net11-parity/counter_cpp_norm.json slang_counter
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-normalize "$COUNTER_UHDM" --top slang_counter --output artifacts/uhdm-net11-parity/counter_cs_norm.json
+          diff -u artifacts/uhdm-net11-parity/counter_cpp_norm.json artifacts/uhdm-net11-parity/counter_cs_norm.json
+          artifacts/with-uhdm/bin/velosim-uhdm-rtl "$COUNTER_UHDM" artifacts/uhdm-net11-parity/counter_cpp_rtl.json slang_counter
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-rtl "$COUNTER_UHDM" --top slang_counter --output artifacts/uhdm-net11-parity/counter_cs_rtl.json
+          diff -u artifacts/uhdm-net11-parity/counter_cpp_rtl.json artifacts/uhdm-net11-parity/counter_cs_rtl.json
+          # 2. FIFO: inspect + rtl parity on real Surelog .uhdm + full builtin fifo-differential
+          artifacts/toolchain/bin/surelog -parse -nobuiltin -d uhdm -o artifacts/uhdm-net11-parity/fifo_sl examples/surelog_fifo.sv
+          FIFO_UHDM=artifacts/uhdm-net11-parity/fifo_sl/slpp_all/surelog.uhdm
+          artifacts/with-uhdm/bin/velosim-uhdm-inspect "$FIFO_UHDM" > artifacts/uhdm-net11-parity/fifo_cpp_inspect.json
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-inspect "$FIFO_UHDM" --output artifacts/uhdm-net11-parity/fifo_cs_inspect.json
+          diff -u artifacts/uhdm-net11-parity/fifo_cpp_inspect.json artifacts/uhdm-net11-parity/fifo_cs_inspect.json
+          artifacts/with-uhdm/bin/velosim-uhdm-rtl "$FIFO_UHDM" artifacts/uhdm-net11-parity/fifo_cpp_rtl.json surelog_fifo
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-rtl "$FIFO_UHDM" --top surelog_fifo --output artifacts/uhdm-net11-parity/fifo_cs_rtl.json
+          diff -u artifacts/uhdm-net11-parity/fifo_cpp_rtl.json artifacts/uhdm-net11-parity/fifo_cs_rtl.json
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools differential --top slang_counter --cycles 1000 --threads 1 --build-jobs 4 --normalizer builtin --output-dir artifacts/diff-net11-builtin examples/slang_counter.sv
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools fifo-differential examples/surelog_fifo.sv --top surelog_fifo --exporter builtin --output-dir artifacts/fifo-net11-builtin --workers 1,4 --cycles 1000 --build-jobs 4
       - uses: actions/upload-artifact@v4
         if: always()
         with:
