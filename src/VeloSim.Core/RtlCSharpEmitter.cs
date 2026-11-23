@@ -30,7 +30,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> CSharpPortNames()
     {
         var reserved = (
-            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Finish Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs Plusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal GotFinish ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint ModelName Signals Memories SignalByName GetSignal PutSignal ReadMemory WriteMemory W4 W4Ops MemLog4 W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO IVpiModel VpiDirection VpiSignalInfo VpiMemoryInfo VpiCbReason VpiCbHandle VpiCbEvent VpiLookup VpiContext VpiSession"
+            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Finish Time TimeInc OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs Plusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal GotFinish ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint Snapshot Restore Fork ITimeTravelModel TimeTravelRecorder ModelName Signals Memories SignalByName GetSignal PutSignal ReadMemory WriteMemory W4 W4Ops MemLog4 W64 W64Ops W2Ops VcdWriter PlusargStore SplitMix64Rng CheckpointIO IVpiModel VpiDirection VpiSignalInfo VpiMemoryInfo VpiCbReason VpiCbHandle VpiCbEvent VpiLookup VpiContext VpiSession"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -855,14 +855,14 @@ public sealed partial class RtlDesign
         if (hasHeapMems) code.AppendLine("using System.Runtime.InteropServices;");
         code.AppendLine($"namespace {@namespace};");
         code.AppendLine();
-        code.AppendLine($"public sealed class {className} : IVpiModel");
+        code.AppendLine($"public sealed class {className} : IVpiModel, ITimeTravelModel<{className}>");
         code.AppendLine("{");
         if (hasRuntimeLoops) code.AppendLine("    private int _budget = 20000;");
         code.AppendLine("    private ulong _time;");
         code.AppendLine("    private bool _finished = false;");
         code.AppendLine("    private int _exitCode = 0;");
         code.AppendLine("    private VcdWriter? _vcd;");
-        code.AppendLine("    private readonly PlusargStore _plusargs = new();");
+        code.AppendLine("    private PlusargStore _plusargs = new();");
         code.AppendLine("    private SplitMix64Rng _rng = new();");
         code.AppendLine($"    private Dictionary<int, {wordType}>? _forced;");
         code.AppendLine("    private bool _hasForces;");
@@ -885,15 +885,15 @@ public sealed partial class RtlDesign
         code.AppendLine("    public int NextRandom() => _rng.NextRandom();");
         if (Properties.Count > 0)
         {
-            code.AppendLine($"    public ulong[] PropertyPasses {{ get; }} = new ulong[{Properties.Count}];");
-            code.AppendLine($"    public ulong[] PropertyFailures {{ get; }} = new ulong[{Properties.Count}];");
-            code.AppendLine($"    public ulong[] PropertyVacuous {{ get; }} = new ulong[{Properties.Count}];");
+            code.AppendLine($"    public ulong[] PropertyPasses {{ get; private set; }} = new ulong[{Properties.Count}];");
+            code.AppendLine($"    public ulong[] PropertyFailures {{ get; private set; }} = new ulong[{Properties.Count}];");
+            code.AppendLine($"    public ulong[] PropertyVacuous {{ get; private set; }} = new ulong[{Properties.Count}];");
             for (int i = 0; i < Properties.Count; ++i)
                 if (Properties[i].Delay > 0)
                     code.AppendLine($"    private ulong _propPipe_{i};");
         }
         foreach (var (sid, depth) in PastDepths.OrderBy(kv => kv.Key))
-            code.AppendLine($"    private readonly {wordType}[] _past_{sid} = new {wordType}[{depth}];");
+            code.AppendLine($"    private {wordType}[] _past_{sid} = new {wordType}[{depth}];");
         foreach (int cid in PropertyClockSignalIds())
             code.AppendLine($"    private {wordType} _pclk_{cid};");
         code.AppendLine("    public bool IsForced(int signalId) => _forced is not null && _forced.ContainsKey(signalId);");
@@ -956,7 +956,7 @@ public sealed partial class RtlDesign
             }
             else
             {
-                code.AppendLine($"    private readonly {wordType}[] _m{i} = new {wordType}[{depth}];");
+                code.AppendLine($"    private {wordType}[] _m{i} = new {wordType}[{depth}];");
                 if (twoState)
                 {
                     code.AppendLine($"    [MethodImpl(MethodImplOptions.AggressiveInlining)] private ulong _ReadMem{i}(ulong idx) => W2Ops.Read(_m{i}, idx);");
@@ -971,7 +971,7 @@ public sealed partial class RtlDesign
         }
         if (needsMemLog)
         {
-            code.AppendLine($"    private readonly {(twoState ? "MemLog2" : "MemLog4")} _mlog = new();");
+            code.AppendLine($"    private {(twoState ? "MemLog2" : "MemLog4")} _mlog = new();");
             code.AppendLine("    [MethodImpl(MethodImplOptions.AggressiveInlining)]");
             code.AppendLine("    private void _CommitMemLog()");
             code.AppendLine("    {");
@@ -1103,6 +1103,59 @@ public sealed partial class RtlDesign
         }
         if (combPureInternal) code.AppendLine("        _evalSlow = true;");
         code.AppendLine("    }");
+        code.AppendLine($"    public {className} Fork()");
+        code.AppendLine("    {");
+        code.AppendLine($"        var c = ({className})MemberwiseClone();");
+        code.AppendLine("        c._vcd = null;");
+        code.AppendLine("        c._plusargs = _plusargs.Clone();");
+        code.AppendLine($"        if (_forced is not null) c._forced = new Dictionary<int, {wordType}>(_forced);");
+        if (needsMemLog) code.AppendLine($"        c._mlog = new {(twoState ? "MemLog2" : "MemLog4")}();");
+        for (int i = 0; i < Memories.Count; ++i)
+            if (!CsIsInlineMem(i)) code.AppendLine($"        c._m{i} = ({wordType}[])_m{i}.Clone();");
+        if (Properties.Count > 0)
+        {
+            code.AppendLine("        c.PropertyPasses = (ulong[])PropertyPasses.Clone();");
+            code.AppendLine("        c.PropertyFailures = (ulong[])PropertyFailures.Clone();");
+            code.AppendLine("        c.PropertyVacuous = (ulong[])PropertyVacuous.Clone();");
+        }
+        foreach (var (sid, _) in PastDepths.OrderBy(kv => kv.Key))
+            code.AppendLine($"        c._past_{sid} = ({wordType}[])_past_{sid}.Clone();");
+        code.AppendLine("        return c;");
+        code.AppendLine("    }");
+        code.AppendLine($"    public {className} Snapshot() => Fork();");
+        code.AppendLine($"    public void Restore({className} snap)");
+        code.AppendLine("    {");
+        code.AppendLine("        ArgumentNullException.ThrowIfNull(snap);");
+        code.AppendLine("        _time = snap._time; _finished = snap._finished; _exitCode = snap._exitCode; _rng = snap._rng;");
+        code.AppendLine("        _plusargs = snap._plusargs.Clone();");
+        code.AppendLine($"        _forced = snap._forced is null ? null : new Dictionary<int, {wordType}>(snap._forced); _hasForces = snap._hasForces;");
+        for (int i = 0; i < Signals.Count; ++i) code.AppendLine($"        _s{i} = snap._s{i};");
+        foreach (int id in eventIds) code.AppendLine($"        _prev{id} = snap._prev{id};");
+        for (int i = 0; i < Memories.Count; ++i)
+            code.AppendLine(CsIsInlineMem(i) ? $"        _m{i} = snap._m{i};" : $"        _m{i} = ({wordType}[])snap._m{i}.Clone();");
+        if (Properties.Count > 0)
+        {
+            code.AppendLine("        PropertyPasses = (ulong[])snap.PropertyPasses.Clone();");
+            code.AppendLine("        PropertyFailures = (ulong[])snap.PropertyFailures.Clone();");
+            code.AppendLine("        PropertyVacuous = (ulong[])snap.PropertyVacuous.Clone();");
+            for (int i = 0; i < Properties.Count; ++i)
+                if (Properties[i].Delay > 0) code.AppendLine($"        _propPipe_{i} = snap._propPipe_{i};");
+        }
+        foreach (var (sid, _) in PastDepths.OrderBy(kv => kv.Key))
+            code.AppendLine($"        _past_{sid} = ({wordType}[])snap._past_{sid}.Clone();");
+        foreach (int cid in PropertyClockSignalIds())
+            code.AppendLine($"        _pclk_{cid} = snap._pclk_{cid};");
+        if (combPureInternal) code.AppendLine("        _evalSlow = true;");
+        code.AppendLine("    }");
+        code.AppendLine($"    string ITimeTravelModel<{className}>.TtTopName => \"{top}\";");
+        code.AppendLine($"    (string Name, int Width)[] ITimeTravelModel<{className}>.TtSignalSchema => _signalSchema;");
+        code.AppendLine($"    ulong ITimeTravelModel<{className}>.TtTime => _time;");
+        code.Append($"    W64[] ITimeTravelModel<{className}>.TtSignalValues() => [");
+        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"new W64(_s{idx}, 0UL, 0UL, {s.Width})" : $"_s{idx}.ToW64({s.Width})"));
+        code.AppendLine("];");
+        code.AppendLine(Properties.Count > 0
+            ? $"    bool ITimeTravelModel<{className}>.TtHasFailure() {{ if (_exitCode != 0) return true; for (int i = 0; i < PropertyFailures.Length; ++i) if (PropertyFailures[i] > 0UL) return true; return false; }}"
+            : $"    bool ITimeTravelModel<{className}>.TtHasFailure() => _exitCode != 0;");
         code.AppendLine();
         foreach (var sig in Signals.Where(s => s.Direction != "internal"))
         {
@@ -2775,6 +2828,7 @@ public sealed class PlusargStore
 {
     private readonly List<string> _args = new();
     public IReadOnlyList<string> List => _args;
+    public PlusargStore Clone() { var c = new PlusargStore(); c._args.AddRange(_args); return c; }
     public void Set(IEnumerable<string> args)
     {
         _args.Clear();
@@ -2974,6 +3028,79 @@ public static class CheckpointIO
             for (int j = 0; j < depth; ++j) mems[i][j] = new W64(pr.ReadUInt64(), pr.ReadUInt64(), pr.ReadUInt64(), pr.ReadInt32());
         }
         return (time, rngState, sigs, prevs, mems);
+    }
+}
+
+public interface ITimeTravelModel<TSelf> where TSelf : class, ITimeTravelModel<TSelf>
+{
+    TSelf Snapshot();
+    void Restore(TSelf snap);
+    TSelf Fork();
+    string TtTopName { get; }
+    (string Name, int Width)[] TtSignalSchema { get; }
+    ulong TtTime { get; }
+    W64[] TtSignalValues();
+    bool TtHasFailure();
+}
+
+public sealed class TimeTravelRecorder<TModel> where TModel : class, ITimeTravelModel<TModel>
+{
+    private readonly TModel?[] _ring;
+    private readonly int _capacity;
+    private int _head;
+    private int _count;
+
+    public TimeTravelRecorder(int capacity)
+    {
+        if (capacity < 0) throw new ArgumentOutOfRangeException(nameof(capacity));
+        _capacity = capacity;
+        _ring = new TModel?[capacity];
+    }
+
+    public int Capacity => _capacity;
+    public int Count => _count;
+
+    public void Record(TModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (_capacity == 0) return;
+        _ring[_head] = model.Snapshot();
+        _head = (_head + 1) % _capacity;
+        if (_count < _capacity) ++_count;
+    }
+
+    public bool Rewind(TModel model, int stepsBack)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (_count == 0 || stepsBack < 0 || stepsBack >= _count) return false;
+        int idx = (_head + _capacity - 1 - stepsBack) % _capacity;
+        var snap = _ring[idx];
+        if (snap is null) return false;
+        model.Restore(snap);
+        _head = (idx + 1) % _capacity;
+        _count -= stepsBack;
+        return true;
+    }
+
+    public int DumpVcd(string path, string timescale = "1ns", bool gzip = false, string[]? filterPrefixes = null)
+    {
+        if (_count == 0) return 0;
+        int oldest = (_head + _capacity - _count) % _capacity;
+        var first = _ring[oldest]!;
+        using var writer = new VcdWriter(path, first.TtTopName, first.TtSignalSchema, timescale, gzip, filterPrefixes);
+        for (int i = 0; i < _count; ++i)
+        {
+            var frame = _ring[(oldest + i) % _capacity]!;
+            writer.Dump(frame.TtTime, frame.TtSignalValues());
+        }
+        return _count;
+    }
+
+    public int DumpVcdOnFailure(TModel model, string path, string timescale = "1ns", bool gzip = false, string[]? filterPrefixes = null)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (!model.TtHasFailure()) return 0;
+        return DumpVcd(path, timescale, gzip, filterPrefixes);
     }
 }
 """ + EmitCSharpSafeVpiRuntime();

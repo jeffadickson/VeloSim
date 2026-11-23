@@ -7,7 +7,7 @@ public sealed partial class RtlDesign
     internal IReadOnlyDictionary<string, string> RustPortNames()
     {
         var reserved = (
-            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model finish time time_inc default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint got_finish exit_code property_passes property_failures property_vacuous signals_info memories_info signal_by_name get_signal put_signal read_memory write_memory"
+            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model finish time time_inc default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint snapshot restore fork got_finish exit_code property_passes property_failures property_vacuous signals_info memories_info signal_by_name get_signal put_signal read_memory write_memory"
         ).Split(' ').ToHashSet(StringComparer.Ordinal);
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -703,6 +703,7 @@ public sealed partial class RtlDesign
         code.AppendLine("#![allow(non_camel_case_types, non_snake_case, unused_variables, unused_mut, unused_parens, unused_imports, unused_assignments, dead_code, clippy::all)]");
         code.AppendLine("pub mod runtime;");
         code.AppendLine("pub use runtime::vpi;");
+        code.AppendLine("pub use runtime::{TimeTravelModel, TimeTravelRecorder};");
         code.AppendLine("use runtime::{checkpoint, w2, w4, w64, MemLog2, MemLog4, PlusargStore, SplitMix64Rng, VcdSlot, W4, W64};");
         code.AppendLine();
         code.AppendLine("#[derive(Clone)]");
@@ -900,6 +901,9 @@ public sealed partial class RtlDesign
         }
         code.AppendLine("        Ok(())");
         code.AppendLine("    }");
+        code.AppendLine("    #[inline] pub fn snapshot(&self) -> Self { self.clone() }");
+        code.AppendLine("    #[inline] pub fn restore(&mut self, snap: &Self) { let vcd = self.vcd.take(); *self = snap.clone(); self.vcd = vcd; }");
+        code.AppendLine("    #[inline] pub fn fork(&self) -> Self { self.clone() }");
         code.AppendLine();
         foreach (var sig in Signals.Where(s => s.Direction != "internal"))
         {
@@ -1125,6 +1129,19 @@ public sealed partial class RtlDesign
         code.AppendLine("    fn finish_vpi(&mut self) { self.finish(); }");
         code.AppendLine("    fn got_finish_vpi(&self) -> bool { self.got_finish() }");
         code.AppendLine("    fn plusargs_vpi(&self) -> &[String] { self.plusargs.list() }");
+        code.AppendLine("}");
+        code.AppendLine();
+        code.AppendLine($"impl runtime::TimeTravelModel for {structName} {{");
+        code.AppendLine($"    fn tt_top_name(&self) -> &'static str {{ {CppStringLiteral(top)} }}");
+        code.AppendLine("    fn tt_signal_schema(&self) -> &'static [(&'static str, i32)] { Self::SIGNAL_SCHEMA }");
+        code.AppendLine("    fn tt_time(&self) -> u64 { self.time }");
+        code.Append("    fn tt_signal_values(&self) -> Vec<W64> { vec![");
+        code.AppendJoin(", ", Signals.Select((s, idx) => twoState ? $"W64::lit(self.s{idx}, {s.Width})" : $"self.s{idx}.to_w64({s.Width})"));
+        code.AppendLine("] }");
+        code.AppendLine(Properties.Count > 0
+            ? "    fn tt_has_failure(&self) -> bool { self.exit_code != 0 || self.prop_failures.iter().any(|&f| f > 0) }"
+            : "    fn tt_has_failure(&self) -> bool { self.exit_code != 0 }");
+        code.AppendLine("    fn tt_restore(&mut self, snap: &Self) { self.restore(snap); }");
         code.AppendLine("}");
         return code.ToString();
     }
@@ -3259,6 +3276,66 @@ pub mod checkpoint {
             mems.push(m);
         }
         Ok((time, rng_state, sigs, prevs, mems))
+    }
+}
+
+pub trait TimeTravelModel: Clone {
+    fn tt_top_name(&self) -> &'static str;
+    fn tt_signal_schema(&self) -> &'static [(&'static str, i32)];
+    fn tt_time(&self) -> u64;
+    fn tt_signal_values(&self) -> Vec<W64>;
+    fn tt_has_failure(&self) -> bool;
+    fn tt_restore(&mut self, snap: &Self);
+}
+
+pub struct TimeTravelRecorder<M: TimeTravelModel> {
+    ring: Vec<Option<M>>,
+    capacity: usize,
+    head: usize,
+    count: usize,
+}
+
+impl<M: TimeTravelModel> TimeTravelRecorder<M> {
+    pub fn new(capacity: usize) -> Self {
+        let mut ring = Vec::with_capacity(capacity);
+        ring.resize_with(capacity, || None);
+        Self { ring, capacity, head: 0, count: 0 }
+    }
+    pub fn capacity(&self) -> usize { self.capacity }
+    pub fn len(&self) -> usize { self.count }
+    pub fn is_empty(&self) -> bool { self.count == 0 }
+    pub fn record(&mut self, model: &M) {
+        if self.capacity == 0 { return; }
+        self.ring[self.head] = Some(model.clone());
+        self.head = (self.head + 1) % self.capacity;
+        if self.count < self.capacity { self.count += 1; }
+    }
+    pub fn rewind(&mut self, model: &mut M, steps_back: usize) -> bool {
+        if self.count == 0 || steps_back >= self.count { return false; }
+        let idx = (self.head + self.capacity - 1 - steps_back) % self.capacity;
+        if let Some(ref snap) = self.ring[idx] {
+            model.tt_restore(snap);
+            self.head = (idx + 1) % self.capacity;
+            self.count -= steps_back;
+            true
+        } else { false }
+    }
+    pub fn dump_vcd(&self, path: &str, timescale: &str, gzip: bool, filter_prefixes: &[&str]) -> std::io::Result<usize> {
+        if self.count == 0 { return Ok(0); }
+        let oldest = (self.head + self.capacity - self.count) % self.capacity;
+        let first = self.ring[oldest].as_ref().unwrap();
+        let mut writer = VcdWriter::open(path, first.tt_top_name(), first.tt_signal_schema(), timescale, gzip, filter_prefixes)?;
+        for i in 0..self.count {
+            let frame = self.ring[(oldest + i) % self.capacity].as_ref().unwrap();
+            let vals = frame.tt_signal_values();
+            writer.dump(frame.tt_time(), &vals)?;
+        }
+        writer.finish()?;
+        Ok(self.count)
+    }
+    pub fn dump_vcd_on_failure(&self, model: &M, path: &str, timescale: &str, gzip: bool, filter_prefixes: &[&str]) -> std::io::Result<usize> {
+        if !model.tt_has_failure() { return Ok(0); }
+        self.dump_vcd(path, timescale, gzip, filter_prefixes)
     }
 }
 """ + EmitRustSafeVpiRuntime();

@@ -18,6 +18,21 @@ struct CoverpointSpec { std::string name; std::vector<CoverBin> bins; };
 struct CrossSpec { std::string name; size_t cp_a = 0; size_t cp_b = 0; std::vector<uint64_t> hits; };
 struct CovergroupSpec { std::string name; std::vector<CoverpointSpec> points; std::vector<CrossSpec> crosses; uint64_t samples = 0; };
 struct PropertyStat { std::string name; std::string kind; uint64_t passes = 0; uint64_t failures = 0; uint64_t vacuous = 0; };
+struct ModelSnapshot {
+ uint64_t schema = 0;
+ uint64_t time = 0;
+ uint64_t rngState = 0;
+ uint32_t lcgState = 0;
+ bool started = false;
+ bool finished = false;
+ bool finishRequested = false;
+ int exitCode = 0;
+ std::vector<W> s;
+ std::vector<std::vector<W>> mem;
+ std::vector<uint8_t> extra;
+ std::vector<std::pair<size_t, W>> forced;
+ std::vector<PropertyStat> properties;
+};
 class Port;
 class VS_VPI_API Model {
  friend class Port;
@@ -101,6 +116,16 @@ public:
  void closeVcd();
  void saveCheckpoint(const std::string& path) const;
  void restoreCheckpoint(const std::string& path);
+ ModelSnapshot snapshot() const;
+ void restore(const ModelSnapshot& snap);
+ void enableTimeTravel(size_t capacity);
+ void recordTimeTravel();
+ size_t timeTravelDepth() const;
+ bool rewindTimeTravel(size_t steps_back);
+ size_t dumpTimeTravelVcd(const std::string& path, const std::string& timescale = "1ns",
+                          bool gzip = false, const std::vector<std::string>& filter_prefixes = {}) const;
+ size_t dumpTimeTravelOnFailure(const std::string& path, const std::string& timescale = "1ns",
+                                bool gzip = false, const std::vector<std::string>& filter_prefixes = {}) const;
  size_t loadMemoryHex(size_t mem_id, const std::string& path, size_t start_addr = 0, size_t end_addr = SIZE_MAX);
  size_t loadMemoryBin(size_t mem_id, const std::string& path, size_t start_addr = 0, size_t end_addr = SIZE_MAX);
  virtual size_t memoryCount() const { return mem.size(); }
