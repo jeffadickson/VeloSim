@@ -72,6 +72,7 @@ Status legend:
 | Bounded concurrent SVA (`assert`/`assume`/`cover`, `disable iff`, `##N`, `$past`/`$rose`/`$fell`/`$stable`) | Supported | Supported | Supported | `VS-RTL-SVA-001` |
 | Hierarchical 4-state VCD & RFC 1952 `.vcd.gz` with prefix filters | Supported | Supported | Supported | `VS-RTL-PARITY-001` |
 | Schema-hashed binary checkpoints (`saveCheckpoint` / `restoreCheckpoint`) | Supported | Supported | Supported | `VS-RTL-PARITY-001` |
+| Microsecond in-RAM `Snapshot`/`Restore`/`Fork` & ring-buffer time-travel rewind-on-failure VCD dump | Supported (`Model::snapshot`/`fork`/ring) | Supported (`#![forbid(unsafe_code)]`, `TimeTravelRecorder`) | Supported (0 `unsafe`, `TimeTravelRecorder<T>`) | `VS-RTL-TIMETRAVEL-001` |
 | Functional `covergroup`s, bins, 2-way crosses, merge | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-005` |
 | DUT branch/case/toggle coverage (`--coverage`) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-005` |
 
@@ -131,6 +132,16 @@ Effective per-core throughput (`cycles × lanes / median_seconds`, 2,000,000 cyc
 | `counter16.sv` | 8 | 213.4 Mcyc/s | 245.1 Mcyc/s | 14,678.9 Mcyc/s | 19,207.7 Mcyc/s | 820.7 Mcyc/s | 1,643.7 Mcyc/s |
 | `surelog_fifo.sv` | 4 | 35.4 Mcyc/s | 173.1 Mcyc/s | 96.4 Mcyc/s | 260.3 Mcyc/s | 119.0 Mcyc/s | 218.0 Mcyc/s |
 | `surelog_fifo.sv` | 8 | 58.0 Mcyc/s | 94.2 Mcyc/s | 108.4 Mcyc/s | 322.0 Mcyc/s | 134.8 Mcyc/s | 253.0 Mcyc/s |
+
+### 4.2 Measured In-RAM `Snapshot` / `Restore` / `Fork` Latency (`VS-RTL-TIMETRAVEL-001`)
+
+100,000 iterations of a 16-bit stateful counter + 16×16-bit RAM (4-state):
+
+| Target | `Snapshot` + `Restore` | Independent `Fork()` | Peak Fork Rate |
+|---|---:|---:|---:|
+| **Rust (`#![forbid(unsafe_code)]`)** | **0.090 µs** (90 ns) | **0.044 µs** (44 ns) | **22.7 M forks/s** |
+| **C# 15 / .NET 11 (0 `unsafe`)** | **0.476 µs** (476 ns) | **0.113 µs** (113 ns) | **8.85 M forks/s** |
+| **C++20 (`vsrtl::Model`)** | **0.276 µs** (276 ns) | **1.187 µs** | **0.84 M forks/s** |
 
 ---
 

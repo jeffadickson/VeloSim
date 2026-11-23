@@ -206,5 +206,63 @@ int main(int argc,char** argv){try{
   try{ cm.fatal(42,"boom"); }catch(const std::runtime_error&){ fatalCaught=true; }
   check(fatalCaught && cm.gotFinish() && cm.exitCode()==42);
  }
+ // Pillar 3: In-RAM snapshot/restore and ring-buffer time-travel rewind-on-failure VCD dump.
+ {
+  struct TtModel final : vsrtl::Model {
+   vsrtl::Port clk, q;
+   void evaluate() override {
+    if (s[0].v.limb[0] != 0) s[1] = vsrtl::lit((s[1].v.limb[0] + 1) & 0xFFULL, 8);
+   }
+   TtModel():vsrtl::Model("tt_top",{{"clk",1,vpiInput},{"q",8,vpiOutput}},0),clk(*this,0),q(*this,1){
+    s[1]=vsrtl::lit(0,8);
+   }
+  };
+  TtModel m;
+  size_t pid = m.registerProperty("p_no_overflow","assert");
+  check(m.timeTravelDepth()==0 && !m.rewindTimeTravel(0));
+  check(m.dumpTimeTravelVcd("/tmp/velosim_tt_unused.vcd")==0);
+  m.recordTimeTravel(); // disabled capacity==0 -> no-op
+  check(m.timeTravelDepth()==0);
+  m.enableTimeTravel(4);
+  m.forceSignal(1, vsrtl::lit(0x55, 8));
+  auto forcedSnap = m.snapshot();
+  m.releaseSignal(1);
+  m.restore(forcedSnap);
+  check(m.isForced(1));
+  m.releaseSignal(1);
+  m.restore(vsrtl::ModelSnapshot{forcedSnap.schema, 0, forcedSnap.rngState, forcedSnap.lcgState, false, false, false, 0, {vsrtl::lit(0,1), vsrtl::lit(0,8)}, {}, {}, {}, forcedSnap.properties});
+  // Verify schema mismatch fails closed
+  bool badSnap=false;
+  try{ auto wrong=forcedSnap; wrong.schema ^= 1ULL; m.restore(wrong); }catch(const std::runtime_error&){ badSnap=true; }
+  check(badSnap);
+
+  for(int cyc=1; cyc<=6; ++cyc){
+   m.timeInc(10);
+   m.clk=1; m.eval();
+   m.clk=0; m.eval();
+   m.recordTimeTravel();
+  }
+  check(m.timeTravelDepth()==4); // ring wrapped cleanly at capacity 4
+  check(static_cast<uint64_t>(m.q)==6);
+  // No failure yet -> dumpTimeTravelOnFailure returns 0
+  std::string vcdPath = "/tmp/velosim_native_tt_" + std::to_string(reinterpret_cast<uintptr_t>(&m)) + ".vcd";
+  check(m.dumpTimeTravelOnFailure(vcdPath)==0);
+  // Trigger SVA failure and verify rewind-on-failure VCD dump captures the 4-frame window
+  m.recordPropertyFail(pid);
+  size_t dumped = m.dumpTimeTravelOnFailure(vcdPath, "1ns", false);
+  check(dumped==4);
+  {
+   std::ifstream vf(vcdPath);
+   std::string content((std::istreambuf_iterator<char>(vf)), std::istreambuf_iterator<char>());
+   check(content.find("$scope module tt_top")!=std::string::npos);
+   check(content.find("#30")!=std::string::npos && content.find("#60")!=std::string::npos);
+  }
+  std::remove(vcdPath.c_str());
+  // Rewind 2 steps back (from cyc=6 to cyc=4) and verify out-of-range fails closed
+  check(!m.rewindTimeTravel(10));
+  check(m.rewindTimeTravel(2));
+  check(static_cast<uint64_t>(m.q)==4 && m.time()==40 && m.timeTravelDepth()==2);
+  m.final();
+ }
  std::cout<<"external interface tests pass\n";return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

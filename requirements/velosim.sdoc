@@ -1717,4 +1717,27 @@ RELATIONS:
 - TYPE: File
   VALUE: docs/target-parity-matrix.md
 
+[REQUIREMENT]
+UID: VS-RTL-TIMETRAVEL-001
+STATUS: Implemented
+TITLE: Microsecond in-RAM Fork/Snapshot/Restore and ring-buffer time-travel rewind-on-failure across C++, Rust, and C#
+STATEMENT: >>>
+VeloSim shall provide zero-disk-I/O in-RAM state snapshot, restore, and independent timeline fork APIs (snapshot()/restore()/fork() in C++20 and Rust #![forbid(unsafe_code)]; Snapshot()/Restore()/Fork() in zero-unsafe C# 15 / .NET 11) together with a bounded circular ring-buffer time-travel flight recorder (enableTimeTravel/recordTimeTravel/rewindTimeTravel/dumpTimeTravelVcd/dumpTimeTravelOnFailure in C++; TimeTravelRecorder in Rust and C#). Time-travel recording shall impose zero overhead on eval() when disabled, support rewinding live models back into the recorded window, and materialize the pre-failure cycle window directly to IEEE 1364 .vcd or .vcd.gz upon SVA property failure or non-zero exit code without re-running simulation from cycle 0.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: native/rtl/external_model.h
+- TYPE: File
+  VALUE: native/rtl/vpi.cpp
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlCSharpEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlRustEmitter.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlTimeTravelTests.cs
+- TYPE: File
+  VALUE: tests/native/external_tests.cpp
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+
 

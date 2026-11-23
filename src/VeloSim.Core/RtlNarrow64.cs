@@ -643,7 +643,9 @@ public sealed partial class RtlDesign
         EmitCppCovergroupRegistration(bodyCode);
         EmitCppPropertyInit(bodyCode, true, false);
         if (enableCoverage) bodyCode.AppendLine("enableToggleCoverage(true);");
-        bodyCode.AppendLine("}\n};");
+        bodyCode.AppendLine("}");
+        bodyCode.AppendLine($"std::unique_ptr<{className}> fork() const {{ auto c = std::make_unique<{className}>(); c->vsrtl::Model::restore(this->vsrtl::Model::snapshot()); return c; }}");
+        bodyCode.AppendLine("};");
 
         var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\n" + (threads > 1 ? "#include \"thread_pool.h\"\n" : "") + "using namespace vsrtl;\n");
         EmitDpiPrototypes(code, dpiCalls);

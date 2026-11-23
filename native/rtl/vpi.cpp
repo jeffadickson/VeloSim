@@ -182,6 +182,8 @@ struct Model::State {
  std::vector<CovergroupSpec> covergroups;
  std::vector<PropertyStat> properties;
  VcdWriter vcd;
+ std::vector<ModelSnapshot> ttRing;
+ size_t ttCapacity=0, ttHead=0, ttCount=0;
  std::function<void(const std::string&)> displaySink;
 
  void recordToggles(const std::vector<W>& s){
@@ -322,6 +324,99 @@ void Model::dumpVcd(){checkThread();syncToBase();state->vcd.dump(state->now,s);}
 void Model::closeVcd(){checkThread();state->vcd.close();}
 void Model::saveCheckpoint(const std::string& path) const{checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot save checkpoint during evaluation");syncToBase();std::vector<uint8_t> extra;saveExtraState(extra);checkpoint::save(path,state->name,state->signals,state->now,s,mem,extra);}
 void Model::restoreCheckpoint(const std::string& path){checkThread();if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot restore checkpoint during evaluation");uint64_t nextNow=state->now;auto nextS=s;auto nextMem=mem;std::vector<uint8_t> extra;checkpoint::load(path,state->name,state->signals,nextNow,nextS,nextMem,extra);restoreExtraState(extra.data(),extra.size());state->now=nextNow;s=std::move(nextS);mem=std::move(nextMem);syncFromBase();state->pending.clear();fast_dirty=true;refreshFastFlags();}
+ModelSnapshot Model::snapshot() const{
+ checkThread();
+ if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot snapshot during evaluation");
+ syncToBase();
+ ModelSnapshot snap;
+ snap.schema=checkpoint::schema_hash(state->name,state->signals,mem);
+ snap.time=state->now;
+ snap.rngState=state->rngState;
+ snap.lcgState=state->lcgState;
+ snap.started=state->started;
+ snap.finished=state->finished;
+ snap.finishRequested=state->finishRequested;
+ snap.exitCode=state->exitCode;
+ snap.s=s;
+ snap.mem=mem;
+ saveExtraState(snap.extra);
+ snap.forced.reserve(state->forced.size());
+ for(const auto& kv:state->forced)snap.forced.emplace_back(kv.first,kv.second);
+ snap.properties=state->properties;
+ return snap;
+}
+void Model::restore(const ModelSnapshot& snap){
+ checkThread();
+ if(fast_evaluating||state->evaluating)throw std::runtime_error("cannot restore snapshot during evaluation");
+ uint64_t expected=checkpoint::schema_hash(state->name,state->signals,mem);
+ if(snap.schema!=expected||snap.s.size()!=s.size()||snap.mem.size()!=mem.size())
+  throw std::runtime_error("snapshot schema mismatch");
+ restoreExtraState(snap.extra.data(),snap.extra.size());
+ state->now=snap.time;
+ state->rngState=snap.rngState;
+ state->lcgState=snap.lcgState;
+ state->started=snap.started;
+ state->finished=snap.finished;
+ state->finishRequested=snap.finishRequested;
+ state->exitCode=snap.exitCode;
+ s=snap.s;
+ mem=snap.mem;
+ state->forced.clear();
+ for(const auto& kv:snap.forced)state->forced.emplace(kv.first,kv.second);
+ if(snap.properties.size()==state->properties.size())state->properties=snap.properties;
+ syncFromBase();
+ state->pending.clear();
+ fast_dirty=true;
+ refreshFastFlags();
+}
+void Model::enableTimeTravel(size_t capacity){
+ checkThread();
+ state->ttRing.clear();
+ state->ttCapacity=capacity;
+ state->ttHead=0;
+ state->ttCount=0;
+ if(capacity>0)state->ttRing.resize(capacity);
+}
+void Model::recordTimeTravel(){
+ checkThread();
+ if(state->ttCapacity==0)return;
+ state->ttRing[state->ttHead]=snapshot();
+ state->ttHead=(state->ttHead+1)%state->ttCapacity;
+ if(state->ttCount<state->ttCapacity)++state->ttCount;
+}
+size_t Model::timeTravelDepth() const{
+ checkThread();
+ return state->ttCount;
+}
+bool Model::rewindTimeTravel(size_t steps_back){
+ checkThread();
+ if(state->ttCount==0||steps_back>=state->ttCount)return false;
+ size_t idx=(state->ttHead+state->ttCapacity-1-steps_back)%state->ttCapacity;
+ restore(state->ttRing[idx]);
+ state->ttHead=(idx+1)%state->ttCapacity;
+ state->ttCount-=steps_back;
+ return true;
+}
+size_t Model::dumpTimeTravelVcd(const std::string& path,const std::string& timescale,bool gzip,const std::vector<std::string>& filter_prefixes) const{
+ checkThread();
+ if(state->ttCount==0)return 0;
+ VcdWriter writer;
+ writer.open(path,state->name,state->signals,timescale,gzip,filter_prefixes);
+ size_t oldest=(state->ttHead+state->ttCapacity-state->ttCount)%state->ttCapacity;
+ for(size_t i=0;i<state->ttCount;++i){
+  const auto& frame=state->ttRing[(oldest+i)%state->ttCapacity];
+  writer.dump(frame.time,frame.s);
+ }
+ writer.close();
+ return state->ttCount;
+}
+size_t Model::dumpTimeTravelOnFailure(const std::string& path,const std::string& timescale,bool gzip,const std::vector<std::string>& filter_prefixes) const{
+ checkThread();
+ bool failed=state->exitCode!=0;
+ for(const auto& p:state->properties)if(p.failures>0)failed=true;
+ if(!failed)return 0;
+ return dumpTimeTravelVcd(path,timescale,gzip,filter_prefixes);
+}
 size_t Model::loadMemoryHex(size_t mem_id,const std::string& path,size_t start_addr,size_t end_addr){checkThread();size_t loaded=0;if(loadDerivedMemory(mem_id,path,true,start_addr,end_addr,loaded))return loaded;if(mem_id>=mem.size()||mem[mem_id].empty())throw std::out_of_range("invalid memory id for loadMemoryHex");return load_mem_file(mem[mem_id],mem[mem_id][0].w,path,true,start_addr,end_addr);}
 size_t Model::loadMemoryBin(size_t mem_id,const std::string& path,size_t start_addr,size_t end_addr){checkThread();size_t loaded=0;if(loadDerivedMemory(mem_id,path,false,start_addr,end_addr,loaded))return loaded;if(mem_id>=mem.size()||mem[mem_id].empty())throw std::out_of_range("invalid memory id for loadMemoryBin");return load_mem_file(mem[mem_id],mem[mem_id][0].w,path,false,start_addr,end_addr);}
 W Model::readMemoryWord(size_t mem_id,size_t addr) const{checkThread();if(mem_id>=mem.size()||addr>=mem[mem_id].size())throw std::out_of_range("memory word address out of range");return mem[mem_id][addr];}

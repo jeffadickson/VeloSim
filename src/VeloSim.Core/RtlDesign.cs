@@ -939,6 +939,7 @@ public sealed partial class RtlDesign
     {
         var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish fatal exitCode evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part select_indexed deposit_indexed parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index execution_budget execution_step repeat_count array_index dynamic_allocate dynamic_read queue_push queue_pop queue_delete queue_write assoc_read assoc_write assoc_delete assoc_exists assoc_traverse assoc_find assoc_key assoc localAssoc nextAssoc AssociativeStorage lit lit256 lit512 MemLog wildeq wildneq casez_match casex_match coveragePoints writeCoverageJson CoveragePoint openVcd openVcdGz dumpVcd closeVcd setPlusargs addPlusarg plusargs testPlusargs valuePlusargs setRandomSeed randomSeed nextUrandom nextUrandomRange nextRandom forceSignal releaseSignal isForced enableToggleCoverage toggleCoverage ToggleCoverage memoryCount memoryDepth memoryWidth readMemoryWord writeMemoryWord countones onehot onehot0 isunknown clog2 resolve_pair resolve_finalize resolve_net NetKind registerCovergroup sampleCovergroup covergroups registerProperty recordPropertyPass recordPropertyFail recordPropertyVacuous propertyStats ThreadPool").Split(' ').ToHashSet(StringComparer.Ordinal);
         reserved.UnionWith("scheduler eventsPending nextTimeSlot execute engine frame candidate nextS nextMem drives HdlScheduler".Split(' '));
+        reserved.UnionWith("snapshot restore fork enableTimeTravel recordTimeTravel timeTravelDepth rewindTimeTravel dumpTimeTravelVcd dumpTimeTravelOnFailure ModelSnapshot".Split(' '));
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal); var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var signal in Signals.Where(s => s.Direction != "internal"))
         {
@@ -1031,7 +1032,9 @@ public sealed partial class RtlDesign
         EmitCppCovergroupRegistration(bodyCode);
         EmitCppPropertyInit(bodyCode, false, false);
         if (enableCoverage) bodyCode.AppendLine("enableToggleCoverage(true);");
-        bodyCode.AppendLine("}\n};");
+        bodyCode.AppendLine("}");
+        bodyCode.AppendLine($"std::unique_ptr<{className}> fork() const {{ auto c = std::make_unique<{className}>(); c->vsrtl::Model::restore(this->vsrtl::Model::snapshot()); return c; }}");
+        bodyCode.AppendLine("};");
 
         var code = new StringBuilder("#pragma once\n#include \"external_model.h\"\n" + (threads > 1 ? "#include \"thread_pool.h\"\n" : "") + "using namespace vsrtl;\n");
         EmitDpiPrototypes(code, dpiCalls);
