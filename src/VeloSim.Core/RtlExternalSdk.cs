@@ -3,9 +3,16 @@ namespace VeloSim;
 
 public static class RtlExternalSdk
 {
-    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null, bool enableCoverage = false, int threads = 1, bool enableVpi = false)
+    public static async Task<string> ExportAsync(string ir, string top, string directory, CancellationToken token = default, RtlStateMode stateMode = RtlStateMode.FourState, RtlTargetLanguage target = RtlTargetLanguage.Cpp, RtlDesignLimits? limits = null, bool enableCoverage = false, int threads = 1, bool enableVpi = false, int lanes = 1)
     {
         if (threads is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(threads), "Thread count must be 1..64.");
+        if (lanes is not (1 or 4 or 8)) throw new ArgumentOutOfRangeException(nameof(lanes), "SIMD --lanes must be 1, 4, or 8.");
+        if (lanes > 1)
+        {
+            if (threads > 1) throw new ArgumentException("Lockstep SIMD --lanes > 1 cannot be combined with --threads > 1.");
+            if (enableCoverage) throw new ArgumentException("Lockstep SIMD --lanes > 1 cannot be combined with --coverage.");
+            if (enableVpi) throw new ArgumentException("Lockstep SIMD --lanes > 1 cannot be combined with --vpi.");
+        }
         var effectiveLimits = limits ?? RtlDesignLimits.Bounded;
         if (new FileInfo(ir).Length > effectiveLimits.MaxIrBytes) throw new ArgumentException($"RTL IR exceeds {effectiveLimits.MaxIrBytes / (1024 * 1024)} MiB.");
         string json = await File.ReadAllTextAsync(ir, token).ConfigureAwait(false);
@@ -21,13 +28,19 @@ public static class RtlExternalSdk
         if (target == RtlTargetLanguage.CSharp)
         {
             if (threads > 1) throw new ArgumentException("Multi-threaded --threads > 1 export is currently supported only on the cpp target.");
-            return await ExportCSharpAsync(design, json, top, directory, stateMode, enableVpi, token).ConfigureAwait(false);
+            return lanes > 1
+                ? await ExportCSharpSimdAsync(design, json, top, directory, stateMode, lanes, token).ConfigureAwait(false)
+                : await ExportCSharpAsync(design, json, top, directory, stateMode, enableVpi, token).ConfigureAwait(false);
         }
         if (target == RtlTargetLanguage.Rust)
         {
             if (threads > 1) throw new ArgumentException("Multi-threaded --threads > 1 export is currently supported only on the cpp target.");
-            return await ExportRustAsync(design, json, top, directory, stateMode, enableVpi, token).ConfigureAwait(false);
+            return lanes > 1
+                ? await ExportRustSimdAsync(design, json, top, directory, stateMode, lanes, token).ConfigureAwait(false)
+                : await ExportRustAsync(design, json, top, directory, stateMode, enableVpi, token).ConfigureAwait(false);
         }
+        if (lanes > 1)
+            return await ExportCppSimdAsync(design, json, top, directory, stateMode, lanes, token).ConfigureAwait(false);
 
         string header = design.EmitModelHeader(top, stateMode, enableCoverage, threads);
         string? runtime = null;
@@ -262,6 +275,126 @@ public static class RtlExternalSdk
         var names = design.RustPortNames();
         bool twoState = stateMode == RtlStateMode.TwoState;
         string semantics = $"rust; {(twoState ? "two-state" : "four-state")}; {(enableVpi ? "vpi; " : "")}{(design.CombinationalOnly ? "clockless acyclic settling; serial; explicit eval" : "bounded input-edge processes; serial; explicit eval")}";
+        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
+            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
+            inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
+        await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
+        return manifest;
+    }
+
+    private static async Task<string> ExportCSharpSimdAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, int lanes, CancellationToken token)
+    {
+        string modelCs = design.EmitCSharpSimdModel(top, lanes, stateMode);
+        string runtimeCs = RtlDesign.EmitCSharpSimdRuntime(lanes);
+        Directory.CreateDirectory(directory);
+        string modelFile = "V" + top + ".cs";
+        string csprojFile = "V" + top + ".csproj";
+        await File.WriteAllTextAsync(Path.Combine(directory, modelFile), modelCs, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "VeloSimSimdRuntime.cs"), runtimeCs, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, csprojFile), """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net11.0</TargetFramework>
+                <ImplicitUsings>disable</ImplicitUsings>
+                <Nullable>enable</Nullable>
+                <LangVersion>15.0</LangVersion>
+                <AnalysisLevel>11.0</AnalysisLevel>
+                <Deterministic>true</Deterministic>
+                <OptimizationPreference>Speed</OptimizationPreference>
+              </PropertyGroup>
+            </Project>
+            """, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "README.md"), $"""
+            # VeloSim C# Lockstep SIMD SDK (V{top}, {lanes} lanes)
+
+            Zero-dependency, 100% safe .NET 11 library running {lanes} independent instances in lockstep using `Vector{(lanes == 8 ? 512 : 256)}<ulong>` ({(stateMode == RtlStateMode.TwoState ? "2-state" : "4-state W4")}).
+            Build with: `dotnet build {csprojFile} -c Release`
+            """, token).ConfigureAwait(false);
+        string[] inputPaths = [modelFile, "VeloSimSimdRuntime.cs", csprojFile, "design.rtl.json", "README.md"];
+        var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
+        string manifest = Path.Combine(directory, "external-model.json");
+        var names = design.CSharpPortNames();
+        bool twoState = stateMode == RtlStateMode.TwoState;
+        string semantics = $"csharp; simd-lanes={lanes}; {(twoState ? "two-state" : "four-state")}; {(design.CombinationalOnly ? "clockless acyclic settling; lockstep-simd; explicit eval" : "bounded input-edge processes; lockstep-simd; explicit eval")}";
+        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
+            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
+            inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
+        await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
+        return manifest;
+    }
+
+    private static async Task<string> ExportRustSimdAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, int lanes, CancellationToken token)
+    {
+        string libRs = design.EmitRustSimdModel(top, lanes, stateMode);
+        string runtimeRs = RtlDesign.EmitRustSimdRuntime(lanes);
+        Directory.CreateDirectory(Path.Combine(directory, "src"));
+        await File.WriteAllTextAsync(Path.Combine(directory, "src", "lib.rs"), libRs, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "src", "simd_runtime.rs"), runtimeRs, token).ConfigureAwait(false);
+        string crateName = "velosim_" + top.ToLowerInvariant();
+        await File.WriteAllTextAsync(Path.Combine(directory, "Cargo.toml"), $"""
+            [package]
+            name = "{crateName}"
+            version = "0.1.0"
+            edition = "2021"
+
+            [profile.release]
+            opt-level = 3
+            codegen-units = 1
+            """, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "README.md"), $"""
+            # VeloSim Rust Lockstep SIMD SDK (V{top}, {lanes} lanes)
+
+            Zero-dependency, `#![forbid(unsafe_code)]` Rust 2021 crate running {lanes} independent instances in lockstep ({(stateMode == RtlStateMode.TwoState ? "2-state" : "4-state W4")}).
+            Build with: `cargo build --release`
+            """, token).ConfigureAwait(false);
+        string[] inputPaths = ["Cargo.toml", "src/lib.rs", "src/simd_runtime.rs", "design.rtl.json", "README.md"];
+        var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
+        string manifest = Path.Combine(directory, "external-model.json");
+        var names = design.RustPortNames();
+        bool twoState = stateMode == RtlStateMode.TwoState;
+        string semantics = $"rust; simd-lanes={lanes}; {(twoState ? "two-state" : "four-state")}; {(design.CombinationalOnly ? "clockless acyclic settling; lockstep-simd; explicit eval" : "bounded input-edge processes; lockstep-simd; explicit eval")}";
+        var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
+            design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
+            inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
+        await File.WriteAllBytesAsync(manifest, JsonSerializer.SerializeToUtf8Bytes(contract, ManifestJsonContext.Default.ExternalManifestContract), token).ConfigureAwait(false);
+        return manifest;
+    }
+
+    private static async Task<string> ExportCppSimdAsync(RtlDesign design, string json, string top, string directory, RtlStateMode stateMode, int lanes, CancellationToken token)
+    {
+        string header = design.EmitCppSimdModelHeader(top, lanes, stateMode);
+        string runtime = RtlDesign.EmitCppSimdRuntimeHeader(lanes);
+        Directory.CreateDirectory(directory);
+        string modelFile = "V" + top + ".h";
+        await File.WriteAllTextAsync(Path.Combine(directory, modelFile), header, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "simd_runtime.h"), runtime, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "design.rtl.json"), json, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "CMakeLists.txt"), """
+            cmake_minimum_required(VERSION 3.20)
+            project(VeloSimSimdExternal LANGUAGES CXX)
+            set(CMAKE_CXX_STANDARD 20)
+            set(CMAKE_CXX_STANDARD_REQUIRED ON)
+            add_library(velosim_simd INTERFACE)
+            target_include_directories(velosim_simd INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+            if(DEFINED VELOSIM_HOST_SOURCE)
+              add_executable(velosim_host ${VELOSIM_HOST_SOURCE})
+              target_link_libraries(velosim_host PRIVATE velosim_simd)
+            endif()
+            """, token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(directory, "README.md"), $"""
+            # VeloSim C++20 Lockstep SIMD SDK (V{top}, {lanes} lanes)
+
+            Header-only C++20 SDK running {lanes} independent instances in lockstep (`alignas({(lanes == 8 ? 64 : 32)})` `Lane`, {(stateMode == RtlStateMode.TwoState ? "2-state" : "4-state W4")}).
+            Include `{modelFile}` in your C++20 host and compile with `-O3`.
+            """, token).ConfigureAwait(false);
+        string[] inputPaths = [modelFile, "simd_runtime.h", "design.rtl.json", "CMakeLists.txt", "README.md"];
+        var inputs = inputPaths.Select(p => ArtifactMetadata.Fingerprint(Path.Combine(directory, p))).ToArray();
+        string manifest = Path.Combine(directory, "external-model.json");
+        var names = design.ExternalPortNames();
+        bool twoState = stateMode == RtlStateMode.TwoState;
+        string semantics = $"cpp; simd-lanes={lanes}; {(twoState ? "two-state" : "four-state")}; {(design.CombinationalOnly ? "clockless acyclic settling; lockstep-simd; explicit eval" : "bounded input-edge processes; lockstep-simd; explicit eval")}";
         var contract = new ExternalManifestContract("velosim.external.model.v2", 2, 64, top, "V" + top, semantics,
             design.Signals.Where(s => s.Direction != "internal").Select(s => new ExternalPortContract(s.Name, s.Width, s.Signed, twoState || s.TwoState, s.Direction, names[s.Name])).ToArray(),
             inputs.Select(input => new ExternalInputContract(Path.GetRelativePath(directory, input.Path).Replace('\\', '/'), input.Sha256)).ToArray());
