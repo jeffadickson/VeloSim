@@ -1622,7 +1622,7 @@ RELATIONS:
 
 [REQUIREMENT]
 UID: VS-RTL-PARITY-002
-STATUS: Draft
+STATUS: Implemented
 TITLE: Rust and C# parity for initial blocks and procedural blocking assignments
 STATEMENT: >>>
 The Rust and C# codegen backends shall support bounded startup initial blocks and sequential procedural blocking (=) statements inside always processes while preserving register-resident W4/u64 fast paths and zero-unsafe core safety (#![forbid(unsafe_code)] in Rust; no unsafe blocks in C#) when designs do not use blocking state or dynamic containers.
@@ -1635,6 +1635,10 @@ RELATIONS:
 - TYPE: File
   VALUE: src/VeloSim.Core/RtlRustEmitter.cs
 - TYPE: File
+  VALUE: src/VeloSim.Core/RtlPortableParityEmitter.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlParity14Of14Tests.cs
+- TYPE: File
   VALUE: examples/dynamic_array.sv
 - TYPE: File
   VALUE: examples/queue_demo.sv
@@ -1643,7 +1647,7 @@ RELATIONS:
 
 [REQUIREMENT]
 UID: VS-RTL-PARITY-003
-STATUS: Draft
+STATUS: Implemented
 TITLE: Rust and C# parity for dynamic arrays, queues, associative, multidimensional arrays, and $readmem loaders
 STATEMENT: >>>
 The Rust and C# codegen backends shall support bounded SystemVerilog dynamic arrays (m[]: new[n], new[n](m), delete, size, indexed R/W), bounded queues (q[$]: push_front, push_back, pop_front, pop_back, delete, size), associative arrays, rank 2-4 fixed multidimensional arrays, and IEEE 1364 $readmemh/$readmemb memory loaders with bounded resource ceilings matching the C++ runtime so examples/dynamic_array.sv and examples/queue_demo.sv execute identically across C++, Rust, and C#.
@@ -1652,11 +1656,9 @@ RELATIONS:
 - TYPE: File
   VALUE: docs/target-parity-matrix.md
 - TYPE: File
-  VALUE: docs/dynamic-arrays.md
+  VALUE: src/VeloSim.Core/RtlPortableParityEmitter.cs
 - TYPE: File
-  VALUE: docs/queues.md
-- TYPE: File
-  VALUE: docs/associative-arrays.md
+  VALUE: tests/VeloSim.Tests/RtlParity14Of14Tests.cs
 - TYPE: File
   VALUE: examples/dynamic_array.sv
 - TYPE: File
@@ -1664,10 +1666,10 @@ RELATIONS:
 
 [REQUIREMENT]
 UID: VS-RTL-PARITY-004
-STATUS: Draft
+STATUS: Implemented
 TITLE: Rust and C# parity for explicit-time #delay discrete-event scheduler
 STATEMENT: >>>
-The Rust and C# codegen backends shall implement VeloSim's bounded discrete-event timed scheduler (active/inactive/NBA regions, integer and quantized decimal #delay waits, delayed NBAs <= #d, internal clock generators, eventsPending, and nextTimeSlot) matching native/rtl/hdl_scheduler.h semantics so examples/timed_counter.sv executes identically across C++, Rust, and C# (achieving 13/13 examples/*.sv parity).
+The Rust and C# codegen backends shall implement VeloSim's bounded discrete-event timed scheduler (active/inactive/NBA regions, integer and quantized decimal #delay waits, delayed NBAs <= #d, internal clock generators, eventsPending, and nextTimeSlot) matching native/rtl/hdl_scheduler.h semantics so examples/timed_counter.sv executes identically across C++, Rust, and C# (achieving 14/14 examples/*.sv parity).
 <<<
 RELATIONS:
 - TYPE: File
@@ -1676,6 +1678,10 @@ RELATIONS:
   VALUE: docs/timed-execution.md
 - TYPE: File
   VALUE: native/rtl/hdl_scheduler.h
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlPortableParityEmitter.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlParity14Of14Tests.cs
 - TYPE: File
   VALUE: examples/timed_counter.sv
 
@@ -1760,6 +1766,25 @@ RELATIONS:
   VALUE: tests/VeloSim.Tests/SlangFrontendRv32iTests.cs
 - TYPE: File
   VALUE: docs/slang_frontend.md
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+
+[REQUIREMENT]
+UID: VS-RTL-WASM-BROWSER-001
+STATUS: Implemented
+TITLE: Client-side Browser RTL-in-WASM execution inside SchematicLab Blazor WebAssembly
+STATEMENT: >>>
+VeloSim's zero-unsafe C# 15 compiled RTL models (including examples/rv32i_core.sv) shall run directly client-side inside apps/SchematicLab/Web (Blazor WebAssembly) with zero server round-trips, exposing interactive step/run/reset, in-RAM Fork(), ring-buffer TimeTravelRecorder rewind, and live SVG waveform inspection verified by automated tests in apps/SchematicLab/Tests.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: apps/SchematicLab/Core/RtlWasm/RtlWasmSession.cs
+- TYPE: File
+  VALUE: apps/SchematicLab/Web/RtlWasmPanel.razor
+- TYPE: File
+  VALUE: apps/SchematicLab/Web/Lesson.razor
+- TYPE: File
+  VALUE: apps/SchematicLab/Tests/RtlWasmSessionTests.cs
 - TYPE: File
   VALUE: docs/target-parity-matrix.md
 

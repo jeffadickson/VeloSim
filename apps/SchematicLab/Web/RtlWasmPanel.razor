@@ -1,0 +1,89 @@
+@using SchematicLab.Core.RtlWasm
+<section class="results" aria-label="Browser RTL-in-WASM RV32I simulator" data-testid="rtl-wasm-panel">
+    <div>
+        <p class="eyebrow">VELOSIM RTL-IN-WASM · ZERO SERVER ROUND-TRIP</p>
+        <h2>Live RV32I RISC-V Core (In-Browser WebAssembly)</h2>
+        <p>Compiled directly from <code>examples/rv32i_core.sv</code> via <code>slang</code> &rarr; <code>velosim.rtl.v1</code> &rarr; zero-unsafe C# 15 running locally in Blazor WebAssembly.</p>
+        <div>
+            <button data-testid="rtl-step" disabled="@rtl.Halted" @onclick="StepOne">Step +1</button>
+            <button data-testid="rtl-run25" disabled="@rtl.Halted" @onclick="RunBatch">Run +25</button>
+            <button data-testid="rtl-halt" disabled="@rtl.Halted" @onclick="RunToHalt">Run to Halt</button>
+            <button data-testid="rtl-fork" @onclick="ForkBranch">Fork In-RAM</button>
+            <button data-testid="rtl-rewind" disabled="@(rtl.RecordedDepth < 6)" @onclick="RewindFive">Rewind -5</button>
+            <button data-testid="rtl-reset" @onclick="ResetCore">Reset</button>
+        </div>
+    </div>
+    <div class="inspector">
+        <label for="rtl-seed">MMIO Seed (hex)</label>
+        <input id="rtl-seed" value="@seedHex" @onchange="OnSeedChanged" maxlength="10" />
+        <label for="rtl-iters">Loop Iterations</label>
+        <input id="rtl-iters" type="number" min="1" max="500" value="@iters" @onchange="OnItersChanged" />
+        <table aria-label="RV32I live core registers">
+            <thead><tr><th>Signal</th><th>Value</th></tr></thead>
+            <tbody>
+                <tr><td>cycle_count</td><td data-testid="rtl-cycles">@rtl.CycleCount</td></tr>
+                <tr><td>pc</td><td><code>0x@rtl.Pc.ToString("x8")</code></td></tr>
+                <tr><td>inst</td><td><code>0x@rtl.Inst.ToString("x8")</code></td></tr>
+                <tr><td>x10 (a0 digest)</td><td data-testid="rtl-a0"><code>0x@rtl.A0.ToString("x8")</code></td></tr>
+                <tr><td>x11 (a1 iters)</td><td data-testid="rtl-a1">@rtl.A1</td></tr>
+                <tr><td>halted</td><td data-testid="rtl-halted">@(rtl.Halted ? "1 (EBREAK)" : "0 (RUNNING)")</td></tr>
+                <tr><td>ring_depth</td><td>@rtl.RecordedDepth snapshots</td></tr>
+                @if (rtl.HasFork)
+                {
+                    <tr><td>forked a0 / pc</td><td><code>0x@rtl.ForkedA0.ToString("x8")</code> / <code>0x@rtl.ForkedPc.ToString("x4")</code></td></tr>
+                }
+            </tbody>
+        </table>
+        <figure>
+            <svg viewBox="0 0 420 110" role="img" aria-label="RV32I live digital waveform">
+                <rect width="420" height="110" fill="#f7f9f7" rx="4" />
+                <text x="6" y="24" font-size="10" fill="#2b3a33">pc</text>
+                <text x="6" y="60" font-size="10" fill="#2b3a33">a0</text>
+                <text x="6" y="96" font-size="10" fill="#2b3a33">halt</text>
+                <polyline fill="none" stroke="#216851" stroke-width="1.8" points="@PcTracePoints()" />
+                <polyline fill="none" stroke="#1b4f8a" stroke-width="1.8" points="@A0TracePoints()" />
+                <polyline fill="none" stroke="#b33939" stroke-width="1.8" points="@HaltTracePoints()" />
+            </svg>
+            <figcaption>@rtl.Waveform.Count cycles captured · Expected final a0 = <code>0x@RtlWasmSession.ExpectedDigest(rtl.Seed, rtl.Iterations).ToString("x8")</code></figcaption>
+        </figure>
+    </div>
+</section>
+
+@code {
+    private readonly RtlWasmSession rtl = new();
+    private string seedHex = "13572468";
+    private int iters = 10;
+
+    private void StepOne() => rtl.Step();
+    private void RunBatch() => rtl.RunCycles(25);
+    private void RunToHalt() => rtl.RunToHalt();
+    private void ForkBranch() => rtl.ForkWithPerturbedSeed(1u);
+    private void RewindFive() => rtl.Rewind(5);
+    private void ResetCore() => rtl.Reset(ParseSeed(), iters);
+
+    private uint ParseSeed() => uint.TryParse(seedHex.Replace("0x", "", StringComparison.OrdinalIgnoreCase), System.Globalization.NumberStyles.HexNumber, null, out uint v) ? v : 0x13572468u;
+
+    private void OnSeedChanged(ChangeEventArgs e)
+    {
+        seedHex = e.Value?.ToString()?.Trim() ?? "13572468";
+        ResetCore();
+    }
+
+    private void OnItersChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int n)) iters = Math.Clamp(n, 1, 500);
+        ResetCore();
+    }
+
+    private string PcTracePoints() => BuildPolyline(p => 32.0 - ((p.Pc & 0xFFu) / 255.0) * 20.0);
+    private string A0TracePoints() => BuildPolyline(p => 68.0 - ((p.A0 & 0xFFu) / 255.0) * 20.0);
+    private string HaltTracePoints() => BuildPolyline(p => p.Halted ? 82.0 : 100.0);
+
+    private string BuildPolyline(Func<RtlWaveformPoint, double> ySelector)
+    {
+        var pts = rtl.Waveform;
+        if (pts.Count == 0) return "";
+        double dx = pts.Count > 1 ? 375.0 / (pts.Count - 1) : 0.0;
+        return string.Join(' ', pts.Select((p, idx) => $"{(38.0 + idx * dx):0.#},{ySelector(p):0.#}"));
+    }
+}

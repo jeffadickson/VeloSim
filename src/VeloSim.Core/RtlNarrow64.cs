@@ -7,7 +7,9 @@ public sealed partial class RtlDesign
     private bool ExpressionFits64(JsonElement e)
     {
         string kind = Kind(e);
-        if (kind is "convert" or "size" or "exists") return false;
+        if (kind == "convert") return false;
+        if (kind == "size") return true;
+        if (kind == "exists") return ExpressionFits64(e.GetProperty("index"));
         if (ExpressionWidth(e) > 64) return false;
         if (kind == "index") return MemoryIndices(e).All(ExpressionFits64);
         if (kind is "bitselect" or "partselect" or "indexedselect")
@@ -50,6 +52,8 @@ public sealed partial class RtlDesign
         if (e.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Object && !ExpressionFits64(v)) return false;
         if (e.TryGetProperty("condition", out var c) && c.ValueKind == JsonValueKind.Object && !ExpressionFits64(c)) return false;
         if (e.TryGetProperty("count", out var cnt) && cnt.ValueKind == JsonValueKind.Object && !ExpressionFits64(cnt)) return false;
+        if (e.TryGetProperty("index", out var ix) && ix.ValueKind == JsonValueKind.Object && !ExpressionFits64(ix)) return false;
+        if (e.TryGetProperty("amount", out var amt) && amt.ValueKind == JsonValueKind.Object && !ExpressionFits64(amt)) return false;
         if (Kind(e) == "case")
         {
             foreach (var item in e.GetProperty("items").EnumerateArray())
