@@ -83,6 +83,7 @@ Status legend:
 | IEEE 1800 C-ABI VPI (`vpi_user.h` + `vlog_startup_routines` plugins via `--vpi`) | Supported (built-in) | Supported (`vpi_ffi/` opt-in) | Supported (`vpi_ffi/` opt-in) | `VS-RTL-VPI-MULTI-001` |
 | IEEE 1800 Annex I DPI-C (`svdpi.h` imports) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-005` |
 | Multi-threaded combinational settle (`--threads > 1`) | Supported | Gap (Tracked) | Gap (Tracked) | `VS-RTL-PARITY-005` |
+| Lockstep N-lane SIMD multi-seed & fault-injection (`--lanes 4\|8`, `DivergedMask_*`) | Supported (`alignas(32/64)`) | Supported (`#![forbid(unsafe_code)]`) | Supported (`Vector256`/`Vector512`, 0 `unsafe`) | `VS-RTL-SIMD-LANES-001` |
 
 ---
 
@@ -119,6 +120,17 @@ Median throughput (Mcyc/s, 2,000,000 cycles × 5 runs, 100% bit-for-bit checksum
 | `surelog_fifo.sv` | 13.38 | 38.36 | 115.21 | 65.36 | 131.75 | 75.15 | 120.97 |
 | `surelog_fifo_operators.sv` | 12.89 | 37.37 | 111.73 | 69.33 | 138.01 | 74.43 | 112.13 |
 | `surelog_fifo_selections.sv` | 13.16 | 37.63 | 113.90 | 73.71 | 133.72 | 60.15 | 116.98 |
+
+### 4.1 Measured Lockstep N-Lane SIMD Throughput (`--lanes 4|8`, AVX-512 Xeon Platinum 8481C)
+
+Effective per-core throughput (`cycles × lanes / median_seconds`, 2,000,000 cycles × 5 runs, 100% bit-for-bit identical output hash across all targets and state modes):
+
+| Sample | Lanes | C++ 4s | C++ 2s | Rust 4s (`#![forbid(unsafe_code)]`) | Rust 2s (`#![forbid(unsafe_code)]`) | C# 4s (0 `unsafe`) | C# 2s (0 `unsafe`) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `counter16.sv` | 4 | 175.2 Mcyc/s | 551.2 Mcyc/s | 9,270.0 Mcyc/s | 9,697.0 Mcyc/s | 425.0 Mcyc/s | 1,073.7 Mcyc/s |
+| `counter16.sv` | 8 | 213.4 Mcyc/s | 245.1 Mcyc/s | 14,678.9 Mcyc/s | 19,207.7 Mcyc/s | 820.7 Mcyc/s | 1,643.7 Mcyc/s |
+| `surelog_fifo.sv` | 4 | 35.4 Mcyc/s | 173.1 Mcyc/s | 96.4 Mcyc/s | 260.3 Mcyc/s | 119.0 Mcyc/s | 218.0 Mcyc/s |
+| `surelog_fifo.sv` | 8 | 58.0 Mcyc/s | 94.2 Mcyc/s | 108.4 Mcyc/s | 322.0 Mcyc/s | 134.8 Mcyc/s | 253.0 Mcyc/s |
 
 ---
 

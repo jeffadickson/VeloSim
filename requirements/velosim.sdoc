@@ -1698,4 +1698,23 @@ RELATIONS:
 - TYPE: File
   VALUE: native/rtl/svdpi.h
 
+[REQUIREMENT]
+UID: VS-RTL-SIMD-LANES-001
+STATUS: Implemented
+TITLE: Lockstep N-lane SIMD multi-seed and fault-injection execution (--lanes 4|8) across C++, Rust, and C#
+STATEMENT: >>>
+VeloSim shall support lockstep N-lane SIMD RTL export (--lanes 4|8) executing 4 or 8 independent simulation instances per thread across all three exported targets: C# 15 / .NET 11 (Vector256<ulong> / Vector512<ulong>, zero unsafe blocks), Rust 2021 (#![forbid(unsafe_code)], 32/64-byte aligned [u64; N]), and C++20 (alignas(32/64) Lane). Each exported SIMD model shall provide per-lane, broadcast, vector, and O(1) fault-injection divergence bitmask (DivergedMask_* / diverged_mask_*) APIs, support both 4-state (W4xN) and 2-state (--two-state) modes, verify bit-for-bit parity against scalar execution under divergent per-lane stimulus, and reject unsupported designs or incompatible flags (--threads > 1, --coverage, --vpi) fail-closed.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlSimdEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlSimdRustCppEmitter.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/RtlExternalSdk.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/RtlSimdLanesTests.cs
+- TYPE: File
+  VALUE: docs/target-parity-matrix.md
+
 

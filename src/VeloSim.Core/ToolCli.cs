@@ -41,7 +41,8 @@ public static class ToolCli
             bool enableCoverage = options.Flag("--coverage");
             bool enableVpi = options.Flag("--vpi");
             int threads = options.Int("--threads", 1);
-            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage, threads, enableVpi).ConfigureAwait(false)); return 0;
+            int lanes = options.Int("--lanes", 1);
+            output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage, threads, enableVpi, lanes).ConfigureAwait(false)); return 0;
         }
         if (args.Length > 0 && args[0] == "coverage-merge")
         {
