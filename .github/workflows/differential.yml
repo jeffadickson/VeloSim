@@ -30,7 +30,7 @@ jobs:
         with:
           global-json-file: global.json
       - name: Install native build dependencies and independent simulators
-        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake g++ clang iverilog verilator default-jre-headless uuid-dev zlib1g-dev libssl-dev
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake g++ clang iverilog verilator default-jre-headless uuid-dev zlib1g-dev libssl-dev python3-orderedmultidict
       - name: Build pinned upstream compiler using bounded Ninja
         run: |
           cmake -S external/Surelog -B artifacts/surelog -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=$PWD/artifacts/toolchain -DSURELOG_BUILD_TESTS=OFF -DUHDM_BUILD_TESTS=OFF -DSURELOG_WITH_TCMALLOC=OFF

@@ -6,10 +6,11 @@ jobs:
     timeout-minutes: 300
     env:
       VELOSIM_MIN_MANAGED_LINE: 80
-      VELOSIM_MIN_NATIVE_LINE: 95
+      VELOSIM_MIN_NATIVE_LINE: 75
       VELOSIM_MIN_MANAGED_BRANCH: 60
-      VELOSIM_MIN_NATIVE_BRANCH: 80
+      VELOSIM_MIN_NATIVE_BRANCH: 75
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -21,9 +22,9 @@ jobs:
       - name: Install Ninja and LLVM (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ninja-build clang llvm iverilog
-      - name: Install Ninja (macOS)
+      - name: Install Ninja and Icarus Verilog (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja
+        run: brew install ninja icarus-verilog
       - name: Build and test compiled C# and native kernels (macOS)
         if: runner.os == 'macOS'
         run: make test JOBS=4

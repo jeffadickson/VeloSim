@@ -4,6 +4,8 @@ namespace VeloSim.Tests;
 
 public class ReproducibilityTests
 {
+    private static string TrueExe => File.Exists("/bin/true") ? "/bin/true" : "/usr/bin/true";
+    private static string FalseExe => File.Exists("/bin/false") ? "/bin/false" : "/usr/bin/false";
     private static string Temp() { var path = Path.Combine(Path.GetTempPath(), "velosim-repro-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(path); return path; }
     private static CounterDifferentialReport Fixture(string directory)
     {
@@ -15,8 +17,8 @@ public class ReproducibilityTests
         return new(42, 2, 1, ["velosim", "icarus"], new Dictionary<string, IReadOnlyList<TraceSample>> { ["velosim"] = [new(0, "00000000"), new(1, "00000001")], ["icarus"] = [new(0, "00000000"), new(1, "00000001")] }, new Dictionary<string, string>())
         {
             IrArtifact = ArtifactMetadata.Fingerprint(ir), Specification = CounterSpecification.Generate(resets, 8),
-            Configuration = new("counter", [source], 2, "/bin/true", "/bin/true", new Dictionary<string, string> { ["iverilog"] = "/bin/echo", ["vvp"] = "/bin/false" }),
-            Metadata = new([ArtifactMetadata.Fingerprint(source), ArtifactMetadata.Fingerprint(tb), ArtifactMetadata.Fingerprint(stimulus)], ArtifactMetadata.Fingerprint(Simulation.NativeLibraryPath), [new("/bin/true", ["-elabuhdm", "-mt", "1", "-top", "counter", source], directory, 0, "", "", null), new("/bin/true", ["db.uhdm", Path.Combine(directory, "normalized.json"), "counter"], directory, 0, "", "", null), new("/bin/echo", ["-g2012", "-s", "velosim_reference_tb", "-o", "simulation.vvp"], directory, 0, "", "", null), new("/bin/false", ["simulation.vvp"], directory, 0, "", "", null)], new Dictionary<string, string>(), [ArtifactMetadata.Fingerprint("/bin/true"), ArtifactMetadata.Fingerprint("/bin/echo"), ArtifactMetadata.Fingerprint("/bin/false")])
+            Configuration = new("counter", [source], 2, TrueExe, TrueExe, new Dictionary<string, string> { ["iverilog"] = "/bin/echo", ["vvp"] = FalseExe }),
+            Metadata = new([ArtifactMetadata.Fingerprint(source), ArtifactMetadata.Fingerprint(tb), ArtifactMetadata.Fingerprint(stimulus)], ArtifactMetadata.Fingerprint(Simulation.NativeLibraryPath), [new(TrueExe, ["-elabuhdm", "-mt", "1", "-top", "counter", source], directory, 0, "", "", null), new(TrueExe, ["db.uhdm", Path.Combine(directory, "normalized.json"), "counter"], directory, 0, "", "", null), new("/bin/echo", ["-g2012", "-s", "velosim_reference_tb", "-o", "simulation.vvp"], directory, 0, "", "", null), new(FalseExe, ["simulation.vvp"], directory, 0, "", "", null)], new Dictionary<string, string>(), [ArtifactMetadata.Fingerprint(TrueExe), ArtifactMetadata.Fingerprint("/bin/echo"), ArtifactMetadata.Fingerprint(FalseExe)])
         };
     }
     [Test] public void MetadataHashesTransitiveIncludesAndActualLoadedNativeLibrary()
@@ -41,8 +43,8 @@ public class ReproducibilityTests
             var report = Fixture(directory); var json = report.ToJson(); var replay = DifferentialReplay.Validate(json);
             Assert.That(replay.Cycles, Is.EqualTo(2)); Assert.That(replay.Configuration.BuildJobs, Is.EqualTo(2));
             Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate((report with { Cycles = 3 }).ToJson()));
-            Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate((report with { Configuration = report.Configuration! with { Normalizer = "/bin/false" } }).ToJson()));
-            Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate((report with { Configuration = report.Configuration! with { ToolchainPaths = new Dictionary<string, string> { ["iverilog"] = "/bin/false", ["vvp"] = "/bin/echo" } } }).ToJson()));
+            Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate((report with { Configuration = report.Configuration! with { Normalizer = FalseExe } }).ToJson()));
+            Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate((report with { Configuration = report.Configuration! with { ToolchainPaths = new Dictionary<string, string> { ["iverilog"] = FalseExe, ["vvp"] = "/bin/echo" } } }).ToJson()));
             Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate(json.Replace("two_state_reference_not_four_state_conformance", "four_state_conformance")));
             Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate(json.Replace("\"differences\": []", "\"differences\": [{\"engines\":\"velosim:icarus\",\"cycle\":0,\"expected\":\"00000000\",\"actual\":\"00000001\"}]")));
             File.AppendAllText(report.Configuration!.Sources[0], "//changed"); Assert.Throws<IOException>(() => DifferentialReplay.Validate(json));

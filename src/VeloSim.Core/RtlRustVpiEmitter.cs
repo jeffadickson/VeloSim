@@ -505,10 +505,12 @@ pub mod vpi {
 
     internal static string EmitRustVpiFfiBuildRs() => """
         fn main() {
-            // Export #[no_mangle] vpi_* symbols from Linux binaries, tests, and cdylibs
+            // Export #[no_mangle] vpi_* symbols from Linux/macOS binaries, tests, and cdylibs
             // so dynamically loaded C/C++ VPI plugins (vlog_startup_routines) resolve them.
-            if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
-                println!("cargo:rustc-link-arg=-Wl,--export-dynamic");
+            match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
+                Ok("linux") => println!("cargo:rustc-link-arg=-Wl,--export-dynamic"),
+                Ok("macos") => println!("cargo:rustc-link-arg=-Wl,-export_dynamic"),
+                _ => {}
             }
         }
         """;
@@ -671,6 +673,9 @@ pub const cbEndOfSimulation: PLI_INT32 = 12;
 mod dynload {
     use std::ffi::{c_char, c_int, c_void, CStr, CString};
     const RTLD_NOW: c_int = 2;
+    #[cfg(target_os = "macos")]
+    const RTLD_LOCAL: c_int = 4;
+    #[cfg(not(target_os = "macos"))]
     const RTLD_LOCAL: c_int = 0;
     extern "C" {
         fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
@@ -917,6 +922,25 @@ impl VpiHost {
     }
 
     pub fn load_vpi(&mut self, path: &str) -> Result<(), String> {
+        let _keep_vpi_exports: [*const (); 16] = std::hint::black_box([
+            vpi_handle_by_name as *const (),
+            vpi_handle as *const (),
+            vpi_iterate as *const (),
+            vpi_scan as *const (),
+            vpi_free_object as *const (),
+            vpi_compare_objects as *const (),
+            vpi_get as *const (),
+            vpi_get_str as *const (),
+            vpi_get_value as *const (),
+            vpi_put_value as *const (),
+            vpi_get_time as *const (),
+            vpi_register_cb as *const (),
+            vpi_remove_cb as *const (),
+            vpi_chk_error as *const (),
+            vpi_control as *const (),
+            vpi_get_vlog_info as *const (),
+        ]);
+        let _ = _keep_vpi_exports;
         if self.evaluating || self.started || self.got_finish() || self.plugins.len() >= 64 {
             return Err("load VPI plugins before first eval; maximum 64".to_string());
         }
