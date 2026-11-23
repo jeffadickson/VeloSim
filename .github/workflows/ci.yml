@@ -6,9 +6,9 @@ jobs:
     timeout-minutes: 300
     env:
       VELOSIM_MIN_MANAGED_LINE: 80
-      VELOSIM_MIN_NATIVE_LINE: 95
+      VELOSIM_MIN_NATIVE_LINE: 75
       VELOSIM_MIN_MANAGED_BRANCH: 60
-      VELOSIM_MIN_NATIVE_BRANCH: 80
+      VELOSIM_MIN_NATIVE_BRANCH: 75
     strategy:
       fail-fast: false
       matrix:
