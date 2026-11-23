@@ -105,8 +105,9 @@ Status legend:
 | 11 | `examples/dynamic_array.sv` | `dut` | Supported | Gap (`VS-RTL-PARITY-002`, `003`) | Gap (`VS-RTL-PARITY-002`, `003`) | C++ qualified | Dynamic array `m[]`, `initial`, blocking `=` |
 | 12 | `examples/queue_demo.sv` | `queue_demo` | Supported | Gap (`VS-RTL-PARITY-002`, `003`) | Gap (`VS-RTL-PARITY-002`, `003`) | C++ qualified | Queue `pending[$]`, blocking `=` |
 | 13 | `examples/timed_counter.sv` | `timed_counter` | Supported | Gap (`VS-RTL-PARITY-002`, `004`) | Gap (`VS-RTL-PARITY-002`, `004`) | C++ qualified | Explicit `#delay` time wheel, `initial`, `always #2`, `<= #1` |
+| 14 | `examples/rv32i_core.sv` | `rv32i_core` | Supported | Supported | Supported | Match (all 7 engines + 8-lane SIMD) | — (direct `slang` frontend, zero UHDM) |
 
-**Current `examples/*.sv` coverage:** **13/13** C++, **10/13** Rust, **10/13** C#.
+**Current `examples/*.sv` coverage:** **14/14** C++, **11/14** Rust, **11/14** C#.
 
 ---
 
@@ -142,6 +143,19 @@ Effective per-core throughput (`cycles × lanes / median_seconds`, 2,000,000 cyc
 | **Rust (`#![forbid(unsafe_code)]`)** | **0.090 µs** (90 ns) | **0.044 µs** (44 ns) | **22.7 M forks/s** |
 | **C# 15 / .NET 11 (0 `unsafe`)** | **0.476 µs** (476 ns) | **0.113 µs** (113 ns) | **8.85 M forks/s** |
 | **C++20 (`vsrtl::Model`)** | **0.276 µs** (276 ns) | **1.187 µs** | **0.84 M forks/s** |
+
+### 4.3 Real RV32I RISC-V Core Benchmark (`examples/rv32i_core.sv`, Direct `slang v12.2` Frontend — `VS-RTL-SLANG-RV32I-001`)
+
+Lowered directly from `examples/rv32i_core.sv` via `MikePopoloski/slang` v12.2 (`slang-lower`, zero Surelog, zero UHDM, zero Python), running 700,009 cycles of real RV32I machine code (50,000-iteration Fibonacci + DMEM load/store + digest loop, 100% bit-for-bit match `a0 = 0x2e0efb38`, `a1 = 50000` against Verilator 5.055 `-O3`):
+
+| Engine | Throughput | vs Verilator 5.055 | Verification |
+|---|---:|---:|---|
+| Verilator 5.055 (`-O3`, 2-state) | 8.01 Mcyc/s | 1.00× | Reference (`0x2e0efb38`) |
+| VeloSim C++20 scalar (4s / 2s) | 3.39 / **13.70 Mcyc/s** | **1.71×** (2s) | Exact match |
+| VeloSim Rust scalar (`#![forbid(unsafe_code)]`, 4s / 2s) | 3.93 / **16.88 Mcyc/s** | **2.11×** (2s) | Exact match |
+| VeloSim C# 15 scalar (0 `unsafe`, 4s / 2s) | 0.88 / **9.08 Mcyc/s** | **1.13×** (2s) | Exact match |
+| VeloSim C# 15 8-Lane SIMD (2s, 8 RV32I cores/thread) | **11.61 Mcyc/s** | **1.45×** | Exact match (`diverged_mask=0xfe`) |
+| VeloSim Rust 8-Lane SIMD (2s, 8 RV32I cores/thread) | **28.62 Mcyc/s** | **3.57×** | Exact match (`diverged_mask=0xfe`) |
 
 ---
 
