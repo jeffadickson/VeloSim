@@ -520,6 +520,6 @@ public sealed partial class RtlDesign
         code.AppendLine("};"); EmitInitialization(code);
         code.AppendLine($"scheduler=std::make_unique<HdlScheduler>(s,mem,{NamedEvents.Count});");
         foreach (int entry in entries) code.AppendLine($"scheduler->addProcess({entry});");
-        return code.AppendLine($"}}\nstd::unique_ptr<{className}> fork() const {{ auto c = std::make_unique<{className}>(); c->restore(snapshot()); return c; }}\n}};").ToString();
+        return code.AppendLine($"}}\nstd::unique_ptr<{className}> fork() const {{ auto c = std::make_unique<{className}>(); c->vsrtl::Model::restore(this->vsrtl::Model::snapshot()); return c; }}\n}};").ToString();
     }
 }
