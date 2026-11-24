@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text;
 
@@ -42,6 +44,12 @@ public sealed record UhdmRtlLimits(
 /// </summary>
 public sealed partial class UhdmRtlLowerer
 {
+    private static readonly SearchValues<char> JsonEscapeChars = SearchValues.Create(
+        "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008\u0009\u000a\u000b\u000c\u000d\u000e\u000f" +
+        "\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f\"\\");
+    private static readonly SearchValues<char> BinaryDigits = SearchValues.Create("01");
+    private static readonly SearchValues<char> DecimalChars = SearchValues.Create("0123456789_");
+
     private readonly UhdmDatabase db;
     private readonly UhdmRtlLimits limits;
     private UhdmNode? mod;
@@ -126,7 +134,9 @@ public sealed partial class UhdmRtlLowerer
 
     internal static string Q(string s)
     {
-        var sb = new StringBuilder(s.Length + 2);
+        if (!s.AsSpan().ContainsAny(JsonEscapeChars))
+            return string.Concat("\"", s, "\"");
+        var sb = new StringBuilder(s.Length + 4);
         sb.Append('"');
         foreach (char ch in s)
         {
@@ -430,7 +440,7 @@ public sealed partial class UhdmRtlLowerer
         }
         Need(h.VpiType == UhdmVpi.VpiConstant, "constant range required");
         string s = Bits(h);
-        Need(!s.Any(c => c is not ('0' or '1')), "unknown array bound");
+        Need(s.AsSpan().IndexOfAnyExcept(BinaryDigits) < 0, "unknown array bound");
         Need(!(SignedExpression(h, 0) && s[0] == '1'), "negative signed bounds and replication counts unsupported");
         return Convert.ToUInt64(s, 2);
     }
@@ -552,7 +562,7 @@ public sealed partial class UhdmRtlLowerer
         return $"{{\"kind\":{Q(exists ? "exists" : "size")},\"name\":{Q(SignalName(receiver))}{(exists ? ",\"index\":" + Expr(method.Many(UhdmVpi.VpiArgument)[0]) : "")}}}";
     }
 
-    private static readonly Dictionary<int, string> OpNames = new()
+    private static readonly FrozenDictionary<int, string> OpNames = new Dictionary<int, string>
     {
         [UhdmVpi.VpiAddOp] = "add", [UhdmVpi.VpiSubOp] = "sub", [UhdmVpi.VpiLogAndOp] = "and",
         [UhdmVpi.VpiNotOp] = "not", [UhdmVpi.VpiEqOp] = "eq", [UhdmVpi.VpiConcatOp] = "concat",
@@ -568,7 +578,7 @@ public sealed partial class UhdmRtlLowerer
         [UhdmVpi.VpiUnaryXorOp] = "redxor", [UhdmVpi.VpiUnaryXNorOp] = "redxnor",
         [UhdmVpi.VpiPlusOp] = "pos", [UhdmVpi.VpiMultOp] = "mul", [UhdmVpi.VpiDivOp] = "div",
         [UhdmVpi.VpiModOp] = "mod", [UhdmVpi.VpiConditionOp] = "cond",
-    };
+    }.ToFrozenDictionary();
 
     private string ExprCore(UhdmNode? h, int depth)
     {
@@ -775,7 +785,9 @@ public sealed partial class UhdmRtlLowerer
     private string Expr(UhdmNode? h, int depth = 0)
     {
         string value = ExprCore(h, depth);
-        OutputBudget(value);
+        Need(value.Length <= limits.MaxJsonBytes, "normalized RTL exceeds byte limit");
+        if (insideCall || value.Length > 4096)
+            OutputBudget(value);
         return value;
     }
 

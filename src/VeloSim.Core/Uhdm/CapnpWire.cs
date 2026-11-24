@@ -1,4 +1,6 @@
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace VeloSim.Uhdm;
@@ -18,8 +20,9 @@ public static class CapnpPackedStream
         if (packed.Length == 0)
             throw new InvalidDataException("Empty Cap'n Proto packed stream.");
 
-        var output = new MemoryStream(Math.Min(packed.Length * 2, maxUnpackedBytes));
-        Span<byte> word = stackalloc byte[8];
+        int initialCap = (int)Math.Min((long)Math.Max(packed.Length * 4, 256), maxUnpackedBytes);
+        byte[] buffer = GC.AllocateUninitializedArray<byte>(initialCap);
+        int outPos = 0;
         int i = 0;
 
         while (i < packed.Length)
@@ -29,53 +32,67 @@ public static class CapnpPackedStream
             {
                 if (i >= packed.Length)
                     throw new InvalidDataException("Truncated Cap'n Proto zero-word run count.");
-                int zeroWords = packed[i++] + 1;
-                long addBytes = (long)zeroWords * 8;
-                if (output.Length + addBytes > maxUnpackedBytes)
-                    throw new InvalidDataException("Cap'n Proto unpacked stream exceeds size limit.");
-                word.Clear();
-                for (int w = 0; w < zeroWords; w++)
-                    output.Write(word);
+                int addBytes = (packed[i++] + 1) * 8;
+                EnsureCapacity(ref buffer, outPos, addBytes, maxUnpackedBytes);
+                buffer.AsSpan(outPos, addBytes).Clear();
+                outPos += addBytes;
             }
             else if (tag == 0xFF)
             {
                 if (i + 8 >= packed.Length)
                     throw new InvalidDataException("Truncated Cap'n Proto verbatim word or count.");
-                if (output.Length + 8 > maxUnpackedBytes)
-                    throw new InvalidDataException("Cap'n Proto unpacked stream exceeds size limit.");
-                output.Write(packed.Slice(i, 8));
-                i += 8;
-                int extraWords = packed[i++];
-                long extraBytes = (long)extraWords * 8;
-                if (i + extraBytes > packed.Length)
+                int extraWords = packed[i + 8];
+                int totalBytes = (1 + extraWords) * 8;
+                if (i + 9 + extraWords * 8 > packed.Length)
                     throw new InvalidDataException("Truncated Cap'n Proto verbatim run payload.");
-                if (output.Length + extraBytes > maxUnpackedBytes)
-                    throw new InvalidDataException("Cap'n Proto unpacked stream exceeds size limit.");
-                output.Write(packed.Slice(i, (int)extraBytes));
-                i += (int)extraBytes;
+                EnsureCapacity(ref buffer, outPos, totalBytes, maxUnpackedBytes);
+                packed.Slice(i, 8).CopyTo(buffer.AsSpan(outPos, 8));
+                i += 9;
+                outPos += 8;
+                if (extraWords > 0)
+                {
+                    int extraBytes = extraWords * 8;
+                    packed.Slice(i, extraBytes).CopyTo(buffer.AsSpan(outPos, extraBytes));
+                    i += extraBytes;
+                    outPos += extraBytes;
+                }
             }
             else
             {
-                if (output.Length + 8 > maxUnpackedBytes)
-                    throw new InvalidDataException("Cap'n Proto unpacked stream exceeds size limit.");
-                for (int b = 0; b < 8; b++)
-                {
-                    if ((tag & (1 << b)) != 0)
-                    {
-                        if (i >= packed.Length)
-                            throw new InvalidDataException("Truncated Cap'n Proto packed word.");
-                        word[b] = packed[i++];
-                    }
-                    else
-                    {
-                        word[b] = 0;
-                    }
-                }
-                output.Write(word);
+                EnsureCapacity(ref buffer, outPos, 8, maxUnpackedBytes);
+                int remaining = packed.Length - i;
+                if (remaining < System.Numerics.BitOperations.PopCount(tag))
+                    throw new InvalidDataException("Truncated Cap'n Proto packed word.");
+                buffer[outPos + 0] = (tag & 0x01) != 0 ? packed[i++] : (byte)0;
+                buffer[outPos + 1] = (tag & 0x02) != 0 ? packed[i++] : (byte)0;
+                buffer[outPos + 2] = (tag & 0x04) != 0 ? packed[i++] : (byte)0;
+                buffer[outPos + 3] = (tag & 0x08) != 0 ? packed[i++] : (byte)0;
+                buffer[outPos + 4] = (tag & 0x10) != 0 ? packed[i++] : (byte)0;
+                buffer[outPos + 5] = (tag & 0x20) != 0 ? packed[i++] : (byte)0;
+                buffer[outPos + 6] = (tag & 0x40) != 0 ? packed[i++] : (byte)0;
+                buffer[outPos + 7] = (tag & 0x80) != 0 ? packed[i++] : (byte)0;
+                outPos += 8;
             }
         }
 
-        return output.ToArray();
+        if (outPos == buffer.Length) return buffer;
+        byte[] exact = GC.AllocateUninitializedArray<byte>(outPos);
+        Buffer.BlockCopy(buffer, 0, exact, 0, outPos);
+        return exact;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void EnsureCapacity(ref byte[] buffer, int outPos, int addBytes, int maxUnpackedBytes)
+    {
+        long needed = (long)outPos + addBytes;
+        if (needed > maxUnpackedBytes)
+            throw new InvalidDataException("Cap'n Proto unpacked stream exceeds size limit.");
+        if (needed <= buffer.Length) return;
+        long next = Math.Max(needed, (long)buffer.Length * 2);
+        int newLen = (int)Math.Min(next, maxUnpackedBytes);
+        byte[] grown = GC.AllocateUninitializedArray<byte>(newLen);
+        Buffer.BlockCopy(buffer, 0, grown, 0, outPos);
+        buffer = grown;
     }
 
     public static byte[] Pack(ReadOnlySpan<byte> unpacked)
@@ -133,23 +150,33 @@ public static class CapnpPackedStream
         return output.ToArray();
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static byte ComputeTag(ReadOnlySpan<byte> word)
     {
         byte tag = 0;
-        for (int b = 0; b < 8; b++)
-        {
-            if (word[b] != 0)
-                tag |= (byte)(1 << b);
-        }
+        if (word[0] != 0) tag |= 0x01;
+        if (word[1] != 0) tag |= 0x02;
+        if (word[2] != 0) tag |= 0x04;
+        if (word[3] != 0) tag |= 0x08;
+        if (word[4] != 0) tag |= 0x10;
+        if (word[5] != 0) tag |= 0x20;
+        if (word[6] != 0) tag |= 0x40;
+        if (word[7] != 0) tag |= 0x80;
         return tag;
     }
 
     private static int PopCount(byte value) => System.Numerics.BitOperations.PopCount(value);
 }
 
+[InlineArray(8)]
+internal struct InlineSegmentInt8
+{
+    private int element0;
+}
+
 /// <summary>
 /// Pure safe .NET 11 Cap'n Proto binary message reader with strict traversal and nesting limits.
-/// Supports multi-segment messages, single/double far pointers, structs, and all list encodings.
+/// Uses an <see cref="InlineArrayAttribute"/> inline segment table for &lt;= 8 segments (zero heap array overhead).
 /// </summary>
 public sealed class CapnpMessageReader
 {
@@ -157,19 +184,32 @@ public sealed class CapnpMessageReader
     public const int DefaultNestingLimit = 128;
 
     private readonly byte[] buffer;
-    private readonly int[] segmentOffsets;
-    private readonly int[] segmentWordLengths;
+    private readonly int segmentCount;
+    private InlineSegmentInt8 inlineOffsets;
+    private InlineSegmentInt8 inlineWordLengths;
+    private readonly int[]? overflowOffsets;
+    private readonly int[]? overflowWordLengths;
     private long remainingWords;
     private readonly int nestingLimit;
 
-    private CapnpMessageReader(byte[] buffer, int[] segmentOffsets, int[] segmentWordLengths, long traversalLimitWords, int nestingLimit)
+    private CapnpMessageReader(byte[] buffer, int segmentCount, InlineSegmentInt8 inlineOffsets, InlineSegmentInt8 inlineWordLengths,
+        int[]? overflowOffsets, int[]? overflowWordLengths, long traversalLimitWords, int nestingLimit)
     {
         this.buffer = buffer;
-        this.segmentOffsets = segmentOffsets;
-        this.segmentWordLengths = segmentWordLengths;
+        this.segmentCount = segmentCount;
+        this.inlineOffsets = inlineOffsets;
+        this.inlineWordLengths = inlineWordLengths;
+        this.overflowOffsets = overflowOffsets;
+        this.overflowWordLengths = overflowWordLengths;
         remainingWords = traversalLimitWords;
         this.nestingLimit = nestingLimit;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int SegmentOffset(int segment) => overflowOffsets is null ? inlineOffsets[segment] : overflowOffsets[segment];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int SegmentWordLength(int segment) => overflowWordLengths is null ? inlineWordLengths[segment] : overflowWordLengths[segment];
 
     public static CapnpMessageReader FromPacked(ReadOnlySpan<byte> packed, int maxUnpackedBytes = CapnpPackedStream.DefaultMaxUnpackedBytes,
         long traversalLimitWords = DefaultTraversalLimitWords, int nestingLimit = DefaultNestingLimit)
@@ -189,31 +229,43 @@ public sealed class CapnpMessageReader
         uint segmentCountMinusOne = BinaryPrimitives.ReadUInt32LittleEndian(unpacked.AsSpan(0, 4));
         if (segmentCountMinusOne >= 4096)
             throw new InvalidDataException("Cap'n Proto segment count exceeds limit.");
-        int segmentCount = (int)segmentCountMinusOne + 1;
+        int segCount = (int)segmentCountMinusOne + 1;
 
-        long headerInt32Count = 1L + segmentCount;
+        long headerInt32Count = 1L + segCount;
         long headerBytes = ((headerInt32Count + 1) / 2) * 8;
         if (headerBytes > unpacked.Length)
             throw new InvalidDataException("Truncated Cap'n Proto segment table.");
 
-        var offsets = new int[segmentCount];
-        var wordLengths = new int[segmentCount];
+        InlineSegmentInt8 inOff = default;
+        InlineSegmentInt8 inLen = default;
+        int[]? ovOff = segCount > 8 ? new int[segCount] : null;
+        int[]? ovLen = segCount > 8 ? new int[segCount] : null;
+
         long cursor = headerBytes;
-        for (int s = 0; s < segmentCount; s++)
+        for (int s = 0; s < segCount; s++)
         {
             uint words = BinaryPrimitives.ReadUInt32LittleEndian(unpacked.AsSpan(4 + s * 4, 4));
             long byteLen = (long)words * 8;
             if (words > int.MaxValue / 8 || cursor + byteLen > unpacked.Length)
                 throw new InvalidDataException($"Cap'n Proto segment {s} exceeds message bounds.");
-            offsets[s] = (int)cursor;
-            wordLengths[s] = (int)words;
+            if (ovOff is null)
+            {
+                inOff[s] = (int)cursor;
+                inLen[s] = (int)words;
+            }
+            else
+            {
+                ovOff[s] = (int)cursor;
+                ovLen![s] = (int)words;
+            }
             cursor += byteLen;
         }
 
-        if (segmentCount == 0 || wordLengths[0] < 1)
+        int seg0Words = ovLen is null ? inLen[0] : ovLen[0];
+        if (segCount == 0 || seg0Words < 1)
             throw new InvalidDataException("Cap'n Proto root segment is empty.");
 
-        return new CapnpMessageReader(unpacked, offsets, wordLengths, traversalLimitWords, nestingLimit);
+        return new CapnpMessageReader(unpacked, segCount, inOff, inLen, ovOff, ovLen, traversalLimitWords, nestingLimit);
     }
 
     public CapnpStruct GetRootStruct()
@@ -221,27 +273,29 @@ public sealed class CapnpMessageReader
         return ReadStructAtPointer(0, 0, 0);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ulong ReadWord(int segment, int wordIndex)
     {
-        if ((uint)segment >= (uint)segmentOffsets.Length)
+        if ((uint)segment >= (uint)segmentCount)
             throw new InvalidDataException("Cap'n Proto segment index out of range.");
-        if ((uint)wordIndex >= (uint)segmentWordLengths[segment])
+        if ((uint)wordIndex >= (uint)SegmentWordLength(segment))
             throw new InvalidDataException("Cap'n Proto word index out of range.");
-        int byteOffset = segmentOffsets[segment] + wordIndex * 8;
+        int byteOffset = SegmentOffset(segment) + wordIndex * 8;
         return BinaryPrimitives.ReadUInt64LittleEndian(buffer.AsSpan(byteOffset, 8));
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ReadOnlySpan<byte> SliceBytes(int segment, int startWord, int byteLength)
     {
-        if ((uint)segment >= (uint)segmentOffsets.Length)
+        if ((uint)segment >= (uint)segmentCount)
             throw new InvalidDataException("Cap'n Proto segment index out of range.");
         if (startWord < 0 || byteLength < 0)
             throw new InvalidDataException("Cap'n Proto negative slice offset or length.");
-        long segBytes = (long)segmentWordLengths[segment] * 8;
+        long segBytes = (long)SegmentWordLength(segment) * 8;
         long startByte = (long)startWord * 8;
         if (startByte + byteLength > segBytes)
             throw new InvalidDataException("Cap'n Proto slice exceeds segment bounds.");
-        return buffer.AsSpan(segmentOffsets[segment] + (int)startByte, byteLength);
+        return buffer.AsSpan(SegmentOffset(segment) + (int)startByte, byteLength);
     }
 
     internal void AccountWords(long words)
@@ -298,7 +352,7 @@ public sealed class CapnpMessageReader
         int pointerCount = (ushort)(raw >> 48);
         int targetWord = checked(ptrWordIdx + 1 + offset);
         int totalWords = dataWords + pointerCount;
-        if (targetWord < 0 || targetWord + totalWords > segmentWordLengths[seg])
+        if (targetWord < 0 || targetWord + totalWords > SegmentWordLength(seg))
             throw new InvalidDataException("Cap'n Proto struct extends outside segment bounds.");
         AccountWords(totalWords);
         return new CapnpStruct(this, seg, targetWord, dataWords, pointerCount, depth + 1);
@@ -332,7 +386,7 @@ public sealed class CapnpMessageReader
             if (wordsRequired != elementCount)
                 throw new InvalidDataException("Cap'n Proto composite list word count mismatch.");
             int firstElementWord = targetWord + 1;
-            if (firstElementWord < 0 || firstElementWord + wordsRequired > segmentWordLengths[seg])
+            if (firstElementWord < 0 || firstElementWord + wordsRequired > SegmentWordLength(seg))
                 throw new InvalidDataException("Cap'n Proto composite list exceeds segment bounds.");
             AccountWords(1 + wordsRequired);
             return new CapnpList(this, seg, firstElementWord, elementSize, count, dataWords, pointerCount, depth + 1);
@@ -349,7 +403,7 @@ public sealed class CapnpMessageReader
             6 => elementCount,
             _ => throw new InvalidDataException("Unknown Cap'n Proto list element size.")
         };
-        if (targetWord < 0 || targetWord + listWords > segmentWordLengths[seg])
+        if (targetWord < 0 || targetWord + listWords > SegmentWordLength(seg))
             throw new InvalidDataException("Cap'n Proto list exceeds segment bounds.");
         AccountWords(listWords);
         return new CapnpList(this, seg, targetWord, elementSize, elementCount, 0, 0, depth + 1);
@@ -627,12 +681,12 @@ public sealed class CapnpMessageWriter
 
     public byte[] ToUnpackedBytes()
     {
-        // Single segment header: segmentCount-1 (0) + segment0WordCount (words.Count) = 8 bytes.
-        byte[] result = new byte[(1 + words.Count) * 8];
+        var span = CollectionsMarshal.AsSpan(words);
+        byte[] result = GC.AllocateUninitializedArray<byte>((1 + span.Length) * 8);
         BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(0, 4), 0U);
-        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4, 4), (uint)words.Count);
-        for (int i = 0; i < words.Count; i++)
-            BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan((1 + i) * 8, 8), words[i]);
+        BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4, 4), (uint)span.Length);
+        for (int i = 0; i < span.Length; i++)
+            BinaryPrimitives.WriteUInt64LittleEndian(result.AsSpan((1 + i) * 8, 8), span[i]);
         return result;
     }
 

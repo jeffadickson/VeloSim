@@ -109,6 +109,28 @@ public sealed class UhdmNet11PortTests
         Assert.That(reader2.GetRootStruct().ReadUInt64(0), Is.EqualTo(0xCAFEBABEDEADBEEFUL));
     }
 
+    [Test]
+    public void CapnpMessageReader_HandlesMoreThanEightSegments()
+    {
+        // Construct a 10-segment message to exercise the overflow heap fallback beyond InlineSegmentInt8 (8 inline slots).
+        // Header: segCount-1 = 9 (10 segs), 10 segment lengths => 11 uint32s = 44 bytes -> padded to 48 bytes (6 words).
+        // Seg 9 has 2 words: word 0 = struct pointer to word 1, word 1 = data 0x0123456789ABCDEF.
+        const int segCount = 10;
+        byte[] msg = new byte[48 + (segCount + 1) * 8];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(msg.AsSpan(0, 4), segCount - 1);
+        for (int s = 0; s < segCount; s++)
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(msg.AsSpan(4 + s * 4, 4), s == 9 ? 2u : 1u);
+
+        ulong farToSeg9 = 2UL | (9UL << 32);
+        ulong structPtrInSeg9 = (1UL << 32); // offset=0 -> word 1, dataWords=1, ptrCount=0
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(msg.AsSpan(48, 8), farToSeg9);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(msg.AsSpan(48 + 9 * 8, 8), structPtrInSeg9);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(msg.AsSpan(48 + 10 * 8, 8), 0x0123456789ABCDEFUL);
+
+        var reader = CapnpMessageReader.FromUnpacked(msg);
+        Assert.That(reader.GetRootStruct().ReadUInt64(0), Is.EqualTo(0x0123456789ABCDEFUL));
+    }
+
     // -------------------------------------------------------------------------
     // 2. Helper builders for constructing valid UHDM graphs in memory
     // -------------------------------------------------------------------------

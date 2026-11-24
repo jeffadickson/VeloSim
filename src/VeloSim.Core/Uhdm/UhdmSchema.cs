@@ -1,5 +1,6 @@
 // Auto-extracted from pinned chipsalliance/UHDM commit 7c42de4057d0a7e2ef14048b8ee570c7ac3db94b.
 // All Cap'n Proto struct layouts are computed using Cap'n Proto's exact HoleSet packing algorithm.
+using System.Collections.Frozen;
 using System.Globalization;
 
 namespace VeloSim.Uhdm;
@@ -18,7 +19,10 @@ internal enum UhdmFieldKind : byte
     FactoryList = (byte)'M',
 }
 
-internal readonly record struct UhdmFieldSpec(string Name, UhdmFieldKind Kind, int Offset, uint TargetUhdmType);
+internal readonly record struct UhdmFieldSpec(string Name, UhdmFieldKind Kind, int Offset, uint TargetUhdmType, int LocalSlot, bool IsScalar);
+internal readonly record struct FlatPropBinding(int Slot, bool IsScalar);
+internal readonly record struct FlatFieldBinding(int Slot, UhdmFieldKind Kind, bool IsScalar);
+internal readonly record struct FlatRelationSlot(string Name, int RefSlot, bool IsList);
 
 internal sealed class UhdmClassSpec
 {
@@ -30,11 +34,26 @@ internal sealed class UhdmClassSpec
     public required int RootFactoryPointerSlot { get; init; }
     public required int DataWords { get; init; }
     public required int PointerCount { get; init; }
+    public required int LocalScalarCount { get; init; }
+    public required int LocalRefCount { get; init; }
     public required UhdmFieldSpec[] Fields { get; init; }
     public required Dictionary<int, int> VpiPropertyFieldIndex { get; init; }
     public required Dictionary<int, (int SingleFieldIndex, int VectorFieldIndex)> VpiRelationFieldIndex { get; init; }
-    public required Dictionary<string, int> FieldIndexByName { get; init; }
     public UhdmClassSpec? BaseClass { get; internal set; }
+
+    // Pre-flattened per-concrete-class O(1) tables (zero inheritance-chain walking, zero scalar boxing).
+    public UhdmClassSpec[] Chain { get; internal set; } = [];
+    public int[] LevelScalarBase { get; internal set; } = [];
+    public int[] LevelRefBase { get; internal set; } = [];
+    public int TotalScalarSlots { get; internal set; }
+    public int TotalRefSlots { get; internal set; }
+    public FrozenDictionary<int, FlatPropBinding> FlatVpiProperties { get; internal set; } = FrozenDictionary<int, FlatPropBinding>.Empty;
+    public FrozenDictionary<int, (int SingleRefSlot, int VecRefSlot)> FlatVpiRelations { get; internal set; } = FrozenDictionary<int, (int, int)>.Empty;
+    public FrozenDictionary<string, FlatFieldBinding> FlatFieldsByName { get; internal set; } = FrozenDictionary<string, FlatFieldBinding>.Empty;
+    public FlatRelationSlot[] AllRelationSlots { get; internal set; } = [];
+    public int NameRefSlot { get; internal set; } = -1;
+    public int DefNameRefSlot { get; internal set; } = -1;
+    public int FullNameRefSlot { get; internal set; } = -1;
 }
 
 internal static class UhdmSchema
@@ -66,13 +85,13 @@ internal static class UhdmSchema
     public static IReadOnlyList<UhdmClassSpec> ConcreteClasses => Concrete;
     private static readonly UhdmClassSpec[] Classes;
     private static readonly UhdmClassSpec[] Concrete;
-    private static readonly Dictionary<uint, UhdmClassSpec> ByUhdmType;
+    private static readonly FrozenDictionary<uint, UhdmClassSpec> ByUhdmType;
 
     static UhdmSchema()
     {
         var lines = SchemaData.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Classes = new UhdmClassSpec[lines.Length + 1];
-        ByUhdmType = new Dictionary<uint, UhdmClassSpec>(lines.Length);
+        var byType = new Dictionary<uint, UhdmClassSpec>(lines.Length);
         var concreteList = new List<UhdmClassSpec>(lines.Length);
 
         for (int i = 0; i < lines.Length; i++)
@@ -86,11 +105,7 @@ internal static class UhdmSchema
             int dataWords = int.Parse(parts[5], CultureInfo.InvariantCulture);
             int ptrCount = int.Parse(parts[6], CultureInfo.InvariantCulture);
 
-            var fields = ParseFields(parts[7]);
-            var fieldByName = new Dictionary<string, int>(fields.Length, StringComparer.OrdinalIgnoreCase);
-            for (int f = 0; f < fields.Length; f++)
-                fieldByName[fields[f].Name] = f;
-
+            var (fields, scalarCount, refCount) = ParseFields(parts[7]);
             var props = ParseProps(parts[8]);
             var rels = ParseRels(parts[9]);
 
@@ -104,15 +119,16 @@ internal static class UhdmSchema
                 RootFactoryPointerSlot = factorySlot,
                 DataWords = dataWords,
                 PointerCount = ptrCount,
+                LocalScalarCount = scalarCount,
+                LocalRefCount = refCount,
                 Fields = fields,
                 VpiPropertyFieldIndex = props,
                 VpiRelationFieldIndex = rels,
-                FieldIndexByName = fieldByName,
             };
             Classes[id] = spec;
             if (uhdmType != 0)
             {
-                ByUhdmType[uhdmType] = spec;
+                byType[uhdmType] = spec;
                 concreteList.Add(spec);
             }
         }
@@ -122,7 +138,99 @@ internal static class UhdmSchema
             if (Classes[i].BaseClassId > 0)
                 Classes[i].BaseClass = Classes[Classes[i].BaseClassId];
         }
+
+        // Pre-flatten every concrete class's inheritance chain into O(1) FrozenDictionary & flat slot tables.
+        foreach (var spec in concreteList)
+            BuildFlatTables(spec);
+
+        ByUhdmType = byType.ToFrozenDictionary();
         Concrete = concreteList.ToArray();
+    }
+
+    private static void BuildFlatTables(UhdmClassSpec spec)
+    {
+        var chainList = new List<UhdmClassSpec>(6);
+        for (var cur = spec; cur is not null; cur = cur.BaseClass)
+            chainList.Add(cur);
+        var chain = chainList.ToArray();
+        spec.Chain = chain;
+
+        var scalarBases = new int[chain.Length];
+        var refBases = new int[chain.Length];
+        int totalScalars = 0, totalRefs = 0;
+        for (int i = 0; i < chain.Length; i++)
+        {
+            scalarBases[i] = totalScalars;
+            refBases[i] = totalRefs;
+            totalScalars += chain[i].LocalScalarCount;
+            totalRefs += chain[i].LocalRefCount;
+        }
+        spec.LevelScalarBase = scalarBases;
+        spec.LevelRefBase = refBases;
+        spec.TotalScalarSlots = totalScalars;
+        spec.TotalRefSlots = totalRefs;
+
+        var flatProps = new Dictionary<int, FlatPropBinding>();
+        var flatRels = new Dictionary<int, (int SingleRefSlot, int VecRefSlot)>();
+        var flatNames = new Dictionary<string, FlatFieldBinding>(StringComparer.OrdinalIgnoreCase);
+
+        // Derived class takes precedence over base class (iterate from derived 0 -> base N-1, using TryAdd).
+        for (int level = 0; level < chain.Length; level++)
+        {
+            var cls = chain[level];
+            int sBase = scalarBases[level];
+            int rBase = refBases[level];
+
+            foreach (var f in cls.Fields)
+            {
+                int flatSlot = (f.IsScalar ? sBase : rBase) + f.LocalSlot;
+                flatNames.TryAdd(f.Name, new FlatFieldBinding(flatSlot, f.Kind, f.IsScalar));
+            }
+            foreach (var (propId, fIdx) in cls.VpiPropertyFieldIndex)
+            {
+                var f = cls.Fields[fIdx];
+                int flatSlot = (f.IsScalar ? sBase : rBase) + f.LocalSlot;
+                flatProps.TryAdd(propId, new FlatPropBinding(flatSlot, f.IsScalar));
+            }
+            foreach (var (relId, pair) in cls.VpiRelationFieldIndex)
+            {
+                int singleSlot = pair.SingleFieldIndex >= 0 ? rBase + cls.Fields[pair.SingleFieldIndex].LocalSlot : -1;
+                int vecSlot = pair.VectorFieldIndex >= 0 ? rBase + cls.Fields[pair.VectorFieldIndex].LocalSlot : -1;
+                if (flatRels.TryGetValue(relId, out var existing))
+                {
+                    flatRels[relId] = (
+                        existing.SingleRefSlot >= 0 ? existing.SingleRefSlot : singleSlot,
+                        existing.VecRefSlot >= 0 ? existing.VecRefSlot : vecSlot);
+                }
+                else
+                {
+                    flatRels[relId] = (singleSlot, vecSlot);
+                }
+            }
+        }
+
+        // Relations order: base-to-derived (matches UHDM::UhdmListener traversal order).
+        var allRels = new List<FlatRelationSlot>();
+        for (int level = chain.Length - 1; level >= 0; level--)
+        {
+            var cls = chain[level];
+            int rBase = refBases[level];
+            foreach (var f in cls.Fields)
+            {
+                if (f.Kind is UhdmFieldKind.ObjRef or UhdmFieldKind.FactoryRef)
+                    allRels.Add(new FlatRelationSlot(f.Name, rBase + f.LocalSlot, false));
+                else if (f.Kind is UhdmFieldKind.ObjList or UhdmFieldKind.FactoryList)
+                    allRels.Add(new FlatRelationSlot(f.Name, rBase + f.LocalSlot, true));
+            }
+        }
+
+        spec.FlatVpiProperties = flatProps.ToFrozenDictionary();
+        spec.FlatVpiRelations = flatRels.ToFrozenDictionary();
+        spec.FlatFieldsByName = flatNames.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
+        spec.AllRelationSlots = allRels.ToArray();
+        spec.NameRefSlot = flatProps.TryGetValue(UhdmVpi.VpiName, out var np) && !np.IsScalar ? np.Slot : -1;
+        spec.DefNameRefSlot = flatProps.TryGetValue(UhdmVpi.VpiDefName, out var dp) && !dp.IsScalar ? dp.Slot : -1;
+        spec.FullNameRefSlot = flatProps.TryGetValue(UhdmVpi.VpiFullName, out var fp) && !fp.IsScalar ? fp.Slot : -1;
     }
 
     public static UhdmClassSpec? TryGetByUhdmType(uint uhdmType) =>
@@ -133,21 +241,27 @@ internal static class UhdmSchema
             ? spec
             : throw new ArgumentException($"Unknown UHDM object type: {uhdmType}", nameof(uhdmType));
 
-    private static UhdmFieldSpec[] ParseFields(string text)
+    private static (UhdmFieldSpec[] Fields, int ScalarCount, int RefCount) ParseFields(string text)
     {
-        if (text.Length == 0) return [];
+        if (text.Length == 0) return ([], 0, 0);
         var items = text.Split(',');
         var result = new UhdmFieldSpec[items.Length];
+        int scalarCount = 0, refCount = 0;
         for (int i = 0; i < items.Length; i++)
         {
             var p = items[i].Split(':');
+            var kind = (UhdmFieldKind)(byte)p[1][0];
+            bool isScalar = kind is UhdmFieldKind.Bool or UhdmFieldKind.Int64 or UhdmFieldKind.UInt64 or UhdmFieldKind.UInt32 or UhdmFieldKind.UInt16;
+            int localSlot = isScalar ? scalarCount++ : refCount++;
             result[i] = new UhdmFieldSpec(
                 p[0],
-                (UhdmFieldKind)(byte)p[1][0],
+                kind,
                 int.Parse(p[2], CultureInfo.InvariantCulture),
-                uint.Parse(p[3], CultureInfo.InvariantCulture));
+                uint.Parse(p[3], CultureInfo.InvariantCulture),
+                localSlot,
+                isScalar);
         }
-        return result;
+        return (result, scalarCount, refCount);
     }
 
     private static Dictionary<int, int> ParseProps(string text)

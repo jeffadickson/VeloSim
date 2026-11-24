@@ -1,35 +1,30 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace VeloSim.Uhdm;
 
 /// <summary>
 /// Pure .NET 11 representation of any UHDM AST/elaborated node across all 208 concrete UHDM classes.
-/// Provides both VPI-compatible traversal (<see cref="One"/>, <see cref="Many"/>, <see cref="GetInt"/>,
-/// <see cref="GetString"/>) and direct named member access matching libuhdm's C++ API.
+/// Stores all scalar fields in a single flat unboxed <c>long[]</c> and all reference/string/list fields
+/// in a single flat <c>object?[]</c>, with O(1) <c>FrozenDictionary</c> VPI dispatch and direct hot-slot accessors.
 /// </summary>
 public sealed class UhdmNode
 {
     private readonly UhdmClassSpec spec;
-    private readonly UhdmClassSpec[] chain; // [0] = concrete class, [^1] = highest base below Any
-    private readonly object?[][] levelValues;
+    private readonly long[] scalars;
+    private readonly object?[] refs;
 
     internal UhdmNode(UhdmClassSpec spec, ulong uhdmId)
     {
         this.spec = spec;
         UhdmId = uhdmId;
-
-        var list = new List<UhdmClassSpec>(6);
-        for (var cur = spec; cur is not null; cur = cur.BaseClass)
-            list.Add(cur);
-        chain = list.ToArray();
-        levelValues = new object?[chain.Length][];
-        for (int i = 0; i < chain.Length; i++)
-            levelValues[i] = new object?[chain[i].Fields.Length];
+        scalars = spec.TotalScalarSlots > 0 ? new long[spec.TotalScalarSlots] : [];
+        refs = spec.TotalRefSlots > 0 ? new object?[spec.TotalRefSlots] : [];
     }
 
     internal UhdmClassSpec Spec => spec;
-    internal UhdmClassSpec[] Chain => chain;
-    internal object?[][] LevelValues => levelValues;
+    internal long[] Scalars => scalars;
+    internal object?[] Refs => refs;
 
     public UhdmObjectType ObjectType => (UhdmObjectType)spec.UhdmType;
     public int VpiType => spec.VpiType;
@@ -42,32 +37,47 @@ public sealed class UhdmNode
     public ushort ColumnNo { get; set; }
     public ushort EndColumnNo { get; set; }
 
-    public string Name => GetString(UhdmVpi.VpiName);
-    public string DefName => GetString(UhdmVpi.VpiDefName);
+    public string Name
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            int slot = spec.NameRefSlot;
+            return slot >= 0 ? refs[slot] as string ?? string.Empty : string.Empty;
+        }
+    }
+
+    public string DefName
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            int slot = spec.DefNameRefSlot;
+            return slot >= 0 ? refs[slot] as string ?? string.Empty : string.Empty;
+        }
+    }
+
     public string FullName => GetString(UhdmVpi.VpiFullName);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public UhdmNode? One(int vpiRelation)
     {
         if (vpiRelation == UhdmVpi.VpiParent)
             return Parent;
-        for (int i = 0; i < chain.Length; i++)
-        {
-            if (chain[i].VpiRelationFieldIndex.TryGetValue(vpiRelation, out var pair) && pair.SingleFieldIndex >= 0)
-                return levelValues[i][pair.SingleFieldIndex] as UhdmNode;
-        }
-        return null;
+        return spec.FlatVpiRelations.TryGetValue(vpiRelation, out var pair) && pair.SingleRefSlot >= 0
+            ? refs[pair.SingleRefSlot] as UhdmNode
+            : null;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public IReadOnlyList<UhdmNode> Many(int vpiRelation)
     {
-        for (int i = 0; i < chain.Length; i++)
-        {
-            if (chain[i].VpiRelationFieldIndex.TryGetValue(vpiRelation, out var pair) && pair.VectorFieldIndex >= 0)
-                return levelValues[i][pair.VectorFieldIndex] as List<UhdmNode> ?? (IReadOnlyList<UhdmNode>)[];
-        }
-        return [];
+        return spec.FlatVpiRelations.TryGetValue(vpiRelation, out var pair) && pair.VecRefSlot >= 0
+            ? refs[pair.VecRefSlot] as List<UhdmNode> ?? (IReadOnlyList<UhdmNode>)[]
+            : [];
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public long GetInt(int vpiProperty)
     {
         switch (vpiProperty)
@@ -78,130 +88,80 @@ public sealed class UhdmNode
             case UhdmVpi.VpiEndLineNo: return EndLineNo;
             case UhdmVpi.VpiEndColumnNo: return EndColumnNo;
         }
-        for (int i = 0; i < chain.Length; i++)
-        {
-            if (chain[i].VpiPropertyFieldIndex.TryGetValue(vpiProperty, out int fieldIdx))
-            {
-                return levelValues[i][fieldIdx] switch
-                {
-                    bool b => b ? 1L : 0L,
-                    long l => l,
-                    ulong u => unchecked((long)u),
-                    uint u32 => u32,
-                    ushort u16 => u16,
-                    _ => 0L,
-                };
-            }
-        }
-        return 0L;
+        return spec.FlatVpiProperties.TryGetValue(vpiProperty, out var b) && b.IsScalar
+            ? scalars[b.Slot]
+            : 0L;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool GetBool(int vpiProperty) => GetInt(vpiProperty) != 0;
 
     public string GetString(int vpiProperty)
     {
         if (vpiProperty == UhdmVpi.VpiFile)
             return File;
-        for (int i = 0; i < chain.Length; i++)
+        if (vpiProperty == UhdmVpi.VpiName)
+            return Name;
+        if (vpiProperty == UhdmVpi.VpiDefName)
+            return DefName;
+        if (vpiProperty == UhdmVpi.VpiFullName)
         {
-            if (chain[i].VpiPropertyFieldIndex.TryGetValue(vpiProperty, out int fieldIdx))
-            {
-                string value = levelValues[i][fieldIdx] as string ?? string.Empty;
-                if (vpiProperty == UhdmVpi.VpiFullName)
-                {
-                    if (value.Length == 0)
-                        value = ComputeFullName();
-                    string localName = GetString(UhdmVpi.VpiName);
-                    return value.Length > 0 && value != localName ? value : string.Empty;
-                }
-                return value;
-            }
+            int slot = spec.FullNameRefSlot;
+            if (slot < 0) return string.Empty;
+            string value = refs[slot] as string ?? string.Empty;
+            if (value.Length == 0) value = ComputeFullName();
+            string localName = Name;
+            return value.Length > 0 && value != localName ? value : string.Empty;
         }
-        return string.Empty;
+        return spec.FlatVpiProperties.TryGetValue(vpiProperty, out var b) && !b.IsScalar
+            ? refs[b.Slot] as string ?? string.Empty
+            : string.Empty;
     }
 
     /// <summary>Direct named field read (matches UHDM C++ direct accessors like VpiValue, VpiDelay, VpiTagged, VpiTimeUnit).</summary>
-    public string GetFieldString(string fieldName)
-    {
-        for (int i = 0; i < chain.Length; i++)
-        {
-            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
-                return levelValues[i][idx] as string ?? string.Empty;
-        }
-        return string.Empty;
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public string GetFieldString(string fieldName) =>
+        spec.FlatFieldsByName.TryGetValue(fieldName, out var b) && !b.IsScalar
+            ? refs[b.Slot] as string ?? string.Empty
+            : string.Empty;
 
-    public long GetFieldInt(string fieldName)
-    {
-        for (int i = 0; i < chain.Length; i++)
-        {
-            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
-            {
-                return levelValues[i][idx] switch
-                {
-                    bool b => b ? 1L : 0L,
-                    long l => l,
-                    ulong u => unchecked((long)u),
-                    uint u32 => u32,
-                    ushort u16 => u16,
-                    _ => 0L,
-                };
-            }
-        }
-        return 0L;
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public long GetFieldInt(string fieldName) =>
+        spec.FlatFieldsByName.TryGetValue(fieldName, out var b) && b.IsScalar
+            ? scalars[b.Slot]
+            : 0L;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool GetFieldBool(string fieldName) => GetFieldInt(fieldName) != 0;
 
-    public UhdmNode? GetFieldRef(string fieldName)
-    {
-        for (int i = 0; i < chain.Length; i++)
-        {
-            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
-                return levelValues[i][idx] as UhdmNode;
-        }
-        return null;
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public UhdmNode? GetFieldRef(string fieldName) =>
+        spec.FlatFieldsByName.TryGetValue(fieldName, out var b) && !b.IsScalar
+            ? refs[b.Slot] as UhdmNode
+            : null;
 
-    public IReadOnlyList<UhdmNode> GetFieldList(string fieldName)
-    {
-        for (int i = 0; i < chain.Length; i++)
-        {
-            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
-                return levelValues[i][idx] as List<UhdmNode> ?? (IReadOnlyList<UhdmNode>)[];
-        }
-        return [];
-    }
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public IReadOnlyList<UhdmNode> GetFieldList(string fieldName) =>
+        spec.FlatFieldsByName.TryGetValue(fieldName, out var b) && !b.IsScalar
+            ? refs[b.Slot] as List<UhdmNode> ?? (IReadOnlyList<UhdmNode>)[]
+            : [];
 
     public UhdmNode SetString(string fieldName, string value)
     {
-        for (int i = 0; i < chain.Length; i++)
+        if (spec.FlatFieldsByName.TryGetValue(fieldName, out var b) && b.Kind == UhdmFieldKind.Symbol)
         {
-            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
-            {
-                levelValues[i][idx] = value;
-                return this;
-            }
+            refs[b.Slot] = value;
+            return this;
         }
         throw new ArgumentException($"UHDM class '{ClassName}' has no string field '{fieldName}'.", nameof(fieldName));
     }
 
     public UhdmNode SetInt(string fieldName, long value)
     {
-        for (int i = 0; i < chain.Length; i++)
+        if (spec.FlatFieldsByName.TryGetValue(fieldName, out var b) && b.IsScalar)
         {
-            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
-            {
-                levelValues[i][idx] = chain[i].Fields[idx].Kind switch
-                {
-                    UhdmFieldKind.Bool => value != 0,
-                    UhdmFieldKind.UInt64 => unchecked((ulong)value),
-                    UhdmFieldKind.UInt32 => unchecked((uint)value),
-                    UhdmFieldKind.UInt16 => unchecked((ushort)value),
-                    _ => value,
-                };
-                return this;
-            }
+            scalars[b.Slot] = b.Kind == UhdmFieldKind.Bool ? (value != 0 ? 1L : 0L) : value;
+            return this;
         }
         throw new ArgumentException($"UHDM class '{ClassName}' has no integer field '{fieldName}'.", nameof(fieldName));
     }
@@ -210,13 +170,10 @@ public sealed class UhdmNode
 
     public UhdmNode SetRef(string fieldName, UhdmNode? target)
     {
-        for (int i = 0; i < chain.Length; i++)
+        if (spec.FlatFieldsByName.TryGetValue(fieldName, out var b) && b.Kind is UhdmFieldKind.ObjRef or UhdmFieldKind.FactoryRef)
         {
-            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
-            {
-                levelValues[i][idx] = target;
-                return this;
-            }
+            refs[b.Slot] = target;
+            return this;
         }
         throw new ArgumentException($"UHDM class '{ClassName}' has no reference field '{fieldName}'.", nameof(fieldName));
     }
@@ -224,19 +181,16 @@ public sealed class UhdmNode
     public UhdmNode AddListRef(string fieldName, UhdmNode target)
     {
         ArgumentNullException.ThrowIfNull(target);
-        for (int i = 0; i < chain.Length; i++)
+        if (spec.FlatFieldsByName.TryGetValue(fieldName, out var b) && b.Kind is UhdmFieldKind.ObjList or UhdmFieldKind.FactoryList)
         {
-            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
+            var list = refs[b.Slot] as List<UhdmNode>;
+            if (list is null)
             {
-                var list = levelValues[i][idx] as List<UhdmNode>;
-                if (list is null)
-                {
-                    list = [];
-                    levelValues[i][idx] = list;
-                }
-                list.Add(target);
-                return this;
+                list = [];
+                refs[b.Slot] = list;
             }
+            list.Add(target);
+            return this;
         }
         throw new ArgumentException($"UHDM class '{ClassName}' has no list reference field '{fieldName}'.", nameof(fieldName));
     }
@@ -244,28 +198,24 @@ public sealed class UhdmNode
     /// <summary>Enumerates every child node across all reference and list-reference fields in the inheritance chain.</summary>
     internal IEnumerable<(string FieldName, UhdmNode Child)> EnumerateAllRelations()
     {
-        for (int i = chain.Length - 1; i >= 0; i--)
+        var relSlots = spec.AllRelationSlots;
+        for (int i = 0; i < relSlots.Length; i++)
         {
-            var fields = chain[i].Fields;
-            var values = levelValues[i];
-            for (int f = 0; f < fields.Length; f++)
+            var rel = relSlots[i];
+            object? val = refs[rel.RefSlot];
+            if (val is null) continue;
+            if (!rel.IsList)
             {
-                var kind = fields[f].Kind;
-                if (kind is UhdmFieldKind.ObjRef or UhdmFieldKind.FactoryRef)
+                yield return (rel.Name, (UhdmNode)val);
+            }
+            else
+            {
+                var children = (List<UhdmNode>)val;
+                for (int c = 0; c < children.Count; c++)
                 {
-                    if (values[f] is UhdmNode child)
-                        yield return (fields[f].Name, child);
-                }
-                else if (kind is UhdmFieldKind.ObjList or UhdmFieldKind.FactoryList)
-                {
-                    if (values[f] is List<UhdmNode> children)
-                    {
-                        foreach (var child in children)
-                        {
-                            if (child is not null)
-                                yield return (fields[f].Name, child);
-                        }
-                    }
+                    var child = children[c];
+                    if (child is not null)
+                        yield return (rel.Name, child);
                 }
             }
         }
@@ -362,36 +312,33 @@ public sealed class UhdmDatabase
             nextObjectId = root.ReadUInt32(4),
         };
 
-        // Load symbol table (index 0 is @@BAD_SYMBOL@@).
         var symbolList = root.ReadList(UhdmSchema.RootSymbolsPointerSlot);
         var symbols = new string[symbolList.Count];
         for (int i = 0; i < symbolList.Count; i++)
             symbols[i] = symbolList.ReadText(i);
 
         // Pass 1: Pre-allocate all concrete factory objects so forward/cyclic references resolve cleanly.
-        var factoryLists = new Dictionary<uint, CapnpList>();
-        foreach (var spec in UhdmSchema.ConcreteClasses)
+        var factoryLists = new List<(uint UhdmType, CapnpList List, List<UhdmNode> Nodes)>();
+        var concrete = UhdmSchema.ConcreteClasses;
+        for (int s = 0; s < concrete.Count; s++)
         {
+            var spec = concrete[s];
             if (spec.RootFactoryPointerSlot < 0) continue;
             var capList = root.ReadList(spec.RootFactoryPointerSlot);
             if (capList.Count == 0) continue;
-            factoryLists[spec.UhdmType] = capList;
             var nodes = new List<UhdmNode>(capList.Count);
             for (int i = 0; i < capList.Count; i++)
                 nodes.Add(new UhdmNode(spec, 0));
             db.factories[spec.UhdmType] = nodes;
+            factoryLists.Add((spec.UhdmType, capList, nodes));
         }
 
-        // Pass 2: Populate every object's Any base and inheritance chain fields.
-        foreach (var (uhdmType, capList) in factoryLists)
+        // Pass 2: Populate every object's flat unboxed scalar/ref arrays and Any metadata.
+        for (int f = 0; f < factoryLists.Count; f++)
         {
-            var nodes = db.factories[uhdmType];
+            var (_, capList, nodes) = factoryLists[f];
             for (int i = 0; i < capList.Count; i++)
-            {
-                var node = nodes[i];
-                var curStruct = capList.ReadStruct(i);
-                PopulateChain(db, symbols, node, curStruct);
-            }
+                PopulateChain(db, symbols, nodes[i], capList.ReadStruct(i));
         }
 
         return db;
@@ -400,45 +347,48 @@ public sealed class UhdmDatabase
     private static void PopulateChain(UhdmDatabase db, string[] symbols, UhdmNode node, CapnpStruct topStruct)
     {
         var cur = topStruct;
-        for (int level = 0; level < node.Chain.Length; level++)
+        var rootSpec = node.Spec;
+        var chain = rootSpec.Chain;
+        var scalarBases = rootSpec.LevelScalarBase;
+        var refBases = rootSpec.LevelRefBase;
+        var scalars = node.Scalars;
+        var refs = node.Refs;
+
+        for (int level = 0; level < chain.Length; level++)
         {
-            var spec = node.Chain[level];
-            var values = node.LevelValues[level];
-            for (int f = 0; f < spec.Fields.Length; f++)
+            var fields = chain[level].Fields;
+            int sBase = scalarBases[level];
+            int rBase = refBases[level];
+
+            for (int f = 0; f < fields.Length; f++)
             {
-                var field = spec.Fields[f];
+                var field = fields[f];
                 switch (field.Kind)
                 {
                     case UhdmFieldKind.Symbol:
-                        values[f] = ResolveSymbol(symbols, cur.ReadUInt64(field.Offset));
+                        refs[rBase + field.LocalSlot] = ResolveSymbol(symbols, cur.ReadUInt64(field.Offset));
                         break;
                     case UhdmFieldKind.Bool:
-                        values[f] = cur.ReadBool(field.Offset);
+                        scalars[sBase + field.LocalSlot] = cur.ReadBool(field.Offset) ? 1L : 0L;
                         break;
                     case UhdmFieldKind.Int64:
-                        values[f] = cur.ReadInt64(field.Offset);
+                        scalars[sBase + field.LocalSlot] = cur.ReadInt64(field.Offset);
                         break;
                     case UhdmFieldKind.UInt64:
-                        values[f] = cur.ReadUInt64(field.Offset);
+                        scalars[sBase + field.LocalSlot] = unchecked((long)cur.ReadUInt64(field.Offset));
                         break;
                     case UhdmFieldKind.UInt32:
-                        values[f] = cur.ReadUInt32(field.Offset);
+                        scalars[sBase + field.LocalSlot] = cur.ReadUInt32(field.Offset);
                         break;
                     case UhdmFieldKind.UInt16:
-                        values[f] = cur.ReadUInt16(field.Offset);
+                        scalars[sBase + field.LocalSlot] = cur.ReadUInt16(field.Offset);
                         break;
                     case UhdmFieldKind.ObjRef:
-                    {
-                        var idxStruct = cur.ReadStruct(field.Offset);
-                        values[f] = ResolveObjIndex(db, idxStruct);
+                        refs[rBase + field.LocalSlot] = ResolveObjIndex(db, cur.ReadStruct(field.Offset));
                         break;
-                    }
                     case UhdmFieldKind.FactoryRef:
-                    {
-                        ulong oneBased = cur.ReadUInt64(field.Offset);
-                        values[f] = ResolveFactoryIndex(db, field.TargetUhdmType, oneBased);
+                        refs[rBase + field.LocalSlot] = ResolveFactoryIndex(db, field.TargetUhdmType, cur.ReadUInt64(field.Offset));
                         break;
-                    }
                     case UhdmFieldKind.ObjList:
                     {
                         var list = cur.ReadList(field.Offset);
@@ -450,7 +400,7 @@ public sealed class UhdmDatabase
                                 var target = ResolveObjIndex(db, list.ReadStruct(k));
                                 if (target is not null) result.Add(target);
                             }
-                            values[f] = result;
+                            refs[rBase + field.LocalSlot] = result;
                         }
                         break;
                     }
@@ -465,17 +415,15 @@ public sealed class UhdmDatabase
                                 var target = ResolveFactoryIndex(db, field.TargetUhdmType, list.ReadUInt64(k));
                                 if (target is not null) result.Add(target);
                             }
-                            values[f] = result;
+                            refs[rBase + field.LocalSlot] = result;
                         }
                         break;
                     }
                 }
             }
-            // Pointer slot 0 in every non-Any UHDM struct is always `base @0 : Basename;`.
             cur = cur.ReadStruct(0);
         }
 
-        // Now `cur` is the `Any` struct at the bottom of the inheritance chain.
         if (!cur.IsNull)
         {
             node.UhdmId = cur.ReadUInt64(UhdmSchema.AnyUhdmIdByteOffset);
@@ -488,13 +436,15 @@ public sealed class UhdmDatabase
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static string ResolveSymbol(string[] symbols, ulong rawId)
     {
         if (rawId == 0 || rawId >= (ulong)symbols.Length) return string.Empty;
         string s = symbols[(int)rawId];
-        return s == BadSymbol ? string.Empty : s;
+        return ReferenceEquals(s, BadSymbol) || s == BadSymbol ? string.Empty : s;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static UhdmNode? ResolveObjIndex(UhdmDatabase db, CapnpStruct objIndex)
     {
         if (objIndex.IsNull) return null;
@@ -504,6 +454,7 @@ public sealed class UhdmDatabase
         return ResolveFactoryIndex(db, type, oneBased);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static UhdmNode? ResolveFactoryIndex(UhdmDatabase db, uint uhdmType, ulong oneBased)
     {
         if (oneBased == 0) return null;
@@ -537,7 +488,6 @@ public sealed class UhdmDatabase
             return id;
         }
 
-        // Map every node to its 1-based factory index.
         var nodeIndex = new Dictionary<UhdmNode, ulong>(ReferenceEqualityComparer.Instance);
         foreach (var (_, list) in factories)
         {
@@ -550,7 +500,6 @@ public sealed class UhdmDatabase
         writer.SetUInt32(rootStart, 0, Version);
         writer.SetUInt32(rootStart, 4, (uint)nextObjectId);
 
-        // Write every non-empty factory list.
         foreach (var spec in UhdmSchema.ConcreteClasses)
         {
             if (spec.RootFactoryPointerSlot < 0) continue;
@@ -560,12 +509,9 @@ public sealed class UhdmDatabase
             int firstElemWord = writer.AllocateCompositeStructList(listPtrWord, list.Count, spec.DataWords, spec.PointerCount);
             int stride = spec.DataWords + spec.PointerCount;
             for (int i = 0; i < list.Count; i++)
-            {
                 WriteNodeChain(writer, list[i], firstElemWord + i * stride, Intern, nodeIndex);
-            }
         }
 
-        // Write symbol table last (after all strings have been interned).
         int symPtrWord = rootStart + UhdmSchema.RootDataWords + UhdmSchema.RootSymbolsPointerSlot;
         int symListStart = writer.AllocatePointerList(symPtrWord, symbolList.Count);
         for (int i = 0; i < symbolList.Count; i++)
@@ -578,37 +524,46 @@ public sealed class UhdmDatabase
         Func<string?, ulong> intern, Dictionary<UhdmNode, ulong> nodeIndex)
     {
         int curStart = structStartWord;
-        for (int level = 0; level < node.Chain.Length; level++)
+        var rootSpec = node.Spec;
+        var chain = rootSpec.Chain;
+        var scalarBases = rootSpec.LevelScalarBase;
+        var refBases = rootSpec.LevelRefBase;
+        var scalars = node.Scalars;
+        var refs = node.Refs;
+
+        for (int level = 0; level < chain.Length; level++)
         {
-            var spec = node.Chain[level];
-            var values = node.LevelValues[level];
+            var spec = chain[level];
+            var fields = spec.Fields;
+            int sBase = scalarBases[level];
+            int rBase = refBases[level];
             int ptrBase = curStart + spec.DataWords;
 
-            for (int f = 0; f < spec.Fields.Length; f++)
+            for (int f = 0; f < fields.Length; f++)
             {
-                var field = spec.Fields[f];
-                object? val = values[f];
+                var field = fields[f];
+                if (field.IsScalar)
+                {
+                    long sv = scalars[sBase + field.LocalSlot];
+                    if (sv == 0) continue;
+                    switch (field.Kind)
+                    {
+                        case UhdmFieldKind.Bool: writer.SetBool(curStart, field.Offset, true); break;
+                        case UhdmFieldKind.Int64: writer.SetInt64(curStart, field.Offset, sv); break;
+                        case UhdmFieldKind.UInt64: writer.SetUInt64(curStart, field.Offset, unchecked((ulong)sv)); break;
+                        case UhdmFieldKind.UInt32: writer.SetUInt32(curStart, field.Offset, unchecked((uint)sv)); break;
+                        case UhdmFieldKind.UInt16: writer.SetUInt16(curStart, field.Offset, unchecked((ushort)sv)); break;
+                    }
+                    continue;
+                }
+
+                object? val = refs[rBase + field.LocalSlot];
                 if (val is null) continue;
 
                 switch (field.Kind)
                 {
                     case UhdmFieldKind.Symbol:
                         writer.SetUInt64(curStart, field.Offset, intern((string)val));
-                        break;
-                    case UhdmFieldKind.Bool:
-                        writer.SetBool(curStart, field.Offset, (bool)val);
-                        break;
-                    case UhdmFieldKind.Int64:
-                        writer.SetInt64(curStart, field.Offset, (long)val);
-                        break;
-                    case UhdmFieldKind.UInt64:
-                        writer.SetUInt64(curStart, field.Offset, (ulong)val);
-                        break;
-                    case UhdmFieldKind.UInt32:
-                        writer.SetUInt32(curStart, field.Offset, (uint)val);
-                        break;
-                    case UhdmFieldKind.UInt16:
-                        writer.SetUInt16(curStart, field.Offset, (ushort)val);
                         break;
                     case UhdmFieldKind.ObjRef:
                     {
@@ -662,15 +617,13 @@ public sealed class UhdmDatabase
                 }
             }
 
-            // Allocate next level (`base @0`) at pointer slot 0.
-            if (level + 1 < node.Chain.Length)
+            if (level + 1 < chain.Length)
             {
-                var nextSpec = node.Chain[level + 1];
+                var nextSpec = chain[level + 1];
                 curStart = writer.AllocateStruct(ptrBase, nextSpec.DataWords, nextSpec.PointerCount);
             }
             else
             {
-                // Allocate `Any` struct at pointer slot 0.
                 int anyStart = writer.AllocateStruct(ptrBase, UhdmSchema.AnyDataWords, UhdmSchema.AnyPointerCount);
                 writer.SetUInt64(anyStart, UhdmSchema.AnyUhdmIdByteOffset, node.UhdmId);
                 writer.SetUInt64(anyStart, UhdmSchema.AnyVpiFileByteOffset, intern(node.File));

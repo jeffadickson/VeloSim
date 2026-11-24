@@ -12,10 +12,7 @@ public sealed partial class UhdmRtlLowerer
     {
         if (TypeOf(h) != UhdmVpi.VpiConstant) return false;
         string text = h!.GetString(UhdmVpi.VpiDecompile);
-        if (text.Length == 0) return false;
-        foreach (char c in text)
-            if (c is not ((>= '0' and <= '9') or '_')) return false;
-        return true;
+        return text.Length > 0 && text.AsSpan().IndexOfAnyExcept(DecimalChars) < 0;
     }
 
     internal string ConstantBits(UhdmNode obj, bool plainDecimal = false)
