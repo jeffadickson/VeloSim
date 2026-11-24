@@ -68,7 +68,10 @@ public sealed class CounterDifferential(IProcessRunner? runner = null)
         var recording = new RecordingProcessRunner(runner ?? new ProcessRunner());
         var directory = Path.GetFullPath(outputDirectory); Directory.CreateDirectory(directory);
         var effectiveSurelog = ArtifactMetadata.ResolveExecutable(surelog ?? Environment.GetEnvironmentVariable("VELOSIM_SURELOG") ?? "surelog", directory) ?? surelog ?? Environment.GetEnvironmentVariable("VELOSIM_SURELOG") ?? "surelog";
-        var effectiveNormalizer = ArtifactMetadata.ResolveExecutable(normalizer ?? Environment.GetEnvironmentVariable("VELOSIM_UHDM_NORMALIZER") ?? "velosim-uhdm-normalize", directory) ?? normalizer ?? Environment.GetEnvironmentVariable("VELOSIM_UHDM_NORMALIZER") ?? "velosim-uhdm-normalize";
+        string? envNormalizer = Environment.GetEnvironmentVariable("VELOSIM_UHDM_NORMALIZER");
+        string requestedNormalizer = normalizer ?? envNormalizer ?? "velosim-uhdm-normalize";
+        string? resolvedNormalizer = DesignPipeline.IsBuiltinUhdmTool(requestedNormalizer) ? "builtin" : ArtifactMetadata.ResolveExecutable(requestedNormalizer, directory);
+        var effectiveNormalizer = resolvedNormalizer ?? (runner is null && normalizer is null && envNormalizer is null ? "builtin" : requestedNormalizer);
         var requiredTools = new List<string>(); if (engines.Contains("icarus")) requiredTools.AddRange(["iverilog", "vvp"]); if (engines.Contains("verilator")) requiredTools.AddRange(["verilator", "cmake", "ninja", "c++"]);
         var tools = requiredTools.ToDictionary(tool => tool, tool => ArtifactMetadata.ResolveExecutable(toolchainPaths?.GetValueOrDefault(tool) ?? tool, directory) ?? toolchainPaths?.GetValueOrDefault(tool) ?? tool);
         var tb = Path.Combine(directory, "reference.sv"); var stimulus = Path.Combine(directory, "stimulus.txt");

@@ -97,12 +97,23 @@ public sealed class FifoDifferential(IProcessRunner? runner = null)
     {
         if (!RtlDesign.Identifier(top) || jobs is < 1 or > 256 || workers.Count is < 1 or > 16 || workers.Distinct().Count() != workers.Count || workers.Any(w => w is < 1 or > 256) || randomCycles is < 0 or > 10000) throw new ArgumentException("Invalid FIFO workflow arguments.");
         cancellationToken.ThrowIfCancellationRequested(); var output = WordEvidenceLimits.FreshOutput(outputDirectory); Directory.CreateDirectory(output); source = Path.GetFullPath(source);
-        exporter = ArtifactMetadata.ResolveExecutable(exporter ?? Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL") ?? "velosim-uhdm-rtl", Environment.CurrentDirectory) ?? exporter;
+        string? explicitExporter = exporter;
+        string? envExporter = Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL");
+        string requestedExporter = exporter ?? envExporter ?? "velosim-uhdm-rtl";
+        exporter = DesignPipeline.IsBuiltinUhdmTool(requestedExporter)
+            ? "builtin"
+            : ArtifactMetadata.ResolveExecutable(requestedExporter, Environment.CurrentDirectory) ?? exporter;
         if (surelog is not null) surelog = ArtifactMetadata.ResolveExecutable(surelog, Environment.CurrentDirectory) ?? surelog;
         var recording = new RecordingProcessRunner(runner ?? new ProcessRunner()); var sourceHashes = ArtifactMetadata.SourceClosure([source]);
         async Task<ProcessResult> Run(string exe, IReadOnlyList<string> args, string cwd) { var result = await recording.RunAsync(exe, args, cwd, Deadline, cancellationToken).ConfigureAwait(false); if (result.ExitCode != 0) throw new IOException($"{exe} failed ({result.ExitCode}): {result.StandardError}"); return result; }
         var elaboration = await new SurelogFrontend(recording).ElaborateAsync([source], Path.Combine(output, "surelog"), top, surelog, jobs, cancellationToken: cancellationToken).ConfigureAwait(false);
-        var irPath = Path.Combine(output, "design.rtl.json"); await Run(exporter ?? Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL") ?? "velosim-uhdm-rtl", [elaboration.UhdmPath, irPath, top], output).ConfigureAwait(false);
+        var irPath = Path.Combine(output, "design.rtl.json");
+        bool useBuiltin = DesignPipeline.IsBuiltinUhdmTool(exporter)
+            || (runner is null && explicitExporter is null && envExporter is null && ArtifactMetadata.ResolveExecutable(requestedExporter, output) is null);
+        if (useBuiltin)
+            Uhdm.UhdmRtlLowerer.LowerFileTo(elaboration.UhdmPath, irPath, top);
+        else
+            await Run(exporter ?? requestedExporter, [elaboration.UhdmPath, irPath, top], output).ConfigureAwait(false);
         var design = RtlDesign.Parse(await File.ReadAllTextAsync(irPath, cancellationToken).ConfigureAwait(false)); ValidateInterface(design); int width = design.Signals[design.SignalId("din")].Width, depth = design.Memories[0].Depth;
         var drives = FifoStimulus.Generate(width, depth, seed, randomCycles); var nativeDir = Path.Combine(output, "native"); Directory.CreateDirectory(nativeDir);
         var runtime = FindRuntime(); File.Copy(runtime, Path.Combine(nativeDir, "runtime.h")); await File.WriteAllTextAsync(Path.Combine(nativeDir, "design.cpp"), design.EmitCpp(), cancellationToken).ConfigureAwait(false);

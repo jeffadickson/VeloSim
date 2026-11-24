@@ -16,8 +16,10 @@ public sealed partial class DesignPipeline
         if (sources.Count == 0 || sources.Any(string.IsNullOrWhiteSpace)) throw new ArgumentException("Source files required.");
         if (workers is < 1 or > 256) throw new ArgumentOutOfRangeException(nameof(workers));
         string Tool(string command) => command.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0 ? Path.GetFullPath(command) : command;
+        string? envExporter = Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL");
+        string? explicitExporter = exporter;
         surelog = Tool(surelog ?? Environment.GetEnvironmentVariable("VELOSIM_SURELOG") ?? "surelog");
-        exporter = Tool(exporter ?? Environment.GetEnvironmentVariable("VELOSIM_UHDM_RTL") ?? "velosim-uhdm-rtl");
+        exporter = Tool(exporter ?? envExporter ?? "velosim-uhdm-rtl");
         var explicitSources = sources.Select(Path.GetFullPath).ToArray();
         var inputs = ArtifactMetadata.SourceClosure(explicitSources);
         string directory = Path.GetFullPath(outputDirectory);
@@ -30,9 +32,19 @@ public sealed partial class DesignPipeline
         string pendingManifest = Path.Combine(directory, "compile-rtl.pending.json");
         var elaboration = await new SurelogFrontend(runner).ElaborateAsync(explicitSources,
             Path.Combine(directory, "surelog"), top, surelog, workers, timeout: timeout, cancellationToken: cancellationToken).ConfigureAwait(false);
-        var result = await runner.RunAsync(exporter, [elaboration.UhdmPath, pending, top], directory,
-            timeout ?? TimeSpan.FromMinutes(3), cancellationToken).ConfigureAwait(false);
-        if (result.ExitCode != 0) throw new InvalidOperationException($"Structural UHDM exporter failed ({result.ExitCode}): {result.StandardError}\n{result.StandardOutput}");
+        bool useBuiltin = IsBuiltinUhdmTool(exporter)
+            || (!customRunner && explicitExporter is null && envExporter is null && ArtifactMetadata.ResolveExecutable(exporter, directory) is null);
+        if (useBuiltin)
+        {
+            exporter = "builtin";
+            Uhdm.UhdmRtlLowerer.LowerFileTo(elaboration.UhdmPath, pending, top);
+        }
+        else
+        {
+            var result = await runner.RunAsync(exporter, [elaboration.UhdmPath, pending, top], directory,
+                timeout ?? TimeSpan.FromMinutes(3), cancellationToken).ConfigureAwait(false);
+            if (result.ExitCode != 0) throw new InvalidOperationException($"Structural UHDM exporter failed ({result.ExitCode}): {result.StandardError}\n{result.StandardOutput}");
+        }
         if (!File.Exists(pending)) throw new IOException("Structural exporter did not produce output.");
         if (new FileInfo(pending).Length > 4 * 1024 * 1024) throw new IrValidationException("Structural output exceeds 4 MiB.");
         byte[] bytes = await File.ReadAllBytesAsync(pending, cancellationToken).ConfigureAwait(false);

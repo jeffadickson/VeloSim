@@ -1788,4 +1788,41 @@ RELATIONS:
 - TYPE: File
   VALUE: docs/target-parity-matrix.md
 
-
+[REQUIREMENT]
+UID: VS-UHDM-NET11-001
+STATUS: Implemented
+TITLE: Pure .NET 11 / C# 15 UHDM Cap'n Proto binary reader, inspector, normalizer, executable audit, and structural RTL lowerer
+STATEMENT: >>>
+VeloSim shall provide a zero-dependency, zero-unsafe, NativeAOT-clean .NET 11 / C# 15 port of the entire native/uhdm/ C++ layer under src/VeloSim.Core/Uhdm/, including a standard Cap'n Proto packed binary wire codec, schema metadata for all 231 pinned UHDM classes (208 concrete factories), VPI-compatible UHDM graph traversal, velosim.uhdm.inventory.v1 inspection (uhdm-inspect), velosim.uhdm.normalized.v1 counter normalization (uhdm-normalize), bounded executable audit (UhdmRtlAudit), and thread-safe velosim.rtl.v1 structural RTL lowering (uhdm-rtl). Output parity against native/uhdm/ C++ libuhdm binaries on real Surelog .uhdm files shall be verified in .github/workflows/differential.yml.
+<<<
+RELATIONS:
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/CapnpWire.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmVpi.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmSchema.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmGraph.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmInspector.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmNormalizer.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmRtlAudit.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmRtlLowerer.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmRtlLowerer.Constants.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmRtlLowerer.Types.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmRtlLowerer.Subroutines.cs
+- TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmRtlLowerer.Flatten.cs
+- TYPE: File
+  VALUE: tests/VeloSim.Tests/UhdmNet11PortTests.cs
+- TYPE: File
+  VALUE: docs/uhdm_bridge.md
+- TYPE: File
+  VALUE: .github/workflows/differential.yml
