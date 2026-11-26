@@ -124,7 +124,7 @@ public sealed class FifoDifferential(IProcessRunner? runner = null)
         await File.WriteAllLinesAsync(stimulus, drives.Select(d => string.Join(' ', design.Signals.Where(s => s.Direction == "input" && s.Name != design.Clock).Select(s => Value(d, s.Name)))), cancellationToken).ConfigureAwait(false);
         var tb = Path.Combine(output, "reference.sv"); await File.WriteAllTextAsync(tb, Testbench(design, top, drives), cancellationToken).ConfigureAwait(false);
         var traces = new Dictionary<string, IReadOnlyList<IReadOnlyDictionary<string, string>>>(StringComparer.Ordinal); var errors = new Dictionary<string, string>(StringComparer.Ordinal); var differences = new List<FifoDifference>(); var compilerTools = new List<FileFingerprint>(); var versions = new Dictionary<string, string>(StringComparer.Ordinal);
-        bool BackendFailure(Exception e) => e is IOException or ArgumentException or FormatException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception;
+        bool BackendFailure(Exception e) => e is IOException or InvalidDataException or ArgumentException or FormatException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception;
         try
         {
             await Run("cmake", ["-S", nativeDir, "-B", Path.Combine(nativeDir, "build"), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"], output).ConfigureAwait(false);

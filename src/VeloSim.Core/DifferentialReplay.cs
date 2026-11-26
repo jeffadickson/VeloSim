@@ -30,7 +30,8 @@ public static class DifferentialReplay
             var configuration = root.GetProperty("configuration"); JsonShape.Fields(configuration, ["top", "sources", "build_jobs", "surelog", "normalizer", "toolchain_paths"]);
             var top = configuration.GetProperty("top").GetString()!; var jobs = configuration.GetProperty("build_jobs").GetInt32();
             var surelog = configuration.GetProperty("surelog").GetString(); var normalizer = configuration.GetProperty("normalizer").GetString();
-            if (surelog is null || normalizer is null || !Path.IsPathRooted(surelog) || !Path.IsPathRooted(normalizer)) throw new IrValidationException("Replay requires effective absolute frontend tool paths.");
+            bool builtinNormalizer = DesignPipeline.IsBuiltinUhdmTool(normalizer);
+            if (surelog is null || normalizer is null || !Path.IsPathRooted(surelog) || (!builtinNormalizer && !Path.IsPathRooted(normalizer))) throw new IrValidationException("Replay requires effective absolute frontend tool paths.");
             var sources = configuration.GetProperty("sources").EnumerateArray().Select(e => e.GetString()!).ToArray();
             if (jobs is < 1 or > 256 || sources.Length == 0 || sources.Any(s => !Path.IsPathRooted(s))) throw new IrValidationException("Invalid replay source configuration.");
             CounterTestbench.Generate(top, width, [0]);
@@ -65,7 +66,7 @@ public static class DifferentialReplay
             }
             bool HasStage(string tool, Func<string[], bool> argumentsMatch) => binaryPaths.Contains(tool) && metadata.GetProperty("commands").EnumerateArray().Any(c => ArtifactMetadata.ResolveExecutable(c.GetProperty("executable").GetString()!, c.GetProperty("working_directory").GetString()) == tool && c.GetProperty("exit_code").ValueKind == JsonValueKind.Number && c.GetProperty("exit_code").GetInt32() == 0 && argumentsMatch(c.GetProperty("arguments").EnumerateArray().Select(a => a.GetString()!).ToArray()));
             bool Option(string[] arguments, string option, string value) { var index = Array.IndexOf(arguments, option); return index >= 0 && index + 1 < arguments.Length && arguments[index + 1] == value; }
-            if (!HasStage(surelog, a => a.Contains("-elabuhdm") && Option(a, "-mt", workers.ToString(System.Globalization.CultureInfo.InvariantCulture)) && Option(a, "-top", top) && sources.All(a.Contains)) || !HasStage(normalizer, a => a.Length == 3 && Path.GetFileName(a[1]) == "normalized.json" && a[2] == top)) throw new IrValidationException("Replay frontend configuration is not bound to successful fingerprinted stage commands.");
+            if (!HasStage(surelog, a => a.Contains("-elabuhdm") && Option(a, "-mt", workers.ToString(System.Globalization.CultureInfo.InvariantCulture)) && Option(a, "-top", top) && sources.All(a.Contains)) || (!builtinNormalizer && !HasStage(normalizer, a => a.Length == 3 && Path.GetFileName(a[1]) == "normalized.json" && a[2] == top))) throw new IrValidationException("Replay frontend configuration is not bound to successful fingerprinted stage commands.");
             var toolchain = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var tool in configuration.GetProperty("toolchain_paths").EnumerateObject())
             {

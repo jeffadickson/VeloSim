@@ -1,5 +1,5 @@
+using System.Globalization;
 using System.Text;
-using System.Text.Json;
 
 namespace VeloSim.Uhdm;
 
@@ -24,71 +24,82 @@ public static class UhdmInspector
         if (designs.Count == 0)
             throw new InvalidOperationException("empty UHDM design");
 
-        using var ms = new MemoryStream();
-        using (var w = new Utf8JsonWriter(ms))
+        var sb = new StringBuilder(1024);
+        sb.Append("{\"format\":\"velosim.uhdm.inventory.v1\",\"designs\":[");
+
+        int emitted = 0;
+        foreach (var design in designs)
         {
-            w.WriteStartObject();
-            w.WriteString("format", "velosim.uhdm.inventory.v1");
-            w.WriteStartArray("designs");
-
-            int emitted = 0;
-            foreach (var design in designs)
+            if (design.VpiType != UhdmVpi.VpiDesign) continue;
+            if (emitted > 0) sb.Append(',');
+            emitted++;
+            sb.Append("{\"name\":");
+            UhdmJson.AppendEscaped(sb, design.Name);
+            sb.Append(",\"top_modules\":[");
+            bool firstMod = true;
+            foreach (var mod in design.Many(UhdmVpi.UhdmtopModules))
             {
-                if (design.VpiType != UhdmVpi.VpiDesign) continue;
-                emitted++;
-                w.WriteStartObject();
-                w.WriteString("name", design.Name);
-                w.WriteStartArray("top_modules");
-                foreach (var mod in design.Many(UhdmVpi.UhdmtopModules))
-                    EmitModule(w, mod, 0);
-                w.WriteEndArray();
-                w.WriteEndObject();
+                if (!firstMod) sb.Append(',');
+                firstMod = false;
+                EmitModule(sb, mod, 0);
             }
-
-            if (emitted == 0)
-                throw new InvalidOperationException("empty UHDM design");
-
-            w.WriteEndArray();
-            w.WriteEndObject();
+            sb.Append("]}");
         }
-        return Encoding.UTF8.GetString(ms.ToArray()) + "\n";
+
+        if (emitted == 0)
+            throw new InvalidOperationException("empty UHDM design");
+
+        sb.Append("]}\n");
+        return sb.ToString();
     }
 
-    private static void EmitModule(Utf8JsonWriter w, UhdmNode mod, int depth)
+    private static void EmitModule(StringBuilder sb, UhdmNode mod, int depth)
     {
         if (depth > MaxModuleDepth)
             throw new InvalidOperationException("module hierarchy exceeds 128 levels");
 
-        w.WriteStartObject();
-        w.WriteString("name", mod.Name);
-        w.WriteString("definition", mod.DefName);
-        w.WriteStartArray("objects");
-        EmitCollection(w, mod, UhdmVpi.VpiNet, "nets");
-        EmitCollection(w, mod, UhdmVpi.VpiReg, "registers");
-        EmitCollection(w, mod, UhdmVpi.VpiVariables, "variables");
-        EmitCollection(w, mod, UhdmVpi.VpiProcess, "processes");
-        EmitCollection(w, mod, UhdmVpi.VpiContAssign, "continuous_assignments");
-        w.WriteEndArray();
+        sb.Append("{\"name\":");
+        UhdmJson.AppendEscaped(sb, mod.Name);
+        sb.Append(",\"definition\":");
+        UhdmJson.AppendEscaped(sb, mod.DefName);
+        sb.Append(",\"objects\":[");
+        bool firstObj = true;
+        EmitCollection(sb, mod, UhdmVpi.VpiNet, "nets", ref firstObj);
+        EmitCollection(sb, mod, UhdmVpi.VpiReg, "registers", ref firstObj);
+        EmitCollection(sb, mod, UhdmVpi.VpiVariables, "variables", ref firstObj);
+        EmitCollection(sb, mod, UhdmVpi.VpiProcess, "processes", ref firstObj);
+        EmitCollection(sb, mod, UhdmVpi.VpiContAssign, "continuous_assignments", ref firstObj);
+        sb.Append("],\"children\":[");
 
-        w.WriteStartArray("children");
+        bool firstChild = true;
         foreach (var child in mod.Many(UhdmVpi.VpiModule))
-            EmitModule(w, child, depth + 1);
-        w.WriteEndArray();
-        w.WriteEndObject();
+        {
+            if (!firstChild) sb.Append(',');
+            firstChild = false;
+            EmitModule(sb, child, depth + 1);
+        }
+        sb.Append("]}");
     }
 
-    private static void EmitCollection(Utf8JsonWriter w, UhdmNode parent, int relation, string label)
+    private static void EmitCollection(StringBuilder sb, UhdmNode parent, int relation, string label, ref bool firstObj)
     {
         foreach (var obj in parent.Many(relation))
         {
-            w.WriteStartObject();
-            w.WriteNumber("kind", obj.VpiType);
-            w.WriteString("name", obj.Name);
-            w.WriteString("file", obj.File);
-            w.WriteNumber("line", obj.LineNo);
-            w.WriteNumber("width", obj.GetInt(UhdmVpi.VpiSize));
-            w.WriteString("collection", label);
-            w.WriteEndObject();
+            if (!firstObj) sb.Append(',');
+            firstObj = false;
+            sb.Append("{\"kind\":")
+              .Append(obj.VpiType.ToString(CultureInfo.InvariantCulture))
+              .Append(",\"name\":");
+            UhdmJson.AppendEscaped(sb, obj.Name);
+            sb.Append(",\"file\":");
+            UhdmJson.AppendEscaped(sb, obj.File);
+            sb.Append(",\"line\":")
+              .Append(obj.LineNo.ToString(CultureInfo.InvariantCulture))
+              .Append(",\"width\":")
+              .Append(obj.GetInt(UhdmVpi.VpiSize).ToString(CultureInfo.InvariantCulture))
+              .Append(",\"collection\":");
+            UhdmJson.AppendEscaped(sb, label);
+            sb.Append('}');
         }
     }
 }

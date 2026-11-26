@@ -1105,8 +1105,444 @@ public sealed class UhdmNet11PortTests
         var taggedEx = Assert.Throws<InvalidOperationException>(() => lowerer.AggregateWidth(u, 0));
         Assert.That(taggedEx!.Message, Does.Contain("tagged unions"));
 
-        // 5. JsonEscape handles control characters cleanly
-        Assert.That(UhdmRtlLowerer.Q("a\"b\\c\n\r\t\b\f\u0001"), Is.EqualTo("\"a\\\"b\\\\c\\n\\r\\t\\b\\f\\u0001\""));
+        // 5. JsonEscape matches native/uhdm/json_escape.h byte-for-byte (including \u0008, \u000c, and verbatim +, ', <, >, &, UTF-8)
+        Assert.That(UhdmRtlLowerer.Q("a\"b\\c\n\r\t\b\f\u0001+<>'&μ"), Is.EqualTo("\"a\\\"b\\\\c\\n\\r\\t\\u0008\\u000c\\u0001+<>'&μ\""));
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. Regression tests for Cap'n Proto hardening, wire interop, parity,
+    //    thread-safety, normalizer edge cases, audit ordering, and CLI errors
+    // -------------------------------------------------------------------------
+
+    [Test]
+    public void CapnpMessageReader_RejectsZeroSizeListAmplification_BadDoubleFar_And_IntOverflow()
+    {
+        // 1. Zero-size composite list amplification attack: count = 10_000_000, dataWords=0, ptrCount=0
+        byte[] ampComposite = new byte[8 + 3 * 8];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(ampComposite.AsSpan(0, 4), 0); // 1 segment
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(ampComposite.AsSpan(4, 4), 3); // 3 words
+        // Word 0: root struct at word 1, dataWords=0, ptrCount=1
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(ampComposite.AsSpan(8, 8), 1UL << 48);
+        // Word 1 (ptr 0): list pointer to word 2 (offset=0), elementSize=7 (composite), wordCount=0
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(ampComposite.AsSpan(16, 8), 1UL | (7UL << 32));
+        // Word 2 (composite tag): struct tag with count = 10_000_000, dataWords=0, ptrCount=0
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(ampComposite.AsSpan(24, 8), (10_000_000UL << 2));
+        var ampReader = CapnpMessageReader.FromUnpacked(ampComposite, traversalLimitWords: 1000);
+        var ampRoot = ampReader.GetRootStruct();
+        var exComp = Assert.Throws<InvalidDataException>(() => ampRoot.ReadList(0));
+        Assert.That(exComp!.Message, Does.Contain("budget exceeded"));
+
+        // 2. Void list amplification attack: elementSize=0, elementCount=10_000_000
+        byte[] ampVoid = new byte[8 + 2 * 8];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(ampVoid.AsSpan(0, 4), 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(ampVoid.AsSpan(4, 4), 2);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(ampVoid.AsSpan(8, 8), 1UL << 48);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(ampVoid.AsSpan(16, 8), 1UL | (10_000_000UL << 35));
+        var voidReader = CapnpMessageReader.FromUnpacked(ampVoid, traversalLimitWords: 1000);
+        var voidRoot = voidReader.GetRootStruct();
+        var exVoid = Assert.Throws<InvalidDataException>(() => voidRoot.ReadList(0));
+        Assert.That(exVoid!.Message, Does.Contain("budget exceeded"));
+
+        // 3. Double-far pointer with out-of-range contentSegment must throw InvalidDataException (not IndexOutOfRangeException)
+        byte[] badSeg = new byte[16 + (1 + 2) * 8];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(badSeg.AsSpan(0, 4), 1); // 2 segments
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(badSeg.AsSpan(4, 4), 1);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(badSeg.AsSpan(8, 4), 2);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(badSeg.AsSpan(16, 8), 2UL | (1UL << 2) | (1UL << 32)); // double-far -> seg 1 word 0
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(badSeg.AsSpan(24, 8), 2UL | (99UL << 32)); // far -> seg 99 (OOB!)
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(badSeg.AsSpan(32, 8), 1UL << 32); // struct tag
+        var badSegReader = CapnpMessageReader.FromUnpacked(badSeg);
+        Assert.Throws<InvalidDataException>(() => badSegReader.GetRootStruct());
+
+        // 4. Double-far landing pad with non-zero tag offset must throw InvalidDataException
+        byte[] badTag = new byte[16 + (1 + 2) * 8];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(badTag.AsSpan(0, 4), 1);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(badTag.AsSpan(4, 4), 1);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(badTag.AsSpan(8, 4), 2);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(badTag.AsSpan(16, 8), 2UL | (1UL << 2) | (1UL << 32));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(badTag.AsSpan(24, 8), 2UL | (1UL << 32));
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(badTag.AsSpan(32, 8), (5UL << 2) | (1UL << 32)); // non-zero offset!
+        var badTagReader = CapnpMessageReader.FromUnpacked(badTag);
+        Assert.Throws<InvalidDataException>(() => badTagReader.GetRootStruct());
+
+        // 5. Huge positive struct offset that would overflow unchecked int32 addition must throw InvalidDataException
+        byte[] hugeOff = new byte[8 + 1 * 8];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(hugeOff.AsSpan(0, 4), 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(hugeOff.AsSpan(4, 4), 1);
+        ulong maxPosOffset = 0x1FFFFFFFUL; // signed +536_870_911
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(hugeOff.AsSpan(8, 8), (maxPosOffset << 2) | (0xFFFFUL << 32) | (0xFFFFUL << 48));
+        var hugeReader = CapnpMessageReader.FromUnpacked(hugeOff);
+        Assert.Throws<InvalidDataException>(() => hugeReader.GetRootStruct());
+    }
+
+    [Test]
+    public async Task ToolCli_ReturnsExitCode1_OnCorruptUhdmBinary()
+    {
+        string dir = TempDir();
+        try
+        {
+            string badPath = Path.Combine(dir, "corrupt.uhdm");
+            await File.WriteAllBytesAsync(badPath, [0x00]); // truncated Cap'n Proto stream -> InvalidDataException
+
+            foreach (string[] cmd in new[]
+            {
+                new[] { "uhdm-inspect", badPath },
+                new[] { "uhdm-normalize", badPath, "--top", "m", "--output", Path.Combine(dir, "n.json") },
+                new[] { "uhdm-rtl", badPath, "--top", "m", "--output", Path.Combine(dir, "r.json") },
+            })
+            {
+                using var sw = new StringWriter();
+                using var err = new StringWriter();
+                int rc = await ToolCli.RunAsync(cmd, sw, err);
+                Assert.That(rc, Is.EqualTo(1), $"Command {cmd[0]} should return exit code 1 on corrupt .uhdm");
+                Assert.That(err.ToString(), Does.Contain("Truncated"));
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public void UhdmDatabase_ToPackedBytes_PopulatesRootDesignsSlot0_And_PreservesNullObjListSlots()
+    {
+        var db = BuildCounterUhdm("slot0_test", 8);
+        var mod = db.Designs[0].Many(UhdmVpi.UhdmtopModules)[0];
+        var call = db.Create(UhdmObjectType.FuncCall).SetString("VpiName", "f");
+        var arg0 = MakeConst(db, 1, 8, "BIN:00000001");
+        var arg2 = MakeConst(db, 2, 8, "BIN:00000010");
+        call.AddListRefOrNull("Tf_call_args", arg0);
+        call.AddListRefOrNull("Tf_call_args", null);
+        call.AddListRefOrNull("Tf_call_args", arg2);
+        mod.AddListRef("Variables", call); // attach into graph so it serializes
+
+        byte[] packed = db.ToPackedBytes();
+
+        // Inspect raw Cap'n Proto root slot 0 (`designs @2 : List(Design)`) for libuhdm C++ interop.
+        var capReader = CapnpMessageReader.FromPacked(packed);
+        var root = capReader.GetRootStruct();
+        var rootDesigns = root.ReadList(UhdmSchema.RootDesignsPointerSlot);
+        Assert.That(rootDesigns.Count, Is.EqualTo(1));
+        var symList = root.ReadList(UhdmSchema.RootSymbolsPointerSlot);
+        ulong nameSymId = rootDesigns.ReadStruct(0).ReadUInt64(8); // Design.VpiName offset is 8
+        Assert.That(symList.ReadText((int)nameSymId), Is.EqualTo("slot0_test"));
+
+        // Verify null middle slot in ObjList round-trips without shifting positional indices.
+        var restored = UhdmDatabase.Load(packed);
+        var restoredCall = restored.GetFactory(UhdmObjectType.FuncCall)[0];
+        var withNulls = restoredCall.GetFieldListWithNulls("Tf_call_args");
+        Assert.That(withNulls.Count, Is.EqualTo(3));
+        Assert.That(withNulls[0], Is.Not.Null);
+        Assert.That(withNulls[1], Is.Null);
+        Assert.That(withNulls[2], Is.Not.Null);
+        // Public Many()/GetFieldList() continue returning only non-null items.
+        Assert.That(restoredCall.GetFieldList("Tf_call_args").Count, Is.EqualTo(2));
+        Assert.That(restoredCall.Many(UhdmVpi.VpiArgument).Count, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void UhdmInspector_And_Normalizer_MatchCppJsonEscape_ForHtmlAndNonAsciiChars()
+    {
+        var db = BuildCounterUhdm("c", 8);
+        var mod = db.Designs[0].Many(UhdmVpi.UhdmtopModules)[0];
+        mod.File = "dir/c++'test<1>&μ.sv";
+        foreach (var v in mod.Many(UhdmVpi.VpiVariables))
+            v.File = "dir/c++'test<1>&μ.sv";
+
+        string inv = UhdmInspector.Inspect(db);
+        Assert.That(inv, Does.Contain("\"dir/c++'test<1>&μ.sv\""));
+        Assert.That(inv, Does.Not.Contain("\\u002B"));
+        Assert.That(inv, Does.Not.Contain("\\u0027"));
+        Assert.That(inv, Does.Not.Contain("\\u003C"));
+
+        // Also test escaped identifier characters in Normalizer output
+        var db2 = BuildCounterUhdm("c", 8);
+        var mod2 = db2.Designs[0].Many(UhdmVpi.UhdmtopModules)[0];
+        var clkVar = mod2.Many(UhdmVpi.VpiVariables).Single(v => v.Name == "clk");
+        clkVar.SetString("VpiName", "clk+1");
+        mod2.Many(UhdmVpi.VpiPort).Single(p => p.Name == "clk").SetString("VpiName", "clk+1");
+        var evCtrl = mod2.Many(UhdmVpi.VpiProcess)[0].One(UhdmVpi.VpiStmt)!;
+        evCtrl.One(UhdmVpi.VpiCondition)!.Many(UhdmVpi.VpiOperand)[0].SetString("VpiName", "clk+1");
+        string norm = UhdmNormalizer.Normalize(db2, "c");
+        Assert.That(norm, Does.Contain("\"clk+1\""));
+        Assert.That(norm, Does.Not.Contain("\\u002B"));
+    }
+
+    [Test]
+    public void UhdmNormalizer_RejectsNonZeroNonOneIntegers_And_EvaluatesRegPackedAndRadixParams()
+    {
+        // 1. Unsized INT:2 as reset must be rejected (previously truncated to 1-bit "0"!)
+        var badReset = BuildCounterUhdm("c", 8);
+        var ifElse = badReset.Designs[0].Many(UhdmVpi.UhdmtopModules)[0].Many(UhdmVpi.VpiProcess)[0]
+            .One(UhdmVpi.VpiStmt)!.One(UhdmVpi.VpiStmt)!.Many(UhdmVpi.VpiStmt)[0];
+        ifElse.One(UhdmVpi.VpiStmt)!.SetRef("Rhs", MakeConst(badReset, 2, 0, "INT:2"));
+        Assert.Throws<InvalidOperationException>(() => UhdmNormalizer.Normalize(badReset, "c"));
+
+        // 2. Unsized INT:3 and INT:-1 as increment must be rejected (previously truncated to 1-bit "1"!)
+        foreach (string badVal in new[] { "INT:3", "INT:-1", "INT:5" })
+        {
+            var badInc = BuildCounterUhdm("c", 8);
+            var ie = badInc.Designs[0].Many(UhdmVpi.UhdmtopModules)[0].Many(UhdmVpi.VpiProcess)[0]
+                .One(UhdmVpi.VpiStmt)!.One(UhdmVpi.VpiStmt)!.Many(UhdmVpi.VpiStmt)[0];
+            var addOp = ie.One(UhdmVpi.VpiElseStmt)!.One(UhdmVpi.VpiRhs)!;
+            var countRef = addOp.Many(UhdmVpi.VpiOperand)[0];
+            var newAdd = MakeOp(badInc, UhdmVpi.VpiAddOp, countRef, MakeConst(badInc, 3, 0, badVal));
+            ie.One(UhdmVpi.VpiElseStmt)!.SetRef("Rhs", newAdd);
+            Assert.Throws<InvalidOperationException>(() => UhdmNormalizer.Normalize(badInc, "c"), $"Expected rejection for {badVal}");
+        }
+
+        // 3. Adversarial VpiSize must fail without OOM
+        var hugeSize = BuildCounterUhdm("c", 8);
+        var hugeIe = hugeSize.Designs[0].Many(UhdmVpi.UhdmtopModules)[0].Many(UhdmVpi.VpiProcess)[0]
+            .One(UhdmVpi.VpiStmt)!.One(UhdmVpi.VpiStmt)!.Many(UhdmVpi.VpiStmt)[0];
+        hugeIe.One(UhdmVpi.VpiStmt)!.SetRef("Rhs", MakeConst(hugeSize, 0, 1_000_000_000, "INT:0"));
+        Assert.Throws<InvalidOperationException>(() => UhdmNormalizer.Normalize(hugeSize, "c"));
+
+        // 4. Error ordering: empty database with empty top throws "expected one UHDM design" first
+        var emptyEx = Assert.Throws<InvalidOperationException>(() => UhdmNormalizer.Normalize(new UhdmDatabase(), ""));
+        Assert.That(emptyEx!.Message, Is.EqualTo("expected one UHDM design"));
+
+        // 5. Width evaluation: reg [7:0] via Left_expr/Right_expr, packed_array_typespec [1:0][3:0], Typedef_alias,
+        //    built-in byte_var/int_var, HEX/OCT/BIN/$clog2 parameter ranges, and fail-closed on struct/array_var
+        var wdb = new UhdmDatabase();
+        var m = wdb.Create(UhdmObjectType.ModuleInst).SetString("VpiName", "m");
+
+        // reg [7:0] r;
+        var regNode = wdb.Create(UhdmObjectType.Reg)
+            .SetRef("Left_expr", MakeConst(wdb, 7, 32))
+            .SetRef("Right_expr", MakeConst(wdb, 0, 32));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(regNode, m), Is.EqualTo(8));
+
+        // packed_array_typespec [1:0][3:0] -> 8
+        var innerTs = MakeLogicTypespec(wdb, 4);
+        var packedTs = wdb.Create(UhdmObjectType.PackedArrayTypespec)
+            .SetRef("Elem_typespec", MakeRefTypespec(wdb, innerTs));
+        packedTs.AddListRef("Ranges", wdb.Create(UhdmObjectType.Range)
+            .SetRef("Left_expr", MakeConst(wdb, 1, 32))
+            .SetRef("Right_expr", MakeConst(wdb, 0, 32)));
+        var packedVar = wdb.Create(UhdmObjectType.LogicVar)
+            .SetRef("Typespec", MakeRefTypespec(wdb, packedTs));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(packedVar, m), Is.EqualTo(8));
+
+        // Typedef_alias -> logic [15:0]
+        var aliasTs = wdb.Create(UhdmObjectType.LogicTypespec)
+            .SetRef("Typedef_alias", MakeLogicTypespec(wdb, 16));
+        var aliasVar = wdb.Create(UhdmObjectType.LogicVar)
+            .SetRef("Typespec", MakeRefTypespec(wdb, aliasTs));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(aliasVar, m), Is.EqualTo(16));
+
+        // Built-in fixed-width vars without Typespec
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(wdb.Create(UhdmObjectType.ByteVar), m), Is.EqualTo(8));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(wdb.Create(UhdmObjectType.IntVar), m), Is.EqualTo(32));
+
+        // Fail-closed on struct_typespec and unpacked array_var
+        var structVar = wdb.Create(UhdmObjectType.LogicVar)
+            .SetRef("Typespec", MakeRefTypespec(wdb, wdb.Create(UhdmObjectType.StructTypespec)));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(structVar, m), Is.EqualTo(0));
+        var arrVar = wdb.Create(UhdmObjectType.ArrayVar);
+        arrVar.AddListRef("Ranges", wdb.Create(UhdmObjectType.Range)
+            .SetRef("Left_expr", MakeConst(wdb, 7, 32)).SetRef("Right_expr", MakeConst(wdb, 0, 32)));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(arrVar, m), Is.EqualTo(0));
+
+        // Parameter with HEX:10 (16, NOT 10), OCT:10 (8), BIN:1000 (8), and $clog2(16) (4)
+        var pHex = wdb.Create(UhdmObjectType.Parameter).SetString("VpiName", "W_HEX").SetString("VpiValue", "HEX:10");
+        var pOct = wdb.Create(UhdmObjectType.Parameter).SetString("VpiName", "W_OCT").SetString("VpiValue", "OCT:10");
+        var pBin = wdb.Create(UhdmObjectType.Parameter).SetString("VpiName", "W_BIN").SetString("VpiValue", "BIN:1000");
+        UhdmNode VarWithParamWidth(UhdmNode paramExpr)
+        {
+            var ts = wdb.Create(UhdmObjectType.LogicTypespec);
+            ts.AddListRef("Ranges", wdb.Create(UhdmObjectType.Range)
+                .SetRef("Left_expr", MakeOp(wdb, UhdmVpi.VpiSubOp, paramExpr, MakeConst(wdb, 1, 32)))
+                .SetRef("Right_expr", MakeConst(wdb, 0, 32)));
+            return wdb.Create(UhdmObjectType.LogicVar).SetRef("Typespec", MakeRefTypespec(wdb, ts));
+        }
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(VarWithParamWidth(MakeRef(wdb, "W_HEX", pHex, m)), m), Is.EqualTo(16));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(VarWithParamWidth(MakeRef(wdb, "W_OCT", pOct, m)), m), Is.EqualTo(8));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(VarWithParamWidth(MakeRef(wdb, "W_BIN", pBin, m)), m), Is.EqualTo(8));
+
+        var clog2Call = wdb.Create(UhdmObjectType.SysFuncCall).SetString("VpiName", "$clog2");
+        clog2Call.AddListRef("Tf_call_args", MakeConst(wdb, 16, 32));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(VarWithParamWidth(clog2Call), m), Is.EqualTo(4));
+
+        // Malformed empty BIN: payload must return 0 cleanly (not throw ArgumentOutOfRangeException)
+        var badBinVar = VarWithParamWidth(MakeConst(wdb, 0, 32, "BIN:_"));
+        Assert.That(UhdmNormalizer.EvaluateSignalWidth(badBinVar, m), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void UhdmRtlAudit_ReportsEarlierConstructBeforePrimitives_MatchingUhdmListenerOrder()
+    {
+        var db = new UhdmDatabase();
+        var m = db.Create(UhdmObjectType.ModuleInst);
+        m.File = "order.sv";
+
+        var assertNode = db.Create(UhdmObjectType.AssertStmt);
+        assertNode.Parent = m; assertNode.LineNo = 4; assertNode.ColumnNo = 2;
+        m.AddListRef("Concurrent_assertions", assertNode); // base class `scope` relation visited before `module_inst.Primitives`
+
+        var gate = db.Create(UhdmObjectType.Gate);
+        gate.Parent = m; gate.LineNo = 9; gate.ColumnNo = 2;
+        m.AddListRef("Primitives", gate);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => new UhdmRtlAudit().Audit(m));
+        Assert.That(ex!.Message, Does.Contain("concurrent assertion").And.Contain("order.sv:4:2"));
+    }
+
+    [Test]
+    public async Task UhdmRtlLowerer_IsThreadSafeAndReadOnly_OnSharedDatabase_WithEnumAndValueParam()
+    {
+        var db = new UhdmDatabase();
+        var design = db.Create(UhdmObjectType.Design).SetString("VpiName", "par_top");
+        var top = db.Create(UhdmObjectType.ModuleInst).SetString("VpiName", "par_top").SetString("VpiDefName", "par_top");
+        top.Parent = design; top.File = "par.sv"; top.LineNo = 1;
+        design.AddListRef("TopModules", top);
+        design.AddListRef("AllModules", top);
+
+        // Parameter with VpiValue only (no ParamAssign Rhs -> exercises ParameterExpr VpiValue path)
+        var paramK = db.Create(UhdmObjectType.Parameter)
+            .SetString("VpiName", "K")
+            .SetString("VpiValue", "INT:5")
+            .SetRef("Typespec", MakeRefTypespec(db, MakeLogicTypespec(db, 8)));
+        paramK.Parent = top; paramK.File = "par.sv"; paramK.LineNo = 2; paramK.ColumnNo = 5;
+        top.AddListRef("Parameters", paramK);
+
+        var clk = MakeLogicVar(db, top, "clk", 1, file: "par.sv", line: 3);
+        var y = MakeLogicVar(db, top, "y", 8, file: "par.sv", line: 4);
+        top.AddListRef("Variables", clk);
+        top.AddListRef("Variables", y);
+        MakePort(db, top, "clk", UhdmVpi.VpiInput, clk);
+        MakePort(db, top, "y", UhdmVpi.VpiOutput, y);
+
+        var enumTs = db.Create(UhdmObjectType.EnumTypespec).SetRef("Base_typespec", MakeLogicTypespec(db, 8));
+        var enumC = db.Create(UhdmObjectType.EnumConst).SetString("VpiName", "E").SetInt("VpiSize", 8).SetString("VpiValue", "INT:3");
+        enumC.Parent = enumTs;
+
+        var kRef = MakeRef(db, "K", paramK, top);
+        kRef.File = "par.sv"; kRef.LineNo = 6; kRef.ColumnNo = 10;
+        var ev = db.Create(UhdmObjectType.EventControl)
+            .SetRef("VpiCondition", MakeOp(db, UhdmVpi.VpiPosedgeOp, MakeRef(db, "clk", clk, top)))
+            .SetRef("Stmt", db.Create(UhdmObjectType.Assignment).SetBool("VpiBlocking", false)
+                .SetRef("Lhs", MakeRef(db, "y", y, top))
+                .SetRef("Rhs", MakeOp(db, UhdmVpi.VpiAddOp, kRef, enumC)));
+        top.AddListRef("Process", db.Create(UhdmObjectType.Always).SetInt("VpiAlwaysType", UhdmVpi.VpiAlwaysFF).SetRef("Stmt", ev));
+
+        int constantsBefore = db.GetFactory(UhdmObjectType.Constant).Count;
+        var tasks = Enumerable.Range(0, 8)
+            .Select(_ => Task.Run(() => UhdmRtlLowerer.LowerDatabase(db, "par_top")))
+            .ToArray();
+        string[] results = await Task.WhenAll(tasks);
+
+        foreach (string r in results)
+            Assert.That(r, Is.EqualTo(results[0]));
+        Assert.That(results[0], Does.Contain("00000101")); // K = 5
+        Assert.That(results[0], Does.Contain("00000011")); // E = 3
+        Assert.That(db.GetFactory(UhdmObjectType.Constant).Count, Is.EqualTo(constantsBefore),
+            "Lowering must not mutate or leak nodes into shared UhdmDatabase");
+    }
+
+    [Test]
+    public void UhdmRtlLowerer_HandlesFunctionReturnInVariables_MultipleZeroIdLoops_And_NullCallArgSlot()
+    {
+        var db = new UhdmDatabase();
+        var design = db.Create(UhdmObjectType.Design).SetString("VpiName", "sub_edge");
+        var top = db.Create(UhdmObjectType.ModuleInst).SetString("VpiName", "sub_edge").SetString("VpiDefName", "sub_edge");
+        top.Parent = design; top.File = "sub_edge.sv"; top.LineNo = 1;
+        top.AddListRef("Attributes", db.Create(UhdmObjectType.Attribute).SetString("VpiName", "velosim frontend argument slots v4"));
+        design.AddListRef("TopModules", top);
+        design.AddListRef("AllModules", top);
+
+        var clk = MakeLogicVar(db, top, "clk", 1, file: "sub_edge.sv", line: 2);
+        var x = MakeLogicVar(db, top, "x", 8, file: "sub_edge.sv", line: 3);
+        var y = MakeLogicVar(db, top, "y", 8, file: "sub_edge.sv", line: 4);
+        top.AddListRef("Variables", clk);
+        top.AddListRef("Variables", x);
+        top.AddListRef("Variables", y);
+        MakePort(db, top, "clk", UhdmVpi.VpiInput, clk);
+        MakePort(db, top, "x", UhdmVpi.VpiInput, x);
+        MakePort(db, top, "y", UhdmVpi.VpiOutput, y);
+
+        var fn = db.Create(UhdmObjectType.Function).SetString("VpiName", "calc").SetBool("VpiAutomatic", true);
+        fn.Parent = top; fn.File = "sub_edge.sv"; fn.LineNo = 10;
+
+        // Return variable listed in BOTH VpiVariables AND VpiReturn (tests SortedDictionary $return precedence!)
+        var retVar = MakeLogicVar(db, fn, "calc", 8, file: "sub_edge.sv", line: 10);
+        fn.SetRef("Return", retVar);
+        fn.AddListRef("Variables", retVar);
+
+        var argA = MakeLogicVar(db, fn, "a", 8, file: "sub_edge.sv", line: 11);
+        var argB = MakeLogicVar(db, fn, "b", 8, file: "sub_edge.sv", line: 12);
+        argB.SetRef("Expr", MakeConst(db, 2, 8, "BIN:00000010"));
+        fn.AddListRef("Io_decls", db.Create(UhdmObjectType.IoDecl).SetString("VpiName", "a").SetInt("VpiDirection", UhdmVpi.VpiInput).SetRef("Expr", argA));
+        fn.AddListRef("Io_decls", db.Create(UhdmObjectType.IoDecl).SetString("VpiName", "b").SetInt("VpiDirection", UhdmVpi.VpiInput).SetRef("Expr", argB));
+
+        // Two distinct anonymous for-loop variables BOTH having UhdmId == 0 (tests monotonic loopVarCounter!)
+        var loopI = db.Create(UhdmObjectType.IntVar).SetString("VpiName", "i")
+            .SetRef("Typespec", MakeRefTypespec(db, db.Create(UhdmObjectType.IntTypespec).SetBool("VpiSigned", true)));
+        loopI.Parent = fn; loopI.UhdmId = 0; loopI.File = "sub_edge.sv"; loopI.LineNo = 14;
+        var loopJ = db.Create(UhdmObjectType.IntVar).SetString("VpiName", "j")
+            .SetRef("Typespec", MakeRefTypespec(db, db.Create(UhdmObjectType.IntTypespec).SetBool("VpiSigned", true)));
+        loopJ.Parent = fn; loopJ.UhdmId = 0; loopJ.File = "sub_edge.sv"; loopJ.LineNo = 15;
+
+        var body = db.Create(UhdmObjectType.Begin);
+        // Assign directly to `calc = a;` (via VpiVariables/Return)
+        body.AddListRef("Stmts", db.Create(UhdmObjectType.Assignment).SetBool("VpiBlocking", true)
+            .SetRef("Lhs", MakeRef(db, "calc", retVar, fn)).SetRef("Rhs", MakeRef(db, "a", argA, fn)));
+
+        UhdmNode MakeAddLoop(UhdmNode iv) => db.Create(UhdmObjectType.ForStmt)
+            .SetRef("VpiForInitStmt", db.Create(UhdmObjectType.Assignment).SetBool("VpiBlocking", true)
+                .SetRef("Lhs", iv).SetRef("Rhs", MakeConst(db, 0, 32, "INT:0", signed: true)))
+            .SetRef("VpiCondition", MakeOp(db, UhdmVpi.VpiLtOp, MakeRef(db, iv.Name, iv, fn), MakeConst(db, 2, 32, "INT:2", signed: true)))
+            .SetRef("VpiForIncStmt", MakeOp(db, UhdmVpi.VpiPostIncOp, MakeRef(db, iv.Name, iv, fn)))
+            .SetRef("VpiStmt", db.Create(UhdmObjectType.Assignment).SetBool("VpiBlocking", true)
+                .SetRef("Lhs", MakeRef(db, "calc", retVar, fn))
+                .SetRef("Rhs", MakeOp(db, UhdmVpi.VpiAddOp, MakeRef(db, "calc", retVar, fn), MakeRef(db, "b", argB, fn))));
+
+        body.AddListRef("Stmts", MakeAddLoop(loopI));
+        body.AddListRef("Stmts", MakeAddLoop(loopJ));
+        fn.SetRef("Stmt", body);
+        top.AddListRef("Task_funcs", fn);
+
+        // Call calc(x, null) to exercise null ObjIndexType slot round-trip into default arg `b = 2`
+        var call = db.Create(UhdmObjectType.FuncCall).SetString("VpiName", "calc").SetRef("Function", fn);
+        call.AddListRefOrNull("Tf_call_args", MakeRef(db, "x", x, top));
+        call.AddListRefOrNull("Tf_call_args", null);
+
+        var ev = db.Create(UhdmObjectType.EventControl)
+            .SetRef("VpiCondition", MakeOp(db, UhdmVpi.VpiPosedgeOp, MakeRef(db, "clk", clk, top)))
+            .SetRef("Stmt", db.Create(UhdmObjectType.Assignment).SetBool("VpiBlocking", false)
+                .SetRef("Lhs", MakeRef(db, "y", y, top)).SetRef("Rhs", call));
+        top.AddListRef("Process", db.Create(UhdmObjectType.Always).SetInt("VpiAlwaysType", UhdmVpi.VpiAlwaysFF).SetRef("Stmt", ev));
+
+        var restored = UhdmDatabase.Load(db.ToPackedBytes());
+        string rtlJson = UhdmRtlLowerer.LowerDatabase(restored, "sub_edge");
+        var rtl = RtlDesign.Parse(rtlJson);
+        Assert.That(rtl.Clock, Is.EqualTo("clk"));
+        Assert.That(rtlJson, Does.Contain("00000010")); // default arg b = 2 resolved via preserved null slot
+    }
+
+    [Test]
+    public void UhdmRtlLowerer_RejectsHighBit64Truncation_And_WideRangeIntegerAsInvalidOperation()
+    {
+        var db = new UhdmDatabase();
+        var lowerer = new UhdmRtlLowerer(db);
+
+        // VpiSize = (1L << 32) | 8 must NOT wrap to 8
+        var badWidthConst = db.Create(UhdmObjectType.Constant)
+            .SetInt("VpiSize", (1L << 32) | 8L)
+            .SetString("VpiValue", "BIN:00000001");
+        Assert.Throws<InvalidOperationException>(() => lowerer.ConstantBits(badWidthConst));
+
+        // 128-bit constant > 2^64 used as range bound must throw InvalidOperationException (not OverflowException)
+        var wideRange = db.Create(UhdmObjectType.Range)
+            .SetRef("Left_expr", MakeConst(db, 0, 128, "HEX:10000000000000000"))
+            .SetRef("Right_expr", MakeConst(db, 0, 32));
+        var wideTs = db.Create(UhdmObjectType.LogicTypespec);
+        wideTs.AddListRef("Ranges", wideRange);
+        var wideVar = db.Create(UhdmObjectType.LogicVar)
+            .SetString("VpiName", "w")
+            .SetRef("Typespec", MakeRefTypespec(db, wideTs));
+        Assert.Throws<InvalidOperationException>(() => lowerer.Width(wideVar));
     }
 
     private sealed class FakeSurelogRunner(string sourceUhdm) : IProcessRunner

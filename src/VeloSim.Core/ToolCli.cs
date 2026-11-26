@@ -10,7 +10,7 @@ public static class ToolCli
         using var capture = new ErrorCapture(); int result;
         try { cancellationToken.ThrowIfCancellationRequested(); if (CliOptions.TryHelp(args, output)) return 0; result = await RunCoreAsync(args, output, capture, runner, cancellationToken).ConfigureAwait(false); }
         catch (OperationCanceledException ex) { WriteError(capture, ex); result = 130; }
-        catch (Exception ex) when (ex is ArgumentException or FormatException or OverflowException or IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        catch (Exception ex) when (ex is ArgumentException or FormatException or OverflowException or IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
         { WriteError(capture, ex); result = 1; }
         if (result == 0) return 0;
         var message = capture.ToString().Trim(); if (message.Length == 0) message = result == 130 ? "Command canceled." : "Command completed with failing results.";
@@ -370,7 +370,7 @@ var options = CliOptions.Parse(args, 1);
                 : await pipeline.CompileAsync(sources, top, directory, surelog, normalizer, workers, cancellationToken: cancellationToken).ConfigureAwait(false));
             return 0;
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
+        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidDataException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
         { WriteError(error, ex); return 1; }
     }
     private static async Task WriteNewAsync(string path, string content, CancellationToken cancellationToken)

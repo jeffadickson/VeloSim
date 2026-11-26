@@ -1799,6 +1799,8 @@ RELATIONS:
 - TYPE: File
   VALUE: src/VeloSim.Core/Uhdm/CapnpWire.cs
 - TYPE: File
+  VALUE: src/VeloSim.Core/Uhdm/UhdmJson.cs
+- TYPE: File
   VALUE: src/VeloSim.Core/Uhdm/UhdmVpi.cs
 - TYPE: File
   VALUE: src/VeloSim.Core/Uhdm/UhdmSchema.cs

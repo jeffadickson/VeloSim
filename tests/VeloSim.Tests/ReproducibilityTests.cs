@@ -47,6 +47,14 @@ public class ReproducibilityTests
             Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate((report with { Configuration = report.Configuration! with { ToolchainPaths = new Dictionary<string, string> { ["iverilog"] = FalseExe, ["vvp"] = "/bin/echo" } } }).ToJson()));
             Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate(json.Replace("two_state_reference_not_four_state_conformance", "four_state_conformance")));
             Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate(json.Replace("\"differences\": []", "\"differences\": [{\"engines\":\"velosim:icarus\",\"cycle\":0,\"expected\":\"00000000\",\"actual\":\"00000001\"}]")));
+            Assert.Throws<IrValidationException>(() => DifferentialReplay.Validate((report with { Configuration = report.Configuration! with { Normalizer = "relative-tool" } }).ToJson()));
+            var builtinReport = report with
+            {
+                Configuration = report.Configuration! with { Normalizer = "builtin" },
+                Metadata = report.Metadata! with { Commands = report.Metadata.Commands.Where(c => !(c.Arguments.Count == 3 && Path.GetFileName(c.Arguments[1]) == "normalized.json")).ToArray() }
+            };
+            var builtinReplay = DifferentialReplay.Validate(builtinReport.ToJson());
+            Assert.That(builtinReplay.Configuration.Normalizer, Is.EqualTo("builtin"));
             File.AppendAllText(report.Configuration!.Sources[0], "//changed"); Assert.Throws<IOException>(() => DifferentialReplay.Validate(json));
         }
         finally { Directory.Delete(directory, true); }
