@@ -270,7 +270,7 @@ public static partial class SlangAstLowerer
         }
     }
 
-    private static string ResolveSlangExecutable(string? explicitPath)
+    internal static string ResolveSlangExecutable(string? explicitPath)
     {
         if (!string.IsNullOrWhiteSpace(explicitPath))
             return explicitPath;

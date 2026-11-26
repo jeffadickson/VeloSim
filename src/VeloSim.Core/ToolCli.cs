@@ -44,6 +44,8 @@ public static class ToolCli
             int lanes = options.Int("--lanes", 1);
             output.WriteLine(await RtlExternalSdk.ExportAsync(args[1], top, directory, cancellationToken, stateMode, target, limits, enableCoverage, threads, enableVpi, lanes).ConfigureAwait(false)); return 0;
         }
+        if (args.Length > 0 && args[0] is "lint" or "--lint-only")
+            return await RunLintAsync(args, output, runner, cancellationToken).ConfigureAwait(false);
         if (args.Length > 0 && args[0] == "slang-lower")
         {
             var options = CliOptions.Parse(args, 1);
@@ -373,6 +375,255 @@ var options = CliOptions.Parse(args, 1);
         catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception)
         { WriteError(error, ex); return 1; }
     }
+    private static async Task<int> RunLintAsync(string[] args, TextWriter output, IProcessRunner? runner, CancellationToken cancellationToken)
+    {
+        bool wall = false, werror = false, noFatal = false, slangOnly = false, largeDesign = false, jsonOutput = false, sarifOutput = false, listRules = false, noConfig = false, warnUnusedWaivers = false, stopOnPhaseError = false;
+        string? top = null, slangExe = null, astJsonPath = null, outputPath = null, configPath = null, baselinePath = null, writeBaselinePath = null, initConfigPath = null, sdcPath = null, dumpFsmPath = null, dumpCdcPath = null, emitCdcSvaPath = null;
+        LintProfile? profile = null;
+        IReadOnlySet<LintPhase>? phases = null;
+        LintGroupBy groupBy = LintGroupBy.None;
+        var enabledRules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var disabledRules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var errorRules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var includeDirs = new List<string>();
+        var defines = new List<string>();
+        var sources = new List<string>();
+
+        const string usage = "Usage: lint [<file.rtl.json|file.sv|file.uhdm> ... | --ast-json <ast.json>] [--top <module>] [--profile default|wall|signoff|fourstate|do254|starc|iso26262|lowrisc] [--phase rtl,fsm,cdc,style|all] [--stop-on-phase-error] [--sdc <file.sdc>] [--group-by none|rule|signal|file|phase] [--dump-fsm <path.json>] [--dump-cdc <path.json>] [--emit-cdc-sva <path.sv>] [--config <velosim-lint.json>|--no-config] [-Wall] [-Werror] [-Wno-fatal] [-W<RULE>] [-Wno-<RULE>] [-Werror-<RULE>] [--baseline <file>] [--write-baseline <file>] [--warn-unused-waivers] [--lint-only] [--slang-only] [--slang <path>] [-I <dir>] [-D <macro>] [--large-design] [--json|--sarif] [--output <path>] | lint --list-rules [--json] | lint --init-config <path>";
+
+        for (int i = 1; i < args.Length; i++)
+        {
+            string tok = args[i];
+            if (tok == "--")
+            {
+                sources.AddRange(args.Skip(i + 1));
+                break;
+            }
+            if (!tok.StartsWith('-'))
+            {
+                sources.Add(tok);
+                continue;
+            }
+
+            if (tok is "-Wall" or "--Wall" or "-Weverything" or "--Weverything") { wall = true; continue; }
+            if (tok is "-Werror" or "--Werror") { werror = true; continue; }
+            if (tok is "-Wno-fatal" or "--Wno-fatal") { noFatal = true; continue; }
+            if (tok is "--lint-only") { continue; }
+            if (tok is "--slang-only") { slangOnly = true; continue; }
+            if (tok is "--large-design") { largeDesign = true; continue; }
+            if (tok is "--json") { jsonOutput = true; continue; }
+            if (tok is "--sarif") { sarifOutput = true; continue; }
+            if (tok is "--list-rules") { listRules = true; continue; }
+            if (tok is "--no-config") { noConfig = true; continue; }
+            if (tok is "--warn-unused-waivers") { warnUnusedWaivers = true; continue; }
+            if (tok is "--stop-on-phase-error") { stopOnPhaseError = true; continue; }
+
+            if (tok is "--top" or "--slang" or "--ast-json" or "--output" or "--incdir" or "-I" or "--define" or "-D"
+                or "--profile" or "--config" or "--baseline" or "--write-baseline" or "--init-config"
+                or "--phase" or "--sdc" or "--group-by" or "--dump-fsm" or "--dump-cdc" or "--emit-cdc-sva")
+            {
+                if (++i >= args.Length) throw new ArgumentException("Incomplete lint option: " + tok);
+                switch (tok)
+                {
+                    case "--top": top = args[i]; break;
+                    case "--slang": slangExe = args[i]; break;
+                    case "--ast-json": astJsonPath = args[i]; break;
+                    case "--output": outputPath = args[i]; break;
+                    case "--profile": profile = LintProfiles.Parse(args[i]); break;
+                    case "--config": configPath = args[i]; break;
+                    case "--baseline": baselinePath = args[i]; break;
+                    case "--write-baseline": writeBaselinePath = args[i]; break;
+                    case "--init-config": initConfigPath = args[i]; break;
+                    case "--phase": phases = LintPhases.ParseList(args[i]); break;
+                    case "--sdc": sdcPath = args[i]; break;
+                    case "--group-by": groupBy = ParseLintGroupBy(args[i]); break;
+                    case "--dump-fsm": dumpFsmPath = args[i]; break;
+                    case "--dump-cdc": dumpCdcPath = args[i]; break;
+                    case "--emit-cdc-sva": emitCdcSvaPath = args[i]; break;
+                    case "--incdir":
+                    case "-I": includeDirs.Add(args[i]); break;
+                    case "--define":
+                    case "-D": defines.Add(args[i]); break;
+                }
+                continue;
+            }
+
+            if (tok.StartsWith("-I", StringComparison.Ordinal) && tok.Length > 2)
+            {
+                includeDirs.Add(tok[2..]);
+                continue;
+            }
+            if (tok.StartsWith("-D", StringComparison.Ordinal) && tok.Length > 2)
+            {
+                defines.Add(tok[2..]);
+                continue;
+            }
+
+            string normalized = tok.StartsWith("--W", StringComparison.Ordinal) ? tok[1..] : tok;
+            if (normalized.StartsWith("-Wno-", StringComparison.Ordinal) && normalized.Length > 5)
+            {
+                disabledRules.Add(normalized[5..]);
+                continue;
+            }
+            if ((normalized.StartsWith("-Werror-", StringComparison.Ordinal) || normalized.StartsWith("-Werror=", StringComparison.Ordinal)) && normalized.Length > 8)
+            {
+                errorRules.Add(normalized[8..]);
+                continue;
+            }
+            if (normalized.StartsWith("-W", StringComparison.Ordinal) && normalized.Length > 2)
+            {
+                enabledRules.Add(normalized[2..]);
+                continue;
+            }
+
+            throw new ArgumentException("Unknown lint option: " + tok + ". " + usage);
+        }
+
+        if (jsonOutput && sarifOutput)
+            throw new ArgumentException("Cannot combine --json and --sarif output formats.");
+
+        if (listRules)
+        {
+            string catalog = jsonOutput ? LintRuleCatalog.FormatRulesJson() + Environment.NewLine : LintRuleCatalog.FormatRulesText();
+            await output.WriteAsync(catalog.AsMemory(), cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+
+        if (initConfigPath is not null)
+        {
+            string fullCfg = Path.GetFullPath(initConfigPath);
+            if (Path.GetDirectoryName(fullCfg) is { Length: > 0 } cfgDir) Directory.CreateDirectory(cfgDir);
+            await File.WriteAllTextAsync(fullCfg, LintConfig.DefaultTemplateJson() + Environment.NewLine, cancellationToken).ConfigureAwait(false);
+            output.WriteLine(fullCfg);
+            return 0;
+        }
+
+        if (astJsonPath is null && sources.Count == 0)
+            throw new ArgumentException(usage);
+
+        LintConfig? config = null;
+        if (configPath is not null)
+        {
+            config = LintConfig.LoadFile(configPath);
+        }
+        else if (!noConfig)
+        {
+            string? discovered = LintConfig.Discover(astJsonPath ?? sources.FirstOrDefault());
+            if (discovered is not null) config = LintConfig.LoadFile(discovered);
+        }
+
+        LintBaseline? baseline = baselinePath is not null ? LintBaseline.LoadFile(baselinePath) : null;
+        SdcConstraints? sdc = sdcPath is not null ? SdcConstraints.LoadFile(sdcPath) : null;
+
+        var lintOptions = new LintOptions(
+            Wall: wall,
+            WarningsAsErrors: werror,
+            NoFatal: noFatal,
+            EnabledRules: enabledRules.Count > 0 ? enabledRules : null,
+            DisabledRules: disabledRules.Count > 0 ? disabledRules : null,
+            ErrorRules: errorRules.Count > 0 ? errorRules : null,
+            LargeDesign: largeDesign,
+            SlangOnly: slangOnly,
+            IncludeDirectories: includeDirs.Count > 0 ? includeDirs : null,
+            Defines: defines.Count > 0 ? defines : null,
+            Profile: profile,
+            Config: config,
+            Baseline: baseline,
+            WarnUnusedWaivers: warnUnusedWaivers,
+            Phases: phases,
+            StopOnPhaseError: stopOnPhaseError,
+            Sdc: sdc,
+            HasExplicitSdc: sdc is not null,
+            GroupBy: groupBy);
+
+        LintReport report;
+        if (astJsonPath is not null)
+        {
+            string astJson = await File.ReadAllTextAsync(astJsonPath, cancellationToken).ConfigureAwait(false);
+            string irJson = SlangAstLowerer.LowerAstJson(astJson, top);
+            report = RtlLinter.LintJson(irJson, lintOptions, astJsonPath);
+        }
+        else if (sources.Count == 1 && sources[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            string irJson = await File.ReadAllTextAsync(sources[0], cancellationToken).ConfigureAwait(false);
+            report = RtlLinter.LintJson(irJson, lintOptions, sources[0]);
+        }
+        else if (sources.Count == 1 && sources[0].EndsWith(".uhdm", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(top))
+                throw new ArgumentException("Linting a .uhdm file requires --top <module>.");
+            var uhdmLimits = largeDesign ? Uhdm.UhdmRtlLimits.Large : Uhdm.UhdmRtlLimits.FromEnvironment();
+            try
+            {
+                string irJson = Uhdm.UhdmRtlLowerer.LowerFile(sources[0], top, uhdmLimits);
+                report = RtlLinter.LintJson(irJson, lintOptions, sources[0]);
+            }
+            catch (InvalidOperationException ex)
+            {
+                report = RtlLinter.Finalize(
+                    [new LintDiagnostic("UHDMAUDIT", LintSeverity.Error, ex.Message, "uhdm", new LintLocation(File: sources[0]))],
+                    lintOptions);
+            }
+        }
+        else
+        {
+            var slangLinter = new SlangLinter(runner);
+            report = await slangLinter.LintSystemVerilogAsync(sources, lintOptions, top, slangExe, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        if (writeBaselinePath is not null)
+        {
+            string fullBase = Path.GetFullPath(writeBaselinePath);
+            if (Path.GetDirectoryName(fullBase) is { Length: > 0 } baseDir) Directory.CreateDirectory(baseDir);
+            await File.WriteAllTextAsync(fullBase, LintBaseline.FromReport(report).ToJson() + Environment.NewLine, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (dumpFsmPath is not null)
+        {
+            string fullFsm = Path.GetFullPath(dumpFsmPath);
+            if (Path.GetDirectoryName(fullFsm) is { Length: > 0 } fsmDir) Directory.CreateDirectory(fsmDir);
+            await File.WriteAllTextAsync(fullFsm, report.FormatFsmDumpJson() + Environment.NewLine, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (dumpCdcPath is not null)
+        {
+            string fullCdc = Path.GetFullPath(dumpCdcPath);
+            if (Path.GetDirectoryName(fullCdc) is { Length: > 0 } cdcDir) Directory.CreateDirectory(cdcDir);
+            await File.WriteAllTextAsync(fullCdc, report.FormatCdcDumpJson() + Environment.NewLine, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (emitCdcSvaPath is not null)
+        {
+            string fullSva = Path.GetFullPath(emitCdcSvaPath);
+            if (Path.GetDirectoryName(fullSva) is { Length: > 0 } svaDir) Directory.CreateDirectory(svaDir);
+            string sva = (report.Cdc ?? CdcAnalysisResult.Empty).GenerateSvaAssertions(top ?? "velosim_cdc");
+            await File.WriteAllTextAsync(fullSva, sva, cancellationToken).ConfigureAwait(false);
+        }
+
+        string rendered = sarifOutput
+            ? report.ToSarif() + Environment.NewLine
+            : jsonOutput
+                ? report.ToJson() + Environment.NewLine
+                : report.FormatText(groupBy);
+        if (outputPath is not null)
+        {
+            string fullOut = Path.GetFullPath(outputPath);
+            if (Path.GetDirectoryName(fullOut) is { Length: > 0 } dir) Directory.CreateDirectory(dir);
+            await File.WriteAllTextAsync(fullOut, rendered, cancellationToken).ConfigureAwait(false);
+        }
+        await output.WriteAsync(rendered.AsMemory(), cancellationToken).ConfigureAwait(false);
+        return report.ExitCode;
+    }
+
+    private static LintGroupBy ParseLintGroupBy(string value) => value.Trim().ToLowerInvariant() switch
+    {
+        "none" or "flat" => LintGroupBy.None,
+        "rule" or "code" => LintGroupBy.Rule,
+        "signal" or "net" => LintGroupBy.Signal,
+        "file" => LintGroupBy.File,
+        "phase" => LintGroupBy.Phase,
+        _ => throw new ArgumentException($"Unknown --group-by mode '{value}' (expected: none, rule, signal, file, phase).")
+    };
     private static async Task WriteNewAsync(string path, string content, CancellationToken cancellationToken)
     {
         using var stream = new FileStream(Path.GetFullPath(path), FileMode.CreateNew, FileAccess.Write);

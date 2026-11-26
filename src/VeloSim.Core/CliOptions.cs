@@ -12,6 +12,7 @@ internal sealed class CliOptions
     private static readonly IReadOnlyDictionary<string, Spec> Specs = new Dictionary<string, Spec>(StringComparer.Ordinal)
     {
         ["rtl-export"] = new("top output-dir target threads lanes", "two-state large-design coverage vpi", Unique: true),
+        ["lint"] = new("top slang ast-json output incdir define profile config baseline write-baseline init-config phase sdc group-by dump-fsm dump-cdc emit-cdc-sva", "Wall Werror Wno-fatal lint-only slang-only large-design json sarif list-rules no-config warn-unused-waivers stop-on-phase-error", Sources: true),
         ["slang-lower"] = new("top output slang ast-json", "", Sources: true, Unique: true),
         ["uhdm-inspect"] = new("output", "", Unique: true),
         ["uhdm-normalize"] = new("top output", "", Unique: true),

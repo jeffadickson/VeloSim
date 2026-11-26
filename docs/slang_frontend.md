@@ -27,7 +27,16 @@ VeloSim.Tools slang-lower --ast-json rv32i.ast.json --top rv32i_core --output rv
 
 # Export directly to C++20, Rust, C#, or 8-lane SIMD
 VeloSim.Tools rtl-export rv32i_core.rtl.json --top rv32i_core --output-dir out/rust_8l --target rust --two-state --lanes 8
+
+# Lint SystemVerilog (slang --lint-only / -Weverything + VeloSim IR checks)
+VeloSim.Tools lint examples/rv32i_core.sv --top rv32i_core -Wall -Werror
+
+# Lint pure velosim.rtl.v1 IR or pre-generated slang --ast-json (zero external binaries)
+VeloSim.Tools lint rv32i_core.rtl.json -Wall --json
+VeloSim.Tools --lint-only --ast-json rv32i.ast.json --top rv32i_core --profile signoff --sarif
 ```
+
+See [the flagship linter guide](linting.md) for rule profiles, `velosim-lint.json` configuration, scoped waivers, baseline ratcheting, SARIF 2.1.0 output, and `IRtlLintRule` extensibility.
 
 ### Optional In-Process C++20 Bridge (`native/slang`)
 
