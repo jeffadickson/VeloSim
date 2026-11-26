@@ -124,38 +124,7 @@ public sealed partial class UhdmRtlLowerer
     private static int TypeOf(UhdmNode? h) => h is not null ? h.VpiType : -1;
     private static string NameOf(UhdmNode? h) => h is not null ? h.Name : string.Empty;
 
-    internal static string Q(string s)
-    {
-        var sb = new StringBuilder(s.Length + 2);
-        sb.Append('"');
-        foreach (char ch in s)
-        {
-            switch (ch)
-            {
-                case '"': sb.Append("\\\""); break;
-                case '\\': sb.Append("\\\\"); break;
-                case '\b': sb.Append("\\b"); break;
-                case '\f': sb.Append("\\f"); break;
-                case '\n': sb.Append("\\n"); break;
-                case '\r': sb.Append("\\r"); break;
-                case '\t': sb.Append("\\t"); break;
-                default:
-                    if (ch < 0x20)
-                    {
-                        sb.Append("\\u00");
-                        sb.Append("0123456789abcdef"[(ch >> 4) & 0xF]);
-                        sb.Append("0123456789abcdef"[ch & 0xF]);
-                    }
-                    else
-                    {
-                        sb.Append(ch);
-                    }
-                    break;
-            }
-        }
-        sb.Append('"');
-        return sb.ToString();
-    }
+    internal static string Q(string s) => UhdmJson.Escape(s);
 
     private static string ConstU32Json(ulong v)
     {
@@ -321,7 +290,7 @@ public sealed partial class UhdmRtlLowerer
         }
         if (h.VpiType == UhdmVpi.VpiOperation)
         {
-            int op = (int)h.GetInt(UhdmVpi.VpiOpType);
+            long op = h.GetInt(UhdmVpi.VpiOpType);
             var args = h.Many(UhdmVpi.VpiOperand);
             if (op == UhdmVpi.VpiConcatOp)
             {
@@ -432,7 +401,13 @@ public sealed partial class UhdmRtlLowerer
         string s = Bits(h);
         Need(!s.Any(c => c is not ('0' or '1')), "unknown array bound");
         Need(!(SignedExpression(h, 0) && s[0] == '1'), "negative signed bounds and replication counts unsupported");
-        return Convert.ToUInt64(s, 2);
+        int firstOne = s.IndexOf('1');
+        if (firstOne < 0) return 0UL;
+        Need(s.Length - firstOne <= 64, "constant integer exceeds 64 bits");
+        ulong result = 0;
+        for (int i = firstOne; i < s.Length; i++)
+            result = (result << 1) | (s[i] == '1' ? 1UL : 0UL);
+        return result;
     }
 
     private static string ConcatTree(List<string> values, int begin, int end)
@@ -444,7 +419,7 @@ public sealed partial class UhdmRtlLowerer
 
     private void OutputBudget(string value)
     {
-        Need(value.Length <= limits.MaxJsonBytes, "normalized RTL exceeds byte limit");
+        Need(Encoding.UTF8.GetByteCount(value) <= limits.MaxJsonBytes, "normalized RTL exceeds byte limit");
         int nesting = 0, objects = 0;
         bool quoted = false, escaped = false;
         foreach (char c in value)
@@ -483,7 +458,7 @@ public sealed partial class UhdmRtlLowerer
         var decl = BoundVariableReference(h);
         if (decl is not null) return DeclaredSigned(decl);
         if (h.VpiType != UhdmVpi.VpiOperation) return false;
-        int op = (int)h.GetInt(UhdmVpi.VpiOpType);
+        long op = h.GetInt(UhdmVpi.VpiOpType);
         var a = h.Many(UhdmVpi.VpiOperand);
         if (op == UhdmVpi.VpiConcatOp || op == UhdmVpi.VpiNotOp || op == UhdmVpi.VpiLogAndOp || op == UhdmVpi.VpiLogOrOp ||
             (op >= UhdmVpi.VpiUnaryAndOp && op <= UhdmVpi.VpiUnaryXNorOp) ||
@@ -552,7 +527,7 @@ public sealed partial class UhdmRtlLowerer
         return $"{{\"kind\":{Q(exists ? "exists" : "size")},\"name\":{Q(SignalName(receiver))}{(exists ? ",\"index\":" + Expr(method.Many(UhdmVpi.VpiArgument)[0]) : "")}}}";
     }
 
-    private static readonly Dictionary<int, string> OpNames = new()
+    private static readonly Dictionary<long, string> OpNames = new()
     {
         [UhdmVpi.VpiAddOp] = "add", [UhdmVpi.VpiSubOp] = "sub", [UhdmVpi.VpiLogAndOp] = "and",
         [UhdmVpi.VpiNotOp] = "not", [UhdmVpi.VpiEqOp] = "eq", [UhdmVpi.VpiConcatOp] = "concat",
@@ -584,11 +559,8 @@ public sealed partial class UhdmRtlLowerer
         {
             long sz = enumerator!.GetInt(UhdmVpi.VpiSize);
             Need(sz >= 1 && sz <= limits.MaxWordBits, "enumerator width unsupported");
-            var temp = db.Create(UhdmObjectType.Constant)
-                .SetInt("VpiSize", sz)
-                .SetString("VpiValue", enumerator.GetFieldString("VpiValue"));
             var spec = BaseSpec(enumerator.Parent);
-            return $"{{\"kind\":\"const\",\"bits\":{Q(ConstantBits(temp))}{(spec is not null && spec.GetBool(UhdmVpi.VpiSigned) ? ",\"signed\":true" : "")}}}";
+            return $"{{\"kind\":\"const\",\"bits\":{Q(ConstantBits(sz, enumerator.GetFieldString("VpiValue")))}{(spec is not null && spec.GetBool(UhdmVpi.VpiSigned) ? ",\"signed\":true" : "")}}}";
         }
 
         if (IsParameterReference(h)) return ParameterExpr(h);
@@ -696,7 +668,7 @@ public sealed partial class UhdmRtlLowerer
         }
         if (h.VpiType == UhdmVpi.VpiOperation)
         {
-            int op = (int)h.GetInt(UhdmVpi.VpiOpType);
+            long op = h.GetInt(UhdmVpi.VpiOpType);
             var ops = h.Many(UhdmVpi.VpiOperand);
             if (op == UhdmVpi.VpiInsideOp)
             {
@@ -719,19 +691,21 @@ public sealed partial class UhdmRtlLowerer
                     Need(count >= 1 && count <= (ulong)limits.MaxWordBits && count * (ulong)Width(ops[1]) <= (ulong)limits.MaxWordBits,
                         "replication exceeds word width limit");
                     string v = Expr(ops[1], depth + 1);
-                    Need((ulong)v.Length * count + count * 32 <= (ulong)limits.MaxJsonBytes, "replication exceeds normalized output budget");
+                    ulong vBytes = (ulong)Encoding.UTF8.GetByteCount(v);
+                    Need(vBytes * count + count * 32 <= (ulong)limits.MaxJsonBytes, "replication exceeds normalized output budget");
                     for (ulong i = 0; i < count; i++) values.Add(v);
                 }
                 else
                 {
                     Need(ops.Count > 0 && ops.Count <= limits.MaxWordBits, "concat operand limit exceeded");
-                    int total = 0, expanded = 0;
+                    int total = 0;
+                    long expanded = 0;
                     foreach (var operand in ops)
                     {
                         total += Width(operand);
                         Need(total <= limits.MaxWordBits, "concat exceeds word width limit");
                         string v = Expr(operand, depth + 1);
-                        expanded += v.Length;
+                        expanded += Encoding.UTF8.GetByteCount(v);
                         Need(expanded <= limits.MaxJsonBytes, "concat expanded byte budget exceeded");
                         values.Add(v);
                     }
@@ -799,7 +773,7 @@ public sealed partial class UhdmRtlLowerer
             long op = h.GetInt(UhdmVpi.VpiOpType);
             var operands = h.Many(UhdmVpi.VpiOperand);
             if (op == UhdmVpi.VpiEventOrOp)
-                return string.Join(',', operands.Select(o => TimedEvents(o, depth + 1)));
+                return string.Join(',', operands.Select(o => TimedEvents(o, depth + 1)).Where(p => p.Length > 0));
             Need((op == UhdmVpi.VpiPosedgeOp || op == UhdmVpi.VpiNegedgeOp) && operands.Count == 1,
                 "unsupported timed event expression");
             Need(Width(operands[0]) == 1, "timed edge requires scalar");
@@ -814,10 +788,10 @@ public sealed partial class UhdmRtlLowerer
 
     private ulong DelayScale()
     {
-        int unit = (int)mod!.GetFieldInt("VpiTimeUnit");
+        long unit = mod!.GetFieldInt("VpiTimeUnit");
         Need(unit >= timedPrecision && unit <= 0 && timedPrecision >= -15, "unsupported HDL time scale");
         ulong scale = 1;
-        for (int power = timedPrecision; power < unit; power++) scale *= 10;
+        for (long power = timedPrecision; power < unit; power++) scale *= 10;
         return scale;
     }
 
@@ -829,7 +803,10 @@ public sealed partial class UhdmRtlLowerer
         if ((amount is null || amount.GetInt(UhdmVpi.VpiConstType) == UhdmVpi.VpiRealConst) &&
             encoded.Length > 1 && encoded[0] == '#' && encoded.IndexOfAny(['.', 'e', 'E']) >= 0)
         {
-            return $"\"literal\":{Q(encoded[1..])},\"unit\":{mod!.GetFieldInt("VpiTimeUnit")},\"precision\":{mod.GetFieldInt("VpiTimePrecision")}";
+            long unit = mod!.GetFieldInt("VpiTimeUnit");
+            long prec = mod.GetFieldInt("VpiTimePrecision");
+            Need(unit is >= -15 and <= 0 && prec >= -15 && prec <= unit, "unsupported HDL time scale");
+            return $"\"literal\":{Q(encoded[1..])},\"unit\":{unit},\"precision\":{prec}";
         }
         if (amount is not null && amount.VpiType != UhdmVpi.VpiConstant)
         {

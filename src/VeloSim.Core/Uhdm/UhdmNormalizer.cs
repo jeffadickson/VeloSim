@@ -1,6 +1,6 @@
+using System.Globalization;
 using System.Numerics;
 using System.Text;
-using System.Text.Json;
 
 namespace VeloSim.Uhdm;
 
@@ -28,8 +28,7 @@ public static class UhdmNormalizer
     public static string Normalize(UhdmDatabase database, string top)
     {
         ArgumentNullException.ThrowIfNull(database);
-        if (string.IsNullOrWhiteSpace(top))
-            throw new InvalidOperationException("top not found");
+        ArgumentNullException.ThrowIfNull(top);
 
         var designs = database.Designs;
         Check(designs.Count == 1, "expected one UHDM design");
@@ -39,6 +38,7 @@ public static class UhdmNormalizer
         var modules = design.Many(UhdmVpi.UhdmtopModules);
         Check(modules.Count == 1, "expected exactly one top module");
 
+        Check(!string.IsNullOrWhiteSpace(top), "top not found");
         UhdmNode? mod = null;
         string workTop = "work@" + top;
         foreach (var h in modules)
@@ -140,7 +140,11 @@ public static class UhdmNormalizer
         Check(payload.Length > 0, "empty constant");
 
         if (tag is "BIN" or "SCAL")
+        {
+            foreach (char c in payload)
+                Check(c is '0' or '1' or 'x' or 'z', "constant value unavailable");
             return payload;
+        }
         if (tag == "HEX")
         {
             var sb = new StringBuilder(payload.Length * 4);
@@ -168,15 +172,14 @@ public static class UhdmNormalizer
         if (tag is "INT" or "UINT" or "DEC")
         {
             if (payload is "x" or "z") return payload;
-            Check(BigInteger.TryParse(payload, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var num),
+            Check(BigInteger.TryParse(payload, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var num),
                 "constant value unavailable");
-            int size = (int)expr.GetInt(UhdmVpi.VpiSize);
-            if (size <= 0) size = 1;
-            if (num == 0) return new string('0', size);
-            var sb = new StringBuilder(size);
-            for (int b = size - 1; b >= 0; b--)
-                sb.Append(((num >> b) & 1) != 0 ? '1' : '0');
-            return sb.ToString();
+            long rawSize = expr.GetInt(UhdmVpi.VpiSize);
+            Check(rawSize <= 65536, "constant value unavailable");
+            if (num < 0) return "11";
+            if (num == 0) return "0";
+            if (num == 1) return "1";
+            return "10";
         }
         throw new InvalidOperationException("constant value unavailable");
     }
@@ -251,39 +254,93 @@ public static class UhdmNormalizer
                 return EvaluateSignalWidth(actual, mod, depth + 1);
         }
 
-        // Check direct ranges on the signal first (e.g. logic_net / reg / logic_var).
-        var directRanges = signal.Many(UhdmVpi.VpiRange);
-        if (directRanges.Count > 0)
-            return EvaluateRangesProduct(directRanges, mod, depth + 1);
+        // Unpacked arrays are not single packed signals.
+        if (signal.VpiType is UhdmVpi.VpiArrayVar or UhdmVpi.VpiNetArray or UhdmVpi.VpiRegArray or UhdmVpi.VpiArrayTypespec)
+            return 0;
 
-        // Check typespec.
+        // Check typespec first for packed arrays so Elem_typespec is preserved; otherwise prefer explicit ranges.
         var tsRef = signal.One(UhdmVpi.VpiTypespec);
         var ts = UnwrapTypespec(tsRef, depth + 1);
         if (ts is not null)
         {
-            int atom = ts.VpiType switch
-            {
-                UhdmVpi.VpiByteTypespec => 8,
-                UhdmVpi.VpiShortIntTypespec => 16,
-                UhdmVpi.VpiIntTypespec or UhdmVpi.VpiIntegerTypespec => 32,
-                UhdmVpi.VpiLongIntTypespec or UhdmVpi.VpiTimeTypespec => 64,
-                _ => 0
-            };
-            if (atom > 0) return atom;
-
-            var tsRanges = ts.Many(UhdmVpi.VpiRange);
-            if (tsRanges.Count > 0)
-                return EvaluateRangesProduct(tsRanges, mod, depth + 1);
-            if (ts.VpiType is UhdmVpi.VpiLogicTypespec or UhdmVpi.VpiBitTypespec)
-                return 1;
+            int tsWidth = EvaluateTypespecWidth(ts, mod, depth + 1);
+            if (tsWidth > 0) return tsWidth;
+            // Fail closed on recognized-but-unsupported non-integral typespecs (e.g., struct/union/real/string/array).
+            return 0;
         }
+
+        // Check direct ranges on the signal (e.g., logic_net / reg / logic_var / bit_var).
+        int? directSpan = EvaluateNodeRangeSpan(signal, mod, depth + 1);
+        if (directSpan.HasValue) return directSpan.Value;
+
+        // Built-in fixed-width variable/net classes when Typespec is omitted.
+        int builtIn = signal.VpiType switch
+        {
+            UhdmVpi.VpiByteVar => 8,
+            UhdmVpi.VpiShortIntVar => 16,
+            UhdmVpi.VpiIntVar or UhdmVpi.VpiIntegerVar or UhdmVpi.VpiIntegerNet => 32,
+            UhdmVpi.VpiLongIntVar or UhdmVpi.VpiTimeVar or UhdmVpi.VpiTimeNet => 64,
+            _ => 0
+        };
+        if (builtIn > 0) return builtIn;
 
         // Fallback to VpiSize if populated, else scalar 1 for logic/reg/net/bit.
         long vpiSize = signal.GetInt(UhdmVpi.VpiSize);
-        if (vpiSize > 0) return (int)Math.Min(vpiSize, int.MaxValue);
+        if (vpiSize > 0) return (int)Math.Min(vpiSize, 65536);
         if (signal.VpiType is UhdmVpi.VpiNet or UhdmVpi.VpiReg or UhdmVpi.VpiLogicVar or UhdmVpi.VpiBitVar)
             return 1;
         return 0;
+    }
+
+    private static int EvaluateTypespecWidth(UhdmNode ts, UhdmNode mod, int depth)
+    {
+        if (depth > 16) return 0;
+
+        int atom = ts.VpiType switch
+        {
+            UhdmVpi.VpiByteTypespec => 8,
+            UhdmVpi.VpiShortIntTypespec => 16,
+            UhdmVpi.VpiIntTypespec or UhdmVpi.VpiIntegerTypespec => 32,
+            UhdmVpi.VpiLongIntTypespec or UhdmVpi.VpiTimeTypespec => 64,
+            _ => 0
+        };
+        if (atom > 0) return atom;
+
+        if (ts.VpiType == UhdmVpi.VpiPackedArrayTypespec)
+        {
+            int? outer = EvaluateNodeRangeSpan(ts, mod, depth + 1);
+            if (!outer.HasValue || outer.Value <= 0) return 0;
+            var elemTs = UnwrapTypespec(ts.One(UhdmVpi.VpiElemTypespec) ?? ts.GetFieldRef("Elem_typespec"), depth + 1);
+            int inner = elemTs is not null ? EvaluateTypespecWidth(elemTs, mod, depth + 1) : 1;
+            if (inner <= 0) return 0;
+            long total = (long)outer.Value * inner;
+            return total is > 0 and <= 65536 ? (int)total : 0;
+        }
+
+        if (ts.VpiType is UhdmVpi.VpiLogicTypespec or UhdmVpi.VpiBitTypespec)
+        {
+            int? span = EvaluateNodeRangeSpan(ts, mod, depth + 1);
+            if (span.HasValue && span.Value <= 0) return 0;
+            var elemTs = UnwrapTypespec(ts.One(UhdmVpi.VpiElemTypespec) ?? ts.GetFieldRef("Elem_typespec"), depth + 1);
+            int inner = elemTs is not null ? EvaluateTypespecWidth(elemTs, mod, depth + 1) : 1;
+            if (inner <= 0) return 0;
+            long total = (long)(span ?? 1) * inner;
+            return total is > 0 and <= 65536 ? (int)total : 0;
+        }
+
+        return 0;
+    }
+
+    private static int? EvaluateNodeRangeSpan(UhdmNode node, UhdmNode mod, int depth)
+    {
+        var ranges = node.Many(UhdmVpi.VpiRange);
+        if (ranges.Count > 0)
+            return EvaluateRangesProduct(ranges, mod, depth + 1);
+        var left = node.One(UhdmVpi.VpiLeftRange);
+        var right = node.One(UhdmVpi.VpiRightRange);
+        if (left is not null || right is not null)
+            return EvaluateRangePair(left, right, mod, depth + 1);
+        return null;
     }
 
     private static UhdmNode? UnwrapTypespec(UhdmNode? spec, int depth)
@@ -293,7 +350,20 @@ public static class UhdmNormalizer
             return UnwrapTypespec(spec.One(UhdmVpi.VpiActual), depth + 1);
         if (spec.VpiType == UhdmVpi.VpiEnumTypespec)
             return UnwrapTypespec(spec.One(UhdmVpi.VpiBaseTypespec), depth + 1);
+        var alias = spec.GetFieldRef("Typedef_alias");
+        if (alias is not null && !ReferenceEquals(alias, spec))
+            return UnwrapTypespec(alias, depth + 1);
         return spec;
+    }
+
+    private static int EvaluateRangePair(UhdmNode? leftExpr, UhdmNode? rightExpr, UhdmNode mod, int depth)
+    {
+        if (!TryEvalConstInt(leftExpr, mod, depth + 1, out long left) ||
+            !TryEvalConstInt(rightExpr, mod, depth + 1, out long right))
+            return 0;
+        BigInteger span = BigInteger.Abs((BigInteger)left - right) + 1;
+        if (span <= 0 || span > 65536) return 0;
+        return (int)span;
     }
 
     private static int EvaluateRangesProduct(IReadOnlyList<UhdmNode> ranges, UhdmNode mod, int depth)
@@ -301,14 +371,38 @@ public static class UhdmNormalizer
         long product = 1;
         foreach (var range in ranges)
         {
-            if (!TryEvalConstInt(range.One(UhdmVpi.VpiLeftRange), mod, depth + 1, out long left) ||
-                !TryEvalConstInt(range.One(UhdmVpi.VpiRightRange), mod, depth + 1, out long right))
-                return 0;
-            long span = Math.Abs(left - right) + 1;
-            if (span <= 0 || product * span > 65536) return 0;
+            int span = EvaluateRangePair(range.One(UhdmVpi.VpiLeftRange), range.One(UhdmVpi.VpiRightRange), mod, depth + 1);
+            if (span <= 0 || product > 65536 / span) return 0;
             product *= span;
         }
         return (int)product;
+    }
+
+    private static bool TryParseVpiValueInt(string raw, out long value)
+    {
+        value = 0;
+        int colon = raw.IndexOf(':');
+        if (colon <= 0) return false;
+        string tag = raw[..colon];
+        string payload = raw[(colon + 1)..].Replace("_", "", StringComparison.Ordinal).ToLowerInvariant();
+        if (payload.Length == 0) return false;
+
+        if (tag is "INT" or "UINT" or "DEC")
+            return long.TryParse(payload, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out value);
+
+        int radix = tag is "BIN" or "SCAL" ? 2 : tag == "OCT" ? 8 : tag == "HEX" ? 16 : 0;
+        if (radix == 0) return false;
+
+        BigInteger acc = BigInteger.Zero;
+        foreach (char c in payload)
+        {
+            int d = c is >= '0' and <= '9' ? c - '0' : c is >= 'a' and <= 'f' ? c - 'a' + 10 : -1;
+            if (d < 0 || d >= radix) return false;
+            acc = acc * radix + d;
+            if (acc > long.MaxValue) return false;
+        }
+        value = (long)acc;
+        return true;
     }
 
     private static bool TryEvalConstInt(UhdmNode? expr, UhdmNode mod, int depth, out long value)
@@ -316,46 +410,66 @@ public static class UhdmNormalizer
         value = 0;
         if (expr is null || depth > 32) return false;
         if (expr.VpiType == UhdmVpi.VpiConstant)
+            return TryParseVpiValueInt(expr.GetFieldString("VpiValue"), out value);
+
+        if (expr.VpiType == UhdmVpi.VpiSysFuncCall && expr.Name == "$clog2")
         {
-            string raw = expr.GetFieldString("VpiValue");
-            int colon = raw.IndexOf(':');
-            if (colon <= 0) return false;
-            string tag = raw[..colon];
-            string payload = raw[(colon + 1)..].Replace("_", "", StringComparison.Ordinal).ToLowerInvariant();
-            if (tag is "INT" or "UINT" or "DEC")
-                return long.TryParse(payload, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out value);
-            if (tag is "BIN" or "SCAL")
+            var args = expr.Many(UhdmVpi.VpiArgument);
+            if (args.Count == 1 && TryEvalConstInt(args[0], mod, depth + 1, out long arg) && arg >= 0)
             {
-                if (payload.Any(c => c is not ('0' or '1'))) return false;
-                value = Convert.ToInt64(payload, 2);
-                return true;
-            }
-            if (tag == "HEX")
-            {
-                if (payload.Any(c => c is not ((>= '0' and <= '9') or (>= 'a' and <= 'f')))) return false;
-                value = Convert.ToInt64(payload, 16);
+                if (arg <= 1) { value = 0; return true; }
+                ulong x = (ulong)arg - 1UL;
+                long r = 0;
+                while (x > 0) { x >>= 1; r++; }
+                value = r;
                 return true;
             }
             return false;
         }
+
         if (expr.VpiType == UhdmVpi.VpiOperation)
         {
             var ops = expr.Many(UhdmVpi.VpiOperand);
             long op = expr.GetInt(UhdmVpi.VpiOpType);
             if (ops.Count == 1 && TryEvalConstInt(ops[0], mod, depth + 1, out long a))
             {
-                if (op == UhdmVpi.VpiMinusOp) { value = -a; return true; }
+                if (op == UhdmVpi.VpiMinusOp && a != long.MinValue) { value = -a; return true; }
                 if (op == UhdmVpi.VpiPlusOp) { value = a; return true; }
+                if (op == UhdmVpi.VpiBitNegOp) { value = ~a; return true; }
             }
             if (ops.Count == 2 && TryEvalConstInt(ops[0], mod, depth + 1, out long l) && TryEvalConstInt(ops[1], mod, depth + 1, out long r))
             {
-                switch (op)
+                try
                 {
-                    case UhdmVpi.VpiAddOp: value = l + r; return true;
-                    case UhdmVpi.VpiSubOp: value = l - r; return true;
-                    case UhdmVpi.VpiMultOp: value = l * r; return true;
-                    case UhdmVpi.VpiDivOp when r != 0: value = l / r; return true;
+                    switch (op)
+                    {
+                        case UhdmVpi.VpiAddOp: value = checked(l + r); return true;
+                        case UhdmVpi.VpiSubOp: value = checked(l - r); return true;
+                        case UhdmVpi.VpiMultOp: value = checked(l * r); return true;
+                        case UhdmVpi.VpiDivOp when r != 0 && !(l == long.MinValue && r == -1): value = l / r; return true;
+                        case UhdmVpi.VpiModOp when r != 0 && !(l == long.MinValue && r == -1): value = l % r; return true;
+                        case UhdmVpi.VpiLShiftOp when r is >= 0 and < 64: value = l << (int)r; return true;
+                        case UhdmVpi.VpiRShiftOp when r is >= 0 and < 64: value = (long)((ulong)l >> (int)r); return true;
+                        case UhdmVpi.VpiBitAndOp: value = l & r; return true;
+                        case UhdmVpi.VpiBitOrOp: value = l | r; return true;
+                        case UhdmVpi.VpiBitXorOp: value = l ^ r; return true;
+                        case UhdmVpi.VpiPowerOp when r is >= 0 and <= 62:
+                        {
+                            BigInteger p = BigInteger.Pow(l, (int)r);
+                            if (p >= long.MinValue && p <= long.MaxValue) { value = (long)p; return true; }
+                            return false;
+                        }
+                    }
                 }
+                catch (OverflowException)
+                {
+                    return false;
+                }
+            }
+            if (ops.Count == 3 && op == UhdmVpi.VpiConditionOp &&
+                TryEvalConstInt(ops[0], mod, depth + 1, out long cond))
+            {
+                return TryEvalConstInt(cond != 0 ? ops[1] : ops[2], mod, depth + 1, out value);
             }
             return false;
         }
@@ -367,16 +481,17 @@ public static class UhdmNormalizer
                 foreach (var pa in mod.Many(UhdmVpi.VpiParamAssign))
                 {
                     var lhs = pa.One(UhdmVpi.VpiLhs);
-                    if (ReferenceEquals(lhs, param) || (lhs is not null && lhs.Name == param.Name))
-                        return TryEvalConstInt(pa.One(UhdmVpi.VpiRhs), mod, depth + 1, out value);
+                    if (ReferenceEquals(lhs, param) || (lhs is not null && param.Name.Length > 0 && lhs.Name == param.Name))
+                    {
+                        if (TryEvalConstInt(pa.One(UhdmVpi.VpiRhs), mod, depth + 1, out value))
+                            return true;
+                    }
                 }
-                string pv = param.GetFieldString("VpiValue");
-                if (pv.Length > 0)
-                {
-                    int c = pv.IndexOf(':');
-                    if (c > 0 && long.TryParse(pv[(c + 1)..], System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out value))
-                        return true;
-                }
+                if (TryParseVpiValueInt(param.GetFieldString("VpiValue"), out value))
+                    return true;
+                var defaultExpr = param.One(UhdmVpi.VpiExpr);
+                if (defaultExpr is not null && !ReferenceEquals(defaultExpr, param))
+                    return TryEvalConstInt(defaultExpr, mod, depth + 1, out value);
             }
         }
         return false;
@@ -384,71 +499,31 @@ public static class UhdmNormalizer
 
     private static string EmitNormalizedJson(SortedDictionary<string, int> widths, Proc p)
     {
-        using var ms = new MemoryStream();
-        using (var w = new Utf8JsonWriter(ms))
+        var sb = new StringBuilder(512);
+        sb.Append("{\"format\":\"velosim.uhdm.normalized.v1\",\"signals\":[");
+        bool first = true;
+        foreach (var (n, width) in widths)
         {
-            w.WriteStartObject();
-            w.WriteString("format", "velosim.uhdm.normalized.v1");
-            w.WriteStartArray("signals");
-            foreach (var (n, width) in widths)
-            {
-                w.WriteStartObject();
-                w.WriteString("name", n);
-                w.WriteNumber("width", width);
-                w.WriteEndObject();
-            }
-            w.WriteEndArray();
-
-            w.WriteStartArray("processes");
-            w.WriteStartObject();
-            w.WriteString("kind", "always_ff");
-
-            w.WriteStartObject("event");
-            w.WriteString("edge", "posedge");
-            w.WriteString("signal", p.Clk);
-            w.WriteEndObject();
-
-            w.WriteStartObject("body");
-            w.WriteString("kind", "if");
-
-            w.WriteStartObject("condition");
-            w.WriteString("kind", "not");
-            w.WriteStartObject("operand");
-            w.WriteString("kind", "ref");
-            w.WriteString("name", p.Rst);
-            w.WriteEndObject();
-            w.WriteEndObject();
-
-            w.WriteStartObject("then");
-            w.WriteString("kind", "nba");
-            w.WriteString("target", p.Dst);
-            w.WriteStartObject("value");
-            w.WriteString("kind", "const");
-            w.WriteNumber("value", 0);
-            w.WriteEndObject();
-            w.WriteEndObject();
-
-            w.WriteStartObject("else");
-            w.WriteString("kind", "nba");
-            w.WriteString("target", p.Dst);
-            w.WriteStartObject("value");
-            w.WriteString("kind", "add");
-            w.WriteStartObject("lhs");
-            w.WriteString("kind", "ref");
-            w.WriteString("name", p.Dst);
-            w.WriteEndObject();
-            w.WriteStartObject("rhs");
-            w.WriteString("kind", "const");
-            w.WriteNumber("value", 1);
-            w.WriteEndObject();
-            w.WriteEndObject();
-            w.WriteEndObject();
-
-            w.WriteEndObject();
-            w.WriteEndObject();
-            w.WriteEndArray();
-            w.WriteEndObject();
+            if (!first) sb.Append(',');
+            first = false;
+            sb.Append("{\"name\":");
+            UhdmJson.AppendEscaped(sb, n);
+            sb.Append(",\"width\":")
+              .Append(width.ToString(CultureInfo.InvariantCulture))
+              .Append('}');
         }
-        return Encoding.UTF8.GetString(ms.ToArray()) + "\n";
+        sb.Append("],\"processes\":[{\"kind\":\"always_ff\",\"event\":{\"edge\":\"posedge\",\"signal\":");
+        UhdmJson.AppendEscaped(sb, p.Clk);
+        sb.Append("},\"body\":{\"kind\":\"if\",\"condition\":{\"kind\":\"not\",\"operand\":{\"kind\":\"ref\",\"name\":");
+        UhdmJson.AppendEscaped(sb, p.Rst);
+        sb.Append("}},\"then\":{\"kind\":\"nba\",\"target\":");
+        UhdmJson.AppendEscaped(sb, p.Dst);
+        sb.Append(",\"value\":{\"kind\":\"const\",\"value\":0}},\"else\":{\"kind\":\"nba\",\"target\":");
+        UhdmJson.AppendEscaped(sb, p.Dst);
+        sb.Append(",\"value\":{\"kind\":\"add\",\"lhs\":{\"kind\":\"ref\",\"name\":");
+        UhdmJson.AppendEscaped(sb, p.Dst);
+        sb.Append("},\"rhs\":{\"kind\":\"const\",\"value\":1}}}}}]}");
+        sb.Append('\n');
+        return sb.ToString();
     }
 }

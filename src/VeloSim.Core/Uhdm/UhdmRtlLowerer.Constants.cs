@@ -18,14 +18,16 @@ public sealed partial class UhdmRtlLowerer
         return true;
     }
 
-    internal string ConstantBits(UhdmNode obj, bool plainDecimal = false)
-    {
-        int w = plainDecimal ? 32 : (int)obj.GetInt(UhdmVpi.VpiSize);
-        string literal = obj.GetString(UhdmVpi.VpiDecompile);
-        if (w < 1 && literal is "'0" or "'1" or "'x" or "'z") w = 1;
-        Need(w >= 1 && w <= limits.MaxWordBits, "constant width exceeds limit");
+    internal string ConstantBits(UhdmNode obj, bool plainDecimal = false) =>
+        ConstantBits(obj.GetInt(UhdmVpi.VpiSize), obj.GetFieldString("VpiValue"), obj.GetString(UhdmVpi.VpiDecompile), plainDecimal);
 
-        string raw = obj.GetFieldString("VpiValue");
+    internal string ConstantBits(long rawWidth, string raw, string literal = "", bool plainDecimal = false)
+    {
+        long wLong = plainDecimal ? 32L : rawWidth;
+        if (wLong < 1 && literal is "'0" or "'1" or "'x" or "'z") wLong = 1;
+        Need(wLong >= 1 && wLong <= limits.MaxWordBits, "constant width exceeds limit");
+        int w = (int)wLong;
+
         Need(raw.Length <= limits.MaxWordBits * 2, "constant payload budget exceeded");
         int colon = raw.IndexOf(':');
         Need(colon >= 0, "constant payload tag required");

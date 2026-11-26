@@ -83,7 +83,24 @@ jobs:
           artifacts/with-uhdm/bin/velosim-uhdm-rtl "$FIFO_UHDM" artifacts/uhdm-net11-parity/fifo_cpp_rtl.json surelog_fifo
           artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-rtl "$FIFO_UHDM" --top surelog_fifo --output artifacts/uhdm-net11-parity/fifo_cs_rtl.json
           diff -u artifacts/uhdm-net11-parity/fifo_cpp_rtl.json artifacts/uhdm-net11-parity/fifo_cs_rtl.json
+          # 3. Additional real-Surelog structural designs: bitwise, selections, FIFO operators & selections
+          for spec in \
+            "bitwise:surelog_bitwise:examples/surelog_bitwise.sv" \
+            "selections:surelog_selections:examples/surelog_selections.sv" \
+            "fifo_ops:surelog_fifo_ops:examples/surelog_fifo_operators.sv" \
+            "fifo_sel:surelog_fifo_selections:examples/surelog_fifo_selections.sv"; do
+            IFS=: read -r tag top sv <<< "$spec"
+            artifacts/toolchain/bin/surelog -parse -elabuhdm -sverilog -odir "artifacts/uhdm-net11-parity/${tag}_sl" -top "$top" "$sv"
+            UHDM_BIN="artifacts/uhdm-net11-parity/${tag}_sl/slpp_all/surelog.uhdm"
+            artifacts/with-uhdm/bin/velosim-uhdm-inspect "$UHDM_BIN" > "artifacts/uhdm-net11-parity/${tag}_cpp_inspect.json"
+            artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-inspect "$UHDM_BIN" --output "artifacts/uhdm-net11-parity/${tag}_cs_inspect.json"
+            diff -u "artifacts/uhdm-net11-parity/${tag}_cpp_inspect.json" "artifacts/uhdm-net11-parity/${tag}_cs_inspect.json"
+            artifacts/with-uhdm/bin/velosim-uhdm-rtl "$UHDM_BIN" "artifacts/uhdm-net11-parity/${tag}_cpp_rtl.json" "$top"
+            artifacts/publish/VeloSim.Tools/VeloSim.Tools uhdm-rtl "$UHDM_BIN" --top "$top" --output "artifacts/uhdm-net11-parity/${tag}_cs_rtl.json"
+            diff -u "artifacts/uhdm-net11-parity/${tag}_cpp_rtl.json" "artifacts/uhdm-net11-parity/${tag}_cs_rtl.json"
+          done
           artifacts/publish/VeloSim.Tools/VeloSim.Tools differential --top slang_counter --cycles 1000 --threads 1 --build-jobs 4 --normalizer builtin --output-dir artifacts/diff-net11-builtin examples/slang_counter.sv
+          artifacts/publish/VeloSim.Tools/VeloSim.Tools replay artifacts/diff-net11-builtin/report.json --output-dir artifacts/diff-net11-builtin-replay
           artifacts/publish/VeloSim.Tools/VeloSim.Tools fifo-differential examples/surelog_fifo.sv --top surelog_fifo --exporter builtin --output-dir artifacts/fifo-net11-builtin --workers 1,4 --cycles 1000 --build-jobs 4
       - uses: actions/upload-artifact@v4
         if: always()

@@ -109,9 +109,9 @@ public sealed partial class UhdmRtlLowerer
         {
             foreach (var port in scope.Many(UhdmVpi.VpiPort))
             {
-                int direction = (int)port.GetInt(UhdmVpi.VpiDirection);
+                long direction = port.GetInt(UhdmVpi.VpiDirection);
                 Need(direction == UhdmVpi.VpiInput || direction == UhdmVpi.VpiOutput, "inout unsupported");
-                directions[port.Name] = direction;
+                directions[port.Name] = (int)direction;
             }
         }
 
@@ -307,7 +307,11 @@ public sealed partial class UhdmRtlLowerer
         foreach (var scope in flatScopes)
         {
             if (scope.Handle.VpiType == UhdmVpi.VpiModule)
-                timedPrecision = Math.Min(timedPrecision, (int)scope.Handle.GetFieldInt("VpiTimePrecision"));
+            {
+                long scopePrec = scope.Handle.GetFieldInt("VpiTimePrecision");
+                if (scopePrec is >= -15 and <= 0)
+                    timedPrecision = Math.Min(timedPrecision, (int)scopePrec);
+            }
             foreach (var proc in scope.Handle.Many(UhdmVpi.VpiProcess))
                 if (proc.VpiType == UhdmVpi.VpiInitial) initialCount++;
         }
@@ -334,8 +338,8 @@ public sealed partial class UhdmRtlLowerer
                 foreach (var attr in scope.Handle.Many(UhdmVpi.VpiAttribute))
                     qualified |= attr.Name == "velosim frontend time scale v1";
                 Need(qualified, "timed lowering requires preserved explicit timeunit/timeprecision metadata; use the time-scale frontend overlay");
-                int unit = (int)scope.Handle.GetFieldInt("VpiTimeUnit");
-                int prec = (int)scope.Handle.GetFieldInt("VpiTimePrecision");
+                long unit = scope.Handle.GetFieldInt("VpiTimeUnit");
+                long prec = scope.Handle.GetFieldInt("VpiTimePrecision");
                 Need(unit is >= -15 and <= 0 && prec >= -15 && prec <= unit, "unsupported HDL time scale");
             }
         }
@@ -369,7 +373,7 @@ public sealed partial class UhdmRtlLowerer
             {
                 var high = port.One(UhdmVpi.VpiHighConn);
                 var low = port.One(UhdmVpi.VpiLowConn);
-                int direction = (int)port.GetInt(UhdmVpi.VpiDirection);
+                long direction = port.GetInt(UhdmVpi.VpiDirection);
                 if (direction == UhdmVpi.VpiOutput && high is null && low is not null) continue;
                 Need(high is not null && low is not null, "open/unresolved instance ports unsupported");
                 Need(direction == UhdmVpi.VpiInput || direction == UhdmVpi.VpiOutput, "inout instance ports unsupported");
@@ -382,7 +386,7 @@ public sealed partial class UhdmRtlLowerer
                 Need(Width(high) >= 1 && childWidth >= 1, "instance connections require word widths");
                 if (direction == UhdmVpi.VpiOutput)
                     Need(DeclaredReference(high), "instance output requires a whole declared destination word");
-                bindings.Add(new FlatBinding(scope.Parent, index, direction, high!, low!, child));
+                bindings.Add(new FlatBinding(scope.Parent, index, (int)direction, high!, low!, child));
                 if (direction == UhdmVpi.VpiInput && DeclaredReference(high))
                     inputLinks[child] = SignalName(high!);
             }

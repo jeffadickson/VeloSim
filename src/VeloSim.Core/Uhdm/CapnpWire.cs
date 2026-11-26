@@ -18,7 +18,7 @@ public static class CapnpPackedStream
         if (packed.Length == 0)
             throw new InvalidDataException("Empty Cap'n Proto packed stream.");
 
-        var output = new MemoryStream(Math.Min(packed.Length * 2, maxUnpackedBytes));
+        var output = new MemoryStream((int)Math.Min((long)packed.Length * 2L, maxUnpackedBytes));
         Span<byte> word = stackalloc byte[8];
         int i = 0;
 
@@ -276,11 +276,18 @@ public sealed class CapnpMessageReader
         ulong tagWord = ReadWord(targetSegment, padOffset + 1);
         if ((farToContent & 0x3) != 2 || ((farToContent >> 2) & 1) != 0)
             throw new InvalidDataException("Invalid Cap'n Proto double-far landing pad.");
+        if ((tagWord & 0x3) == 2)
+            throw new InvalidDataException("Nested Cap'n Proto far pointer in double-far tag is invalid.");
+        if ((tagWord & 0xFFFFFFFCUL) != 0)
+            throw new InvalidDataException("Cap'n Proto double-far tag word must have zero offset.");
         int contentWord = (int)((farToContent >> 3) & 0x1FFFFFFF);
         int contentSegment = (int)(farToContent >> 32);
-        // Synthesize a pointer anchored at contentWord - 1 with offset 0 so callers compute target = contentWord.
-        ulong zeroOffsetTag = (tagWord & ~0xFFFFFFFCUL);
-        return (contentSegment, contentWord - 1, zeroOffsetTag);
+        if ((uint)contentSegment >= (uint)segmentOffsets.Length)
+            throw new InvalidDataException("Cap'n Proto double-far target segment out of range.");
+        if (contentWord < 0 || contentWord > segmentWordLengths[contentSegment])
+            throw new InvalidDataException("Cap'n Proto double-far target word out of range.");
+        // Tag word has offset 0, so anchoring at contentWord - 1 makes target = contentWord.
+        return (contentSegment, contentWord - 1, tagWord);
     }
 
     internal CapnpStruct ReadStructAtPointer(int segment, int pointerWordIndex, int depth)
@@ -292,16 +299,18 @@ public sealed class CapnpMessageReader
             return CapnpStruct.Empty(this, depth + 1);
         if ((raw & 0x3) != 0)
             throw new InvalidDataException($"Expected Cap'n Proto struct pointer, got kind {raw & 0x3}.");
+        if ((uint)seg >= (uint)segmentWordLengths.Length)
+            throw new InvalidDataException("Cap'n Proto segment index out of range.");
 
         int offset = ((int)(uint)raw) >> 2;
         int dataWords = (ushort)(raw >> 32);
         int pointerCount = (ushort)(raw >> 48);
-        int targetWord = checked(ptrWordIdx + 1 + offset);
-        int totalWords = dataWords + pointerCount;
+        long targetWord = (long)ptrWordIdx + 1L + offset;
+        long totalWords = (long)dataWords + pointerCount;
         if (targetWord < 0 || targetWord + totalWords > segmentWordLengths[seg])
             throw new InvalidDataException("Cap'n Proto struct extends outside segment bounds.");
         AccountWords(totalWords);
-        return new CapnpStruct(this, seg, targetWord, dataWords, pointerCount, depth + 1);
+        return new CapnpStruct(this, seg, (int)targetWord, dataWords, pointerCount, depth + 1);
     }
 
     internal CapnpList ReadListAtPointer(int segment, int pointerWordIndex, int depth)
@@ -313,16 +322,20 @@ public sealed class CapnpMessageReader
             return CapnpList.Empty(this, depth + 1);
         if ((raw & 0x3) != 1)
             throw new InvalidDataException($"Expected Cap'n Proto list pointer, got kind {raw & 0x3}.");
+        if ((uint)seg >= (uint)segmentWordLengths.Length)
+            throw new InvalidDataException("Cap'n Proto segment index out of range.");
 
         int offset = ((int)(uint)raw) >> 2;
         int elementSize = (int)((raw >> 32) & 0x7);
         int elementCount = (int)((raw >> 35) & 0x1FFFFFFF);
-        int targetWord = checked(ptrWordIdx + 1 + offset);
+        long targetWord = (long)ptrWordIdx + 1L + offset;
 
         if (elementSize == 7)
         {
+            if (targetWord < 0 || targetWord >= segmentWordLengths[seg])
+                throw new InvalidDataException("Cap'n Proto composite list tag exceeds segment bounds.");
             // Composite list: targetWord is a struct tag word whose offset field holds the element count.
-            ulong tag = ReadWord(seg, targetWord);
+            ulong tag = ReadWord(seg, (int)targetWord);
             if ((tag & 0x3) != 0)
                 throw new InvalidDataException("Invalid Cap'n Proto composite list tag word.");
             int count = (int)((tag >> 2) & 0x3FFFFFFF);
@@ -331,11 +344,12 @@ public sealed class CapnpMessageReader
             long wordsRequired = (long)count * (dataWords + pointerCount);
             if (wordsRequired != elementCount)
                 throw new InvalidDataException("Cap'n Proto composite list word count mismatch.");
-            int firstElementWord = targetWord + 1;
+            long firstElementWord = targetWord + 1L;
             if (firstElementWord < 0 || firstElementWord + wordsRequired > segmentWordLengths[seg])
                 throw new InvalidDataException("Cap'n Proto composite list exceeds segment bounds.");
-            AccountWords(1 + wordsRequired);
-            return new CapnpList(this, seg, firstElementWord, elementSize, count, dataWords, pointerCount, depth + 1);
+            // Account at least 1 word per element to prevent zero-size composite list amplification attacks.
+            AccountWords(1L + Math.Max((long)count, wordsRequired));
+            return new CapnpList(this, seg, (int)firstElementWord, elementSize, count, dataWords, pointerCount, depth + 1);
         }
 
         long listWords = elementSize switch
@@ -351,8 +365,9 @@ public sealed class CapnpMessageReader
         };
         if (targetWord < 0 || targetWord + listWords > segmentWordLengths[seg])
             throw new InvalidDataException("Cap'n Proto list exceeds segment bounds.");
-        AccountWords(listWords);
-        return new CapnpList(this, seg, targetWord, elementSize, elementCount, 0, 0, depth + 1);
+        // Account at least 1 word per element for void lists to prevent amplification attacks.
+        AccountWords(elementSize == 0 ? Math.Max(1L, elementCount) : listWords);
+        return new CapnpList(this, seg, (int)targetWord, elementSize, elementCount, 0, 0, depth + 1);
     }
 }
 
@@ -613,22 +628,33 @@ public sealed class CapnpMessageWriter
 
     private void WriteStructPointer(int pointerWordIndex, int targetWord, int dataWords, int pointerCount)
     {
-        int offset = targetWord - (pointerWordIndex + 1);
-        ulong low = (uint)(offset << 2);
+        if ((uint)dataWords > ushort.MaxValue || (uint)pointerCount > ushort.MaxValue)
+            throw new ArgumentOutOfRangeException(nameof(dataWords), "Cap'n Proto struct section count exceeds 16-bit limit.");
+        long offset = (long)targetWord - (pointerWordIndex + 1L);
+        if (offset < -(1L << 29) || offset >= (1L << 29))
+            throw new InvalidOperationException("Cap'n Proto struct pointer offset exceeds 30-bit signed range.");
+        ulong low = (uint)((int)offset << 2);
         words[pointerWordIndex] = low | ((ulong)(ushort)dataWords << 32) | ((ulong)(ushort)pointerCount << 48);
     }
 
     private void WriteListPointer(int pointerWordIndex, int targetWord, int elementSize, int elementCount)
     {
-        int offset = targetWord - (pointerWordIndex + 1);
-        ulong low = 1UL | (uint)(offset << 2);
+        if ((uint)elementSize > 7U || (uint)elementCount > 0x1FFFFFFFU)
+            throw new ArgumentOutOfRangeException(nameof(elementCount), "Cap'n Proto list element size or count exceeds wire range.");
+        long offset = (long)targetWord - (pointerWordIndex + 1L);
+        if (offset < -(1L << 29) || offset >= (1L << 29))
+            throw new InvalidOperationException("Cap'n Proto list pointer offset exceeds 30-bit signed range.");
+        ulong low = 1UL | (uint)((int)offset << 2);
         words[pointerWordIndex] = low | ((ulong)(uint)elementSize << 32) | ((ulong)(uint)elementCount << 35);
     }
 
     public byte[] ToUnpackedBytes()
     {
         // Single segment header: segmentCount-1 (0) + segment0WordCount (words.Count) = 8 bytes.
-        byte[] result = new byte[(1 + words.Count) * 8];
+        long totalBytes = (1L + words.Count) * 8L;
+        if (totalBytes > int.MaxValue)
+            throw new InvalidOperationException("Cap'n Proto message exceeds maximum single-segment byte length.");
+        byte[] result = new byte[(int)totalBytes];
         BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(0, 4), 0U);
         BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4, 4), (uint)words.Count);
         for (int i = 0; i < words.Count; i++)

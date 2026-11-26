@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace VeloSim.Uhdm;
 
 /// <summary>
@@ -55,16 +57,15 @@ public sealed class UhdmRtlAudit
             case UhdmObjectType.InterfaceInst: Unsupported(node, "interface instance"); break;
         }
 
-        // Check module-level primitive / primitive_array collections explicitly to match enterPrimitives/enterPrimitive_arrays.
-        var primitives = node.GetFieldList("Primitives");
-        if (primitives.Count > 0)
-            Unsupported(primitives[0], "primitive instance");
-        var primitiveArrays = node.GetFieldList("Primitive_arrays");
-        if (primitiveArrays.Count > 0)
-            Unsupported(primitiveArrays[0], "primitive array");
-
-        foreach (var (_, child) in node.EnumerateAllRelations())
+        // Match UHDM::UhdmListener relation traversal order for Primitives / Primitive_arrays without extra lookups.
+        foreach (var (fieldName, child) in node.EnumerateAllRelations())
+        {
+            if (fieldName == "Primitives")
+                Unsupported(child, "primitive instance");
+            else if (fieldName == "Primitive_arrays")
+                Unsupported(child, "primitive array");
             Visit(child, depth + 1);
+        }
     }
 
     private static void Unsupported(UhdmNode node, string construct)
@@ -80,6 +81,7 @@ public sealed class UhdmRtlAudit
             owner = parent;
         }
         if (file.Length == 0) file = "<unknown source>";
-        throw new InvalidOperationException($"unsupported executable UHDM construct: {construct} at {file}:{node.LineNo}:{node.ColumnNo}");
+        throw new InvalidOperationException(string.Create(CultureInfo.InvariantCulture,
+            $"unsupported executable UHDM construct: {construct} at {file}:{node.LineNo}:{node.ColumnNo}"));
     }
 }

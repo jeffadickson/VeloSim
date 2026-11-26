@@ -23,8 +23,9 @@ public sealed partial class UhdmRtlLowerer
         public UhdmNode Canonical { get; } = canonical;
     }
 
-    private Dictionary<string, LocalWord> callLocals = new(StringComparer.Ordinal);
+    private SortedDictionary<string, LocalWord> callLocals = new(StringComparer.Ordinal);
     private bool insideCall;
+    private int loopVarCounter;
     private readonly HashSet<UhdmNode> activeCalls = new(ReferenceEqualityComparer.Instance);
     private UhdmNode? currentFunction;
 
@@ -45,9 +46,9 @@ public sealed partial class UhdmRtlLowerer
     private Dictionary<string, KnownControl> controlValues = new(StringComparer.Ordinal);
     private readonly HashSet<UhdmNode> loopControls = new(ReferenceEqualityComparer.Instance);
 
-    private static Dictionary<string, LocalWord> CloneLocals(Dictionary<string, LocalWord> src)
+    private static SortedDictionary<string, LocalWord> CloneLocals(SortedDictionary<string, LocalWord> src)
     {
-        var copy = new Dictionary<string, LocalWord>(src.Count, StringComparer.Ordinal);
+        var copy = new SortedDictionary<string, LocalWord>(StringComparer.Ordinal);
         foreach (var (k, v) in src) copy[k] = v.Clone();
         return copy;
     }
@@ -66,7 +67,7 @@ public sealed partial class UhdmRtlLowerer
             qualified |= attr.Name == "velosim frontend argument slots v4";
         Need(qualified, "subroutine calls require preserved argument slots; re-elaborate with the argument-slot frontend overlay");
         Need(call.VpiType is UhdmVpi.VpiFuncCall or UhdmVpi.VpiTaskCall, "typed subroutine call required");
-        var args = call.GetFieldList("Tf_call_args");
+        var args = call.GetFieldListWithNulls("Tf_call_args");
         var result = new List<UhdmNode?>(args.Count);
         Need(args.Count <= 32, "subroutine argument budget exceeded");
         foreach (var arg in args)
@@ -533,11 +534,7 @@ public sealed partial class UhdmRtlLowerer
         {
             string pv = decl.GetFieldString("VpiValue");
             Need(pv.Length > 0, "unmaterialized parameter value");
-            var temp = db.Create(UhdmObjectType.Constant)
-                .SetString("VpiValue", pv)
-                .SetInt("VpiSize", w)
-                .SetInt("VpiConstType", decl.GetInt(UhdmVpi.VpiConstType));
-            b = ConstantBits(temp);
+            b = ConstantBits(w, pv);
         }
         Need(b.Length > 0 && !b.Any(c => c is not ('0' or '1')), "captured parameter must have a known value");
         if (b.Length > w) b = b[^w..];
@@ -794,7 +791,7 @@ public sealed partial class UhdmRtlLowerer
                     "for requires one assignment initializer and increment");
                 var initial = init[0].One(UhdmVpi.VpiLhs);
                 if (LocalKey(initial).Length == 0 && TypeOf(initial) is UhdmVpi.VpiIntVar or UhdmVpi.VpiLogicVar or UhdmVpi.VpiBitVar)
-                    AddLocal(initial!, "$loop" + initial!.UhdmId);
+                    AddLocal(initial!, "$loop" + (++loopVarCounter));
                 string key = LocalKey(initial);
                 Need(key.Length > 0 && key == LocalKey(ControlTarget(inc[0])) && Width(callLocals[key].Declaration) <= 32,
                     "for requires one <=32-bit local counter");
@@ -892,9 +889,10 @@ public sealed partial class UhdmRtlLowerer
                 string truth = $"{{\"kind\":\"caseeq\",\"args\":[{{\"kind\":\"redor\",\"args\":[{condExpr}]}},{{\"kind\":\"const\",\"bits\":\"1\"}}]}}";
                 controlValues.Clear();
                 callLocals = before;
+                int truthBytes = Encoding.UTF8.GetByteCount(truth);
                 foreach (var (key, word) in callLocals)
                 {
-                    Need(yes[key].Value.Length + no[key].Value.Length + truth.Length < 1024 * 1024,
+                    Need(Encoding.UTF8.GetByteCount(yes[key].Value) + Encoding.UTF8.GetByteCount(no[key].Value) + truthBytes < 1024 * 1024,
                         "symbolic branch expansion exceeds1MiB");
                     word.Assigned = yes[key].Assigned && no[key].Assigned;
                     if (word.Assigned)
@@ -914,7 +912,7 @@ public sealed partial class UhdmRtlLowerer
     {
         Need(activeCalls.Count < 16 && activeCalls.Add(function), "recursive or excessive subroutine calls");
         var scope = new CallFrameScope(this, callLocals, controlValues, insideCall, function, currentFunction);
-        callLocals = new Dictionary<string, LocalWord>(StringComparer.Ordinal);
+        callLocals = new SortedDictionary<string, LocalWord>(StringComparer.Ordinal);
         controlValues = new Dictionary<string, KnownControl>(StringComparer.Ordinal);
         insideCall = true;
         currentFunction = function;
@@ -923,7 +921,7 @@ public sealed partial class UhdmRtlLowerer
 
     private readonly struct CallFrameScope(
         UhdmRtlLowerer owner,
-        Dictionary<string, LocalWord> savedLocals,
+        SortedDictionary<string, LocalWord> savedLocals,
         Dictionary<string, KnownControl> savedControls,
         bool wasInside,
         UhdmNode fn,

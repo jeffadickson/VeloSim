@@ -63,7 +63,7 @@ public sealed class UhdmNode
         for (int i = 0; i < chain.Length; i++)
         {
             if (chain[i].VpiRelationFieldIndex.TryGetValue(vpiRelation, out var pair) && pair.VectorFieldIndex >= 0)
-                return levelValues[i][pair.VectorFieldIndex] as List<UhdmNode> ?? (IReadOnlyList<UhdmNode>)[];
+                return FilterNonNull(levelValues[i][pair.VectorFieldIndex]);
         }
         return [];
     }
@@ -168,9 +168,43 @@ public sealed class UhdmNode
         for (int i = 0; i < chain.Length; i++)
         {
             if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
-                return levelValues[i][idx] as List<UhdmNode> ?? (IReadOnlyList<UhdmNode>)[];
+                return FilterNonNull(levelValues[i][idx]);
         }
         return [];
+    }
+
+    internal IReadOnlyList<UhdmNode?> GetFieldListWithNulls(string fieldName)
+    {
+        for (int i = 0; i < chain.Length; i++)
+        {
+            if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
+                return levelValues[i][idx] as List<UhdmNode?> ?? (IReadOnlyList<UhdmNode?>)[];
+        }
+        return [];
+    }
+
+    private static IReadOnlyList<UhdmNode> FilterNonNull(object? raw)
+    {
+        if (raw is not List<UhdmNode?> list || list.Count == 0)
+            return [];
+        bool hasNull = false;
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (list[i] is null)
+            {
+                hasNull = true;
+                break;
+            }
+        }
+        if (!hasNull)
+            return (IReadOnlyList<UhdmNode>)list!;
+        var filtered = new List<UhdmNode>(list.Count);
+        foreach (var item in list)
+        {
+            if (item is not null)
+                filtered.Add(item);
+        }
+        return filtered;
     }
 
     public UhdmNode SetString(string fieldName, string value)
@@ -224,11 +258,16 @@ public sealed class UhdmNode
     public UhdmNode AddListRef(string fieldName, UhdmNode target)
     {
         ArgumentNullException.ThrowIfNull(target);
+        return AddListRefOrNull(fieldName, target);
+    }
+
+    internal UhdmNode AddListRefOrNull(string fieldName, UhdmNode? target)
+    {
         for (int i = 0; i < chain.Length; i++)
         {
             if (chain[i].FieldIndexByName.TryGetValue(fieldName, out int idx))
             {
-                var list = levelValues[i][idx] as List<UhdmNode>;
+                var list = levelValues[i][idx] as List<UhdmNode?>;
                 if (list is null)
                 {
                     list = [];
@@ -258,7 +297,7 @@ public sealed class UhdmNode
                 }
                 else if (kind is UhdmFieldKind.ObjList or UhdmFieldKind.FactoryList)
                 {
-                    if (values[f] is List<UhdmNode> children)
+                    if (values[f] is List<UhdmNode?> children)
                     {
                         foreach (var child in children)
                         {
@@ -444,12 +483,9 @@ public sealed class UhdmDatabase
                         var list = cur.ReadList(field.Offset);
                         if (list.Count > 0)
                         {
-                            var result = new List<UhdmNode>(list.Count);
+                            var result = new List<UhdmNode?>(list.Count);
                             for (int k = 0; k < list.Count; k++)
-                            {
-                                var target = ResolveObjIndex(db, list.ReadStruct(k));
-                                if (target is not null) result.Add(target);
-                            }
+                                result.Add(ResolveObjIndex(db, list.ReadStruct(k)));
                             values[f] = result;
                         }
                         break;
@@ -459,7 +495,7 @@ public sealed class UhdmDatabase
                         var list = cur.ReadList(field.Offset);
                         if (list.Count > 0)
                         {
-                            var result = new List<UhdmNode>(list.Count);
+                            var result = new List<UhdmNode?>(list.Count);
                             for (int k = 0; k < list.Count; k++)
                             {
                                 var target = ResolveFactoryIndex(db, field.TargetUhdmType, list.ReadUInt64(k));
@@ -550,6 +586,19 @@ public sealed class UhdmDatabase
         writer.SetUInt32(rootStart, 0, Version);
         writer.SetUInt32(rootStart, 4, (uint)nextObjectId);
 
+        // Write root `designs @2 : List(Design)` (slot 0) matching UHDM::Serializer::Save.
+        var designs = Designs;
+        if (designs.Count > 0)
+        {
+            var designSpec = UhdmSchema.GetByUhdmType(UhdmObjectType.Design);
+            int designNameOffset = designSpec.Fields[designSpec.FieldIndexByName["VpiName"]].Offset;
+            int designsPtrWord = rootStart + UhdmSchema.RootDataWords + UhdmSchema.RootDesignsPointerSlot;
+            int firstDesignWord = writer.AllocateCompositeStructList(designsPtrWord, designs.Count, designSpec.DataWords, designSpec.PointerCount);
+            int designStride = designSpec.DataWords + designSpec.PointerCount;
+            for (int i = 0; i < designs.Count; i++)
+                writer.SetUInt64(firstDesignWord + i * designStride, designNameOffset, Intern(designs[i].Name));
+        }
+
         // Write every non-empty factory list.
         foreach (var spec in UhdmSchema.ConcreteClasses)
         {
@@ -630,14 +679,14 @@ public sealed class UhdmDatabase
                     }
                     case UhdmFieldKind.ObjList:
                     {
-                        var items = (List<UhdmNode>)val;
+                        var items = (List<UhdmNode?>)val;
                         if (items.Count > 0)
                         {
                             int elemStart = writer.AllocateCompositeStructList(ptrBase + field.Offset, items.Count, UhdmSchema.ObjIndexDataWords, UhdmSchema.ObjIndexPointerCount);
                             for (int k = 0; k < items.Count; k++)
                             {
                                 var target = items[k];
-                                if (nodeIndex.TryGetValue(target, out ulong idx))
+                                if (target is not null && nodeIndex.TryGetValue(target, out ulong idx))
                                 {
                                     int w = elemStart + k * UhdmSchema.ObjIndexDataWords;
                                     writer.SetUInt64(w, UhdmSchema.ObjIndexByteOffset, idx);
@@ -649,12 +698,12 @@ public sealed class UhdmDatabase
                     }
                     case UhdmFieldKind.FactoryList:
                     {
-                        var items = (List<UhdmNode>)val;
+                        var items = (List<UhdmNode?>)val;
                         if (items.Count > 0)
                         {
                             var raw = new ulong[items.Count];
                             for (int k = 0; k < items.Count; k++)
-                                raw[k] = nodeIndex.TryGetValue(items[k], out ulong idx) ? idx : 0UL;
+                                raw[k] = items[k] is { } item && nodeIndex.TryGetValue(item, out ulong idx) ? idx : 0UL;
                             writer.AllocateUInt64List(ptrBase + field.Offset, raw);
                         }
                         break;

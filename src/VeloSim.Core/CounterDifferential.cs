@@ -126,5 +126,5 @@ public sealed class CounterDifferential(IProcessRunner? runner = null)
         if (report.FirstMismatchPrefixCycles is { } prefix) await File.WriteAllTextAsync(Path.Combine(directory, "first_mismatch_prefix.txt"), CounterStimulus.ToText(resets.Take(prefix).ToArray()), cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(directory, "report.json"), report.ToJson(), cancellationToken).ConfigureAwait(false); return report;
     }
-    private static bool IsBackendFailure(Exception ex) => ex is IOException or ArgumentException or FormatException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException;
+    private static bool IsBackendFailure(Exception ex) => ex is IOException or InvalidDataException or ArgumentException or FormatException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException;
 }
