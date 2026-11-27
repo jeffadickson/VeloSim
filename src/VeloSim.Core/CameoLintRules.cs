@@ -192,9 +192,9 @@ public sealed class CameoLintRulePack
         """;
 
     public static string DefaultRuleTemplate(string ruleCode = "CUSTOM_EXAMPLE") => $$"""
-        -- VeloSim Tier 3 Cameo Custom Lint Rule Pack
-        -- Validate: VeloSim.Tools lint --check-rules --rules <this-file.cameo>
-        -- Run:      VeloSim.Tools lint <design.rtl.json|design.sv> --rules <this-file.cameo>
+        // VeloSim Tier 3 Cameo Custom Lint Rule Pack
+        // Validate: VeloSim.Tools lint --check-rules --rules <this-file.cameo>
+        // Run:      VeloSim.Tools lint <design.rtl.json|design.sv> --rules <this-file.cameo>
 
         rule({
             code = "{{ruleCode}}",
@@ -208,7 +208,7 @@ public sealed class CameoLintRulePack
         }, (ctx: LintContext) => {
             let maxWidth = ctx.param_int("max_bus_width", 256)
             for s in ctx.signals {
-                if s.width > maxWidth and not rtl.glob("dbg_*", s.name) {
+                if s.width > maxWidth && !rtl.glob("dbg_*", s.name) {
                     ctx.warn(
                         "{{ruleCode}}",
                         $"Signal '{s.name}' width {s.width} exceeds configured max_bus_width ({maxWidth}).",
@@ -218,7 +218,7 @@ public sealed class CameoLintRulePack
                 }
             }
             for m in ctx.memories {
-                if not rtl.is_pow2(m.depth) {
+                if !rtl.is_pow2(m.depth) {
                     ctx.error(
                         "{{ruleCode}}",
                         $"Memory '{m.name}' depth {m.depth} is not a power of two (address bits={rtl.clog2(m.depth)}).",

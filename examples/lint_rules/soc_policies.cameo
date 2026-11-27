@@ -1,10 +1,10 @@
--- Example Tier 3 Cameo DSL custom lint rule pack for VeloSim.
--- Statically type-checked against VeloSim's built-in LintContext prelude and
--- executed inside a strictly hermetic, deterministic, step-budgeted Cameo VM.
---
--- Usage:
---   VeloSim.Tools lint --check-rules --rules examples/lint_rules/soc_policies.cameo
---   VeloSim.Tools lint design.rtl.json --rules examples/lint_rules/soc_policies.cameo
+// Example Tier 3 Cameo DSL custom lint rule pack for VeloSim.
+// Statically type-checked against VeloSim's built-in LintContext prelude and
+// executed inside a strictly hermetic, deterministic, step-budgeted Cameo VM.
+//
+// Usage:
+//   VeloSim.Tools lint --check-rules --rules examples/lint_rules/soc_policies.cameo
+//   VeloSim.Tools lint design.rtl.json --rules examples/lint_rules/soc_policies.cameo
 
 rule({
     code = "SOC_POW2_MEM",
@@ -18,7 +18,7 @@ rule({
 }, (ctx: LintContext) => {
     let maxDepth = ctx.param_int("max_mem_depth", 4096)
     for m in ctx.memories {
-        if not rtl.is_pow2(m.depth) or m.depth > maxDepth {
+        if !rtl.is_pow2(m.depth) || m.depth > maxDepth {
             ctx.error(
                 "SOC_POW2_MEM",
                 $"Memory '{m.name}' depth {m.depth} (addr_bits={rtl.clog2(m.depth)}) must be a power of two <= {maxDepth}.",
@@ -41,7 +41,7 @@ rule({
 }, (ctx: LintContext) => {
     let maxDivWidth = ctx.param_int("max_div_width", 16)
     for e in ctx.expressions {
-        if (e.kind == "div" or e.kind == "mod") and e.width > maxDivWidth {
+        if (e.kind == "div" || e.kind == "mod") && e.width > maxDivWidth {
             ctx.warn(
                 "SOC_NO_WIDE_DIV",
                 $"Expression '{e.kind}' of width {e.width} exceeds {maxDivWidth}-bit SoC area budget.",
@@ -63,7 +63,7 @@ rule({
     hint = "Initialize the FSM state register on reset and add a default recovery state."
 }, (ctx: LintContext) => {
     for f in ctx.fsms {
-        if f.reset_state == "" or not f.has_default_recovery {
+        if f.reset_state == "" || !f.has_default_recovery {
             ctx.warn(
                 "SOC_FSM_MIN_WIDTH",
                 $"FSM '{f.state_signal}' must define both a reset state and a default recovery clause.",
@@ -85,7 +85,7 @@ rule({
     hint = "Use a Gray-coded async FIFO or handshake synchronizer for multi-bit bus crossings."
 }, (ctx: LintContext) => {
     for c in ctx.cdc_crossings {
-        if c.kind == "CDC" and c.width > 1 and not c.synchronized and not c.false_path {
+        if c.kind == "CDC" && c.width > 1 && !c.synchronized && !c.false_path {
             ctx.error(
                 "SOC_CDC_NO_BUS",
                 $"Multi-bit ({c.width}-bit) bus crossing '{c.source_signal}' ({c.source_domain}) -> '{c.destination_signal}' ({c.destination_domain}) is forbidden.",
