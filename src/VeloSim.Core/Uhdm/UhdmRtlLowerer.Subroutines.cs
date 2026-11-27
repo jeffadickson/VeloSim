@@ -41,6 +41,9 @@ public sealed partial class UhdmRtlLowerer
     private UhdmNode? parameterContext;
     private readonly List<UhdmNode> parameterVisibleScopes = [];
     private readonly List<ParameterBinding> parameterBindings = [];
+    private readonly Dictionary<string, List<ParameterBinding>> parameterBindingsByKey = new(StringComparer.Ordinal);
+    private readonly Dictionary<UhdmNode, Dictionary<string, (UhdmNode? Decl, bool Ambiguous)>> scopeLexicalIndex = new(ReferenceEqualityComparer.Instance);
+    private static readonly int[] LexicalDeclRelations = [UhdmVpi.VpiParameter, UhdmVpi.VpiVariables, UhdmVpi.VpiReg, UhdmVpi.VpiNet, UhdmVpi.VpiIODecl];
 
     private Dictionary<string, KnownControl> controlValues = new(StringComparer.Ordinal);
     private readonly HashSet<UhdmNode> loopControls = new(ReferenceEqualityComparer.Instance);
@@ -240,6 +243,38 @@ public sealed partial class UhdmRtlLowerer
             entries[key] = null;
     }
 
+    private Dictionary<string, (UhdmNode? Decl, bool Ambiguous)> GetScopeLexicalIndex(UhdmNode scope)
+    {
+        if (scopeLexicalIndex.TryGetValue(scope, out var existing))
+            return existing;
+        var map = new Dictionary<string, (UhdmNode? Decl, bool Ambiguous)>(StringComparer.Ordinal);
+        void AddDecl(UhdmNode? decl)
+        {
+            if (decl is null) return;
+            Need(++syntaxSymbolChecks <= 1_000_000, "original symbol resolution budget exceeded");
+            string name = decl.Name;
+            if (name.Length == 0) return;
+            if (decl.VpiType == UhdmVpi.VpiParameter && !OwnedParameter(decl, scope)) return;
+            if (!map.TryGetValue(name, out var prev))
+            {
+                map[name] = (decl, false);
+            }
+            else if (!prev.Ambiguous && prev.Decl is not null && !ReferenceEquals(prev.Decl, decl) && !SameLocal(prev.Decl, decl))
+            {
+                map[name] = (prev.Decl, true);
+            }
+        }
+        for (int i = 0; i < LexicalDeclRelations.Length; i++)
+            foreach (var decl in scope.Many(LexicalDeclRelations[i])) AddDecl(decl);
+        foreach (var pa in scope.Many(UhdmVpi.VpiParamAssign))
+        {
+            var decl = pa.One(UhdmVpi.VpiLhs);
+            if (TypeOf(decl) == UhdmVpi.VpiParameter && OwnedParameter(decl!, scope)) AddDecl(decl);
+        }
+        scopeLexicalIndex[scope] = map;
+        return map;
+    }
+
     private UhdmNode? OriginalLexicalDeclaration(UhdmNode? reference)
     {
         if (reference is null) return null;
@@ -250,26 +285,12 @@ public sealed partial class UhdmRtlLowerer
         for (int depth = 0; scope is not null && depth < 128; depth++)
         {
             Need(seen.Add(scope), "cyclic original lexical scope");
-            UhdmNode? found = null;
-            void Consider(UhdmNode? decl)
+            var index = GetScopeLexicalIndex(scope);
+            if (index.TryGetValue(symbol, out var entry))
             {
-                if (decl is null) return;
-                Need(++syntaxSymbolChecks <= 1_000_000, "original symbol resolution budget exceeded");
-                if (decl.Name != symbol) return;
-                if (decl.VpiType == UhdmVpi.VpiParameter && !OwnedParameter(decl, scope)) return;
-                if (found is not null && !ReferenceEquals(found, decl))
-                    Need(SameLocal(found, decl), "ambiguous original lexical symbol");
-                else
-                    found = decl;
+                Need(!entry.Ambiguous, "ambiguous original lexical symbol");
+                return entry.Decl;
             }
-            foreach (int rel in new[] { UhdmVpi.VpiParameter, UhdmVpi.VpiVariables, UhdmVpi.VpiReg, UhdmVpi.VpiNet, UhdmVpi.VpiIODecl })
-                foreach (var decl in scope.Many(rel)) Consider(decl);
-            foreach (var pa in scope.Many(UhdmVpi.VpiParamAssign))
-            {
-                var decl = pa.One(UhdmVpi.VpiLhs);
-                if (TypeOf(decl) == UhdmVpi.VpiParameter && OwnedParameter(decl!, scope)) Consider(decl);
-            }
-            if (found is not null) return found;
             scope = scope.Parent;
         }
         return null;
@@ -386,11 +407,28 @@ public sealed partial class UhdmRtlLowerer
         Need(context is not null, "parameter requires an elaborated instance context");
 
         string canonKey = CanonicalKey(canonical);
-        var prior = parameterBindings.FirstOrDefault(p =>
-            ReferenceEquals(p.Context, context) && ReferenceEquals(p.Scope, scope) && CanonicalKey(p.Canonical) == canonKey);
+        ParameterBinding? prior = null;
+        if (parameterBindingsByKey.TryGetValue(canonKey, out var bucket))
+        {
+            foreach (var p in bucket)
+            {
+                if (ReferenceEquals(p.Context, context) && ReferenceEquals(p.Scope, scope))
+                {
+                    prior = p;
+                    break;
+                }
+            }
+        }
         if (prior is null)
         {
-            parameterBindings.Add(new ParameterBinding(declaration, rhs, scope, context!, canonical));
+            var binding = new ParameterBinding(declaration, rhs, scope, context!, canonical);
+            parameterBindings.Add(binding);
+            if (bucket is null)
+            {
+                bucket = [];
+                parameterBindingsByKey[canonKey] = bucket;
+            }
+            bucket.Add(binding);
             return;
         }
         if (rhs is null) return;
@@ -411,6 +449,12 @@ public sealed partial class UhdmRtlLowerer
     private void BindParameters(UhdmNode scope)
     {
         var declarations = scope.Many(UhdmVpi.VpiParameter);
+        Dictionary<string, UhdmNode>? declsByLex = null;
+        if (declarations.Count > 4)
+        {
+            declsByLex = new Dictionary<string, UhdmNode>(declarations.Count, StringComparer.Ordinal);
+            foreach (var item in declarations) declsByLex.TryAdd(LexicalKey(item), item);
+        }
         foreach (var assignment in scope.Many(UhdmVpi.VpiParamAssign))
         {
             var decl = assignment.One(UhdmVpi.VpiLhs);
@@ -423,9 +467,12 @@ public sealed partial class UhdmRtlLowerer
             }
             if (!ParameterDefinition(ParameterOwner(canonical), scope)) continue;
 
-            var match = declarations.FirstOrDefault(item => LexicalKey(item) == LexicalKey(canonical));
+            string canonicalLex = LexicalKey(canonical);
+            UhdmNode? match = declsByLex is not null
+                ? (declsByLex.TryGetValue(canonicalLex, out var foundDecl) ? foundDecl : null)
+                : declarations.FirstOrDefault(item => LexicalKey(item) == canonicalLex);
             if (match is not null) decl = match;
-            else if (LexicalKey(decl) != LexicalKey(canonical)) decl = canonical;
+            else if (LexicalKey(decl) != canonicalLex) decl = canonical;
 
             var rhs = assignment.One(UhdmVpi.VpiRhs);
             if (!assignment.GetFieldBool("VpiOverriden") && syntaxParameterValues.TryGetValue(LexicalKey(assignment), out var srcVal))
@@ -467,13 +514,15 @@ public sealed partial class UhdmRtlLowerer
 
         string canonKey = CanonicalKey(canonical);
         ParameterBinding? found = null;
-        foreach (var binding in parameterBindings)
+        if (parameterBindingsByKey.TryGetValue(canonKey, out var bucket))
         {
-            if (CanonicalKey(binding.Canonical) != canonKey) continue;
-            if (!parameterVisibleScopes.Any(s => ReferenceEquals(s, binding.Context))) continue;
-            if (local && !ReferenceEquals(binding.Scope, currentFunction)) continue;
-            Need(found is null, "ambiguous visible parameter binding");
-            found = binding;
+            foreach (var binding in bucket)
+            {
+                if (!parameterVisibleScopes.Any(s => ReferenceEquals(s, binding.Context))) continue;
+                if (local && !ReferenceEquals(binding.Scope, currentFunction)) continue;
+                Need(found is null, "ambiguous visible parameter binding");
+                found = binding;
+            }
         }
         Need(found is not null, "parameter declaration is outside bound elaborated scopes");
         return found!;

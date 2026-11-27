@@ -93,12 +93,51 @@ public static class RtlCoverageMerge
         Dictionary<string, PropertyAcc> properties = [with(StringComparer.Ordinal)];
         var propertyOrder = new List<string>();
 
+        // Stream-parse multiple coverage files concurrently (avoiding UTF-16 ReadAllText copies)
+        // and reduce in exact inputPaths order for 100% deterministic output.
+        var docs = new JsonDocument[inputPaths.Count];
+        try
+        {
+            if (inputPaths.Count >= 2 && Environment.ProcessorCount > 1)
+            {
+                Parallel.For(0, inputPaths.Count, idx =>
+                {
+                    string path = inputPaths[idx];
+                    if (!File.Exists(path)) throw new FileNotFoundException("Coverage input file not found.", path);
+                    using var stream = File.OpenRead(path);
+                    docs[idx] = JsonDocument.Parse(stream);
+                });
+            }
+            else
+            {
+                for (int idx = 0; idx < inputPaths.Count; idx++)
+                {
+                    string path = inputPaths[idx];
+                    if (!File.Exists(path)) throw new FileNotFoundException("Coverage input file not found.", path);
+                    using var stream = File.OpenRead(path);
+                    docs[idx] = JsonDocument.Parse(stream);
+                }
+            }
+        }
+        catch (AggregateException ae)
+        {
+            foreach (var d in docs) d?.Dispose();
+            if (ae.InnerExceptions.Count == 1)
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ae.InnerExceptions[0]).Throw();
+            throw;
+        }
+        catch
+        {
+            foreach (var d in docs) d?.Dispose();
+            throw;
+        }
+
         int fileIndex = 0;
+        try
+        {
         foreach (string inputPath in inputPaths)
         {
-            if (!File.Exists(inputPath)) throw new FileNotFoundException("Coverage input file not found.", inputPath);
-            using var doc = JsonDocument.Parse(File.ReadAllText(inputPath));
-            var root = doc.RootElement;
+            var root = docs[fileIndex].RootElement;
             if (!root.TryGetProperty("schema", out var schemaEl) || schemaEl.GetString() != Schema)
                 throw new InvalidOperationException($"Unsupported coverage schema in {inputPath} (expected {Schema}).");
             string fileModel = root.GetProperty("model").GetString()
@@ -268,12 +307,20 @@ public static class RtlCoverageMerge
             }
             ++fileIndex;
         }
+        }
+        finally
+        {
+            foreach (var d in docs) d?.Dispose();
+        }
 
         ulong covered = 0;
         foreach (var k in pointOrder) if (points[k].Hits > 0) ++covered;
 
-        using var ms = new MemoryStream();
-        using (var w = new Utf8JsonWriter(ms))
+        string fullOut = Path.GetFullPath(outputPath);
+        string? dir = Path.GetDirectoryName(fullOut);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        using var fs = new FileStream(fullOut, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
+        using (var w = new Utf8JsonWriter(fs))
         {
             w.WriteStartObject();
             w.WriteString("schema", Schema);
@@ -379,10 +426,7 @@ public static class RtlCoverageMerge
             }
             w.WriteEndObject();
         }
-        string fullOut = Path.GetFullPath(outputPath);
-        string? dir = Path.GetDirectoryName(fullOut);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(fullOut, Encoding.UTF8.GetString(ms.ToArray()) + "\n", new UTF8Encoding(false));
+        fs.WriteByte((byte)'\n');
         return fullOut;
     }
 

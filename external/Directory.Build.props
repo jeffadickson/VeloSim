@@ -1,0 +1,7 @@
+<Project>
+  <!-- Isolate external submodules from VeloSim's strict warning/lockfile settings. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+</Project>

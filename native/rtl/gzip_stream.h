@@ -20,6 +20,8 @@ class GzipWriter {
  std::ofstream out_;
  std::vector<uint8_t> buf_;
  std::vector<uint8_t> compressed_;
+ std::array<int32_t, kHashSize> head_{};
+ std::vector<int32_t> prev_;
  uint64_t bit_buf_ = 0;
  int bit_count_ = 0;
  uint32_t crc_ = 0xFFFFFFFFu;
@@ -41,13 +43,36 @@ class GzipWriter {
   return table;
  }
 
- static uint32_t reverse_bits(uint32_t code, int bits) noexcept {
+ static constexpr uint32_t reverse_bits(uint32_t code, int bits) noexcept {
   uint32_t out = 0;
   for (int i = 0; i < bits; ++i) {
    out = (out << 1) | (code & 1u);
    code >>= 1;
   }
   return out;
+ }
+
+ struct FixedCode { uint16_t bits; uint8_t len; };
+
+ static const std::array<FixedCode, 288>& litlen_table() noexcept {
+  static constexpr auto table = []() constexpr {
+   std::array<FixedCode, 288> t{};
+   for (uint32_t sym = 0; sym <= 143u; ++sym) t[sym] = {uint16_t(reverse_bits(0x30u + sym, 8)), 8};
+   for (uint32_t sym = 144u; sym <= 255u; ++sym) t[sym] = {uint16_t(reverse_bits(0x190u + (sym - 144u), 9)), 9};
+   for (uint32_t sym = 256u; sym <= 279u; ++sym) t[sym] = {uint16_t(reverse_bits(sym - 256u, 7)), 7};
+   for (uint32_t sym = 280u; sym <= 287u; ++sym) t[sym] = {uint16_t(reverse_bits(0xC0u + (sym - 280u), 8)), 8};
+   return t;
+  }();
+  return table;
+ }
+
+ static const std::array<uint8_t, 30>& dist_rev_table() noexcept {
+  static constexpr auto table = []() constexpr {
+   std::array<uint8_t, 30> t{};
+   for (uint32_t idx = 0; idx < 30u; ++idx) t[idx] = uint8_t(reverse_bits(idx, 5));
+   return t;
+  }();
+  return table;
  }
 
  void put_bits(uint32_t val, int nbits) {
@@ -61,15 +86,8 @@ class GzipWriter {
  }
 
  void emit_litlen(uint32_t sym) {
-  if (sym <= 143u) {
-   put_bits(reverse_bits(0x30u + sym, 8), 8);
-  } else if (sym <= 255u) {
-   put_bits(reverse_bits(0x190u + (sym - 144u), 9), 9);
-  } else if (sym <= 279u) {
-   put_bits(reverse_bits(sym - 256u, 7), 7);
-  } else {
-   put_bits(reverse_bits(0xC0u + (sym - 280u), 8), 8);
-  }
+  const auto c = litlen_table()[sym];
+  put_bits(c.bits, c.len);
  }
 
  void emit_length(uint32_t len) {
@@ -98,7 +116,7 @@ class GzipWriter {
   };
   int idx = 0;
   while (idx < 29 && dist >= kBase[idx + 1]) ++idx;
-  put_bits(reverse_bits(uint32_t(idx), 5), 5);
+  put_bits(dist_rev_table()[idx], 5);
   if (kExtra[idx]) put_bits(dist - kBase[idx], kExtra[idx]);
  }
 
@@ -115,9 +133,9 @@ class GzipWriter {
   const uint8_t* data = buf_.data();
   const size_t n = buf_.size();
   if (n > 0) {
-   std::array<int32_t, kHashSize> head;
-   head.fill(-1);
-   std::vector<int32_t> prev(n, -1);
+   head_.fill(-1);
+   if (prev_.size() < n) prev_.resize(n);
+   std::fill_n(prev_.data(), n, -1);
 
    size_t i = 0;
    while (i < n) {
@@ -125,9 +143,9 @@ class GzipWriter {
     size_t best_dist = 0;
     if (i + 3 <= n) {
      uint32_t h = hash3(data + i);
-     int32_t pos = head[h];
-     prev[i] = pos;
-     head[h] = int32_t(i);
+     int32_t pos = head_[h];
+     prev_[i] = pos;
+     head_[h] = int32_t(i);
 
      int chain = 16;
      while (pos >= 0 && chain-- > 0) {
@@ -143,7 +161,7 @@ class GzipWriter {
         if (best_len >= 64 || best_len >= limit) break;
        }
       }
-      pos = prev[size_t(pos)];
+      pos = prev_[size_t(pos)];
      }
     }
     if (best_len >= 3) {
@@ -151,8 +169,8 @@ class GzipWriter {
      emit_distance(uint32_t(best_dist));
      for (size_t k = 1; k < best_len && i + k + 3 <= n; ++k) {
       uint32_t h = hash3(data + i + k);
-      prev[i + k] = head[h];
-      head[h] = int32_t(i + k);
+      prev_[i + k] = head_[h];
+      head_[h] = int32_t(i + k);
      }
      i += best_len;
     } else {

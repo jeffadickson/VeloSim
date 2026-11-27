@@ -73,9 +73,13 @@
         "resolved": "2.0.14",
         "contentHash": "15fyVO4aG6poR6IKmhM74zf7PUzaU6FZAGm2d3SQSO9yIyGAeo44e6t9qeKjjaqyMEqYdqcb2G1B0gpLoDU2cA=="
       },
+      "cameo.runtime": {
+        "type": "Project"
+      },
       "velosim": {
         "type": "Project",
         "dependencies": {
+          "Cameo.Runtime": "[1.0.0, )",
           "System.CommandLine": "[2.0.14, )"
         }
       },

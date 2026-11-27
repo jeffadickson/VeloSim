@@ -2,10 +2,13 @@
 #include "runtime.h"
 #include <algorithm>
 #include <deque>
+#include <functional>
+#include <iterator>
 #include <map>
 #include <optional>
+#include <queue>
+#include <unordered_map>
 #include <variant>
-#include <iterator>
 
 
 namespace vsrtl {
@@ -61,12 +64,21 @@ public:
 private:
     using Nba = std::variant<Write,size_t>;
     struct Tick { std::deque<size_t> active; std::vector<Nba> nba; };
+    struct SigWatcher { size_t frame; Edge edge; };
+    struct MemUndo { size_t mem; size_t idx; W val; };
+
     std::vector<W> signals_;
     std::vector<std::vector<W>> memories_;
     // Fork appends frames while an executor holds its parent's reference.
     // deque preserves those references; vector reallocation would invalidate it.
     std::deque<Frame> frames_;
-    std::map<uint64_t,Tick> future_;
+    // Indexed watcher tables eliminate O(N_frames) linear scans on signal/memory/event updates.
+    std::vector<std::vector<SigWatcher>> signalWatchers_;
+    std::vector<std::vector<size_t>> memWatchers_;
+    std::vector<std::vector<size_t>> namedWatchers_;
+    // O(1) hash-indexed future time slots paired with a lazy-deletion min-heap.
+    std::unordered_map<uint64_t,Tick> futureSlots_;
+    mutable std::priority_queue<uint64_t,std::vector<uint64_t>,std::greater<uint64_t>> futureHeap_;
     std::deque<size_t> active_, inactive_;
     std::vector<Nba> nba_;
     uint64_t now_ = 0;
@@ -74,7 +86,98 @@ private:
     size_t namedCount_ = 0;
     bool executing_ = false, started_ = false;
 
+    // Reusable per-transaction undo journal: avoids full deep-copy of signals/memories/frames on happy paths
+    // while guaranteeing exact atomic rollback if any exception is thrown.
+    uint64_t undoSigMask_[4] = {};
+    uint64_t undoFrameMask_[4] = {};
+    size_t undoOrigFrameCount_ = 0;
+    std::vector<std::pair<size_t,W>> undoSignals_;
+    std::vector<MemUndo> undoMemories_;
+    std::vector<std::pair<size_t,Frame>> undoFrames_;
+    std::unordered_map<uint64_t,std::optional<Tick>> undoFuture_;
+    std::deque<size_t> undoActive_, undoInactive_;
+    std::vector<Nba> undoNba_;
 
+    void touchSignal(size_t s) {
+        if (!executing_) return;
+        const size_t wordIdx = s >> 6;
+        const uint64_t bit = uint64_t(1) << (s & 63);
+        if (!(undoSigMask_[wordIdx] & bit)) {
+            undoSigMask_[wordIdx] |= bit;
+            undoSignals_.emplace_back(s, signals_[s]);
+        }
+    }
+    void touchMemory(size_t m, size_t idx) {
+        if (!executing_) return;
+        undoMemories_.push_back({m, idx, memories_[m][idx]});
+    }
+    void touchFrame(size_t id) {
+        if (!executing_ || id >= undoOrigFrameCount_) return;
+        const size_t wordIdx = id >> 6;
+        const uint64_t bit = uint64_t(1) << (id & 63);
+        if (!(undoFrameMask_[wordIdx] & bit)) {
+            undoFrameMask_[wordIdx] |= bit;
+            undoFrames_.emplace_back(id, frames_[id]);
+        }
+    }
+    void touchFuture(uint64_t t) {
+        if (!executing_) return;
+        if (undoFuture_.find(t) != undoFuture_.end()) return;
+        if (auto it = futureSlots_.find(t); it != futureSlots_.end())
+            undoFuture_.emplace(t, it->second);
+        else
+            undoFuture_.emplace(t, std::nullopt);
+    }
+
+    bool hasFuture() const {
+        while (!futureHeap_.empty() && futureSlots_.find(futureHeap_.top()) == futureSlots_.end())
+            futureHeap_.pop();
+        return !futureHeap_.empty();
+    }
+    uint64_t earliestFuture() const { return futureHeap_.top(); }
+    Tick& getOrCreateFutureSlot(uint64_t target) {
+        touchFuture(target);
+        auto [it, inserted] = futureSlots_.try_emplace(target);
+        if (inserted) futureHeap_.push(target);
+        return it->second;
+    }
+    void eraseFutureSlot(std::unordered_map<uint64_t,Tick>::iterator it) {
+        futureSlots_.erase(it);
+        if (futureSlots_.empty()) futureHeap_ = {};
+    }
+    void rebuildFutureHeap() {
+        futureHeap_ = {};
+        for (const auto& [t, _] : futureSlots_) futureHeap_.push(t);
+    }
+
+    void indexWatches(size_t id) {
+        const auto& frame = frames_[id];
+        for (const auto& w : frame.watches) {
+            if (w.memory) memWatchers_[w.signal].push_back(id);
+            else signalWatchers_[w.signal].push_back({id, w.edge});
+        }
+        for (size_t ev : frame.namedWatches) namedWatchers_[ev].push_back(id);
+    }
+    void unindexWatches(size_t id) {
+        const auto& frame = frames_[id];
+        for (const auto& w : frame.watches) {
+            if (w.memory) {
+                std::erase(memWatchers_[w.signal], id);
+            } else {
+                std::erase_if(signalWatchers_[w.signal], [id](const SigWatcher& sw) { return sw.frame == id; });
+            }
+        }
+        for (size_t ev : frame.namedWatches)
+            std::erase(namedWatchers_[ev], id);
+    }
+    void rebuildWatchIndexes() {
+        for (auto& v : signalWatchers_) v.clear();
+        for (auto& v : memWatchers_) v.clear();
+        for (auto& v : namedWatchers_) v.clear();
+        for (size_t id = 0; id < frames_.size(); ++id) {
+            if (frames_[id].waiting && !frames_[id].finished) indexWatches(id);
+        }
+    }
 
     uint64_t futureTime(uint64_t ticks) const {
         if (ticks > UINT64_MAX - now_) throw std::overflow_error("HDL time overflow");
@@ -87,22 +190,54 @@ private:
     void activate(size_t id) {
         auto& frame = frames_.at(id);
         if (frame.finished || frame.queued) return;
-
-        reserveEvent(); active_.push_back(id); frame.queued=true; frame.waiting=false; frame.watches.clear();frame.namedWatches.clear();
-
+        touchFrame(id);
+        reserveEvent();
+        active_.push_back(id);
+        if (frame.waiting) unindexWatches(id);
+        frame.queued = true;
+        frame.waiting = false;
+        frame.watches.clear();
+        frame.namedWatches.clear();
     }
     void changed(size_t signal, W before, W after, bool memory=false) {
         if (exact(before,after)) return;
-        for (size_t id=0;id<frames_.size();++id) {
-            const auto& frame=frames_.at(id);
-            if (!frame.waiting) continue;
-            const bool trigger=std::any_of(frame.watches.begin(),frame.watches.end(),[&](auto watch) {
-                if(watch.signal!=signal || watch.memory!=memory) return false;
-                if(watch.edge==Edge::change) return true;
-                return edge_event(before,after,watch.edge==Edge::posedge);
-            });
-            if(trigger) activate(id);
+        size_t triggered[256];
+        size_t count = 0;
+        uint64_t seen[4] = {};
+        if (memory) {
+            const auto& watchers = memWatchers_[signal];
+            if (watchers.empty()) return;
+            for (size_t id : watchers) {
+                const uint64_t bit = uint64_t(1) << (id & 63);
+                if (!(seen[id >> 6] & bit)) {
+                    seen[id >> 6] |= bit;
+                    triggered[count++] = id;
+                }
+            }
+        } else {
+            const auto& watchers = signalWatchers_[signal];
+            if (watchers.empty()) return;
+            int posCache = -1, negCache = -1;
+            for (const auto& w : watchers) {
+                const uint64_t bit = uint64_t(1) << (w.frame & 63);
+                if (seen[w.frame >> 6] & bit) continue;
+                bool match = false;
+                if (w.edge == Edge::change) match = true;
+                else if (w.edge == Edge::posedge) {
+                    if (posCache < 0) posCache = edge_event(before, after, true) ? 1 : 0;
+                    match = posCache != 0;
+                } else {
+                    if (negCache < 0) negCache = edge_event(before, after, false) ? 1 : 0;
+                    match = negCache != 0;
+                }
+                if (match) {
+                    seen[w.frame >> 6] |= bit;
+                    triggered[count++] = w.frame;
+                }
+            }
         }
+        if (count > 1) std::sort(triggered, triggered + count);
+        for (size_t i = 0; i < count; ++i) activate(triggered[i]);
     }
     void validate(const Write& write) const {
         if(write.enable && bool(*write.enable&~mask(write.value.w)))throw std::invalid_argument("HDL selected write mask");
@@ -123,10 +258,12 @@ private:
     void apply(const Write& write) {
         validate(write);
         if(write.target.index) {
+            touchMemory(write.target.signal, *write.target.index);
             auto& cell=memories_[write.target.signal][*write.target.index];auto before=cell;cell=merged(before,write);
             changed(write.target.signal,before,cell,true);
         }
         else {
+            touchSignal(write.target.signal);
             const auto old=signals_[write.target.signal]; signals_[write.target.signal]=merged(old,write);
             changed(write.target.signal,old,signals_[write.target.signal]);
         }
@@ -143,11 +280,15 @@ private:
                frame.joining.empty() || std::any_of(frame.joining.begin(),frame.joining.end(),done);
     }
     void complete(size_t id) {
-        auto& frame=frames_[id];frame.finished=true;frame.waiting=false;frame.watches.clear();frame.namedWatches.clear();
+        touchFrame(id);
+        auto& frame=frames_[id];
+        if (frame.waiting) unindexWatches(id);
+        frame.finished=true;frame.waiting=false;frame.watches.clear();frame.namedWatches.clear();
         releaseChildren(id);
         if(frame.parent) {
             auto& parent=frames_[*frame.parent];
             if(parent.waiting && parent.join!=Join::none && joinReady(parent)) {
+                touchFrame(*frame.parent);
                 parent.join=Join::none;parent.joining.clear();activate(*frame.parent);
             }
         }
@@ -170,6 +311,7 @@ private:
                 }
             }
             const size_t id=active_.front(); active_.pop_front(); --pending_;
+            touchFrame(id);
             frames_.at(id).queued=false;
             if(frames_[id].finished) continue;
             while(true) {
@@ -184,12 +326,15 @@ private:
                     break;
                 }
                 if(step.kind==Step::Kind::wait) {
-                    frames_[id].waiting=true;releaseChildren(id);break;
+                    frames_[id].waiting=true;
+                    indexWatches(id);
+                    releaseChildren(id);
+                    break;
                 }
                 if(step.kind!=Step::Kind::delay) throw std::invalid_argument("HDL process step");
                 const auto target=futureTime(step.ticks); reserveEvent();
                 frames_[id].queued=true;
-                if(!step.ticks) inactive_.push_back(id); else future_[target].active.push_back(id);
+                if(!step.ticks) inactive_.push_back(id); else getOrCreateFutureSlot(target).active.push_back(id);
                 releaseChildren(id);
                 break;
               } catch(const std::exception& error) {
@@ -204,21 +349,82 @@ private:
     template<class Execute> void advance(uint64_t target, bool inclusive, Execute& execute) {
         if(target<now_) throw std::invalid_argument("HDL time cannot move backwards");
         if(now_<target || inclusive) settle(execute);
-        while(!future_.empty() && (future_.begin()->first<target || inclusive && future_.begin()->first==target)) {
-            auto it=future_.begin(); now_=it->first;
-            active_=std::move(it->second.active); nba_=std::move(it->second.nba); future_.erase(it);
+        while(hasFuture()) {
+            const uint64_t nextT = earliestFuture();
+            if (!(nextT < target || (inclusive && nextT == target))) break;
+            futureHeap_.pop();
+            touchFuture(nextT);
+            auto it = futureSlots_.find(nextT);
+            now_ = nextT;
+            active_ = std::move(it->second.active);
+            nba_ = std::move(it->second.nba);
+            eraseFutureSlot(it);
             settle(execute);
         }
         now_=target;
     }
     template<class Action> void transaction(Action action) {
         if(executing_) throw std::logic_error("reentrant HDL scheduler advance");
-        auto next=*this; next.executing_=true; next.remaining_=capacity;
-        action(next); next.executing_=false; next.started_=true; *this=std::move(next);
+        const uint64_t savedNow = now_;
+        const size_t savedPending = pending_;
+        const bool savedStarted = started_;
+        undoOrigFrameCount_ = frames_.size();
+        undoSigMask_[0] = undoSigMask_[1] = undoSigMask_[2] = undoSigMask_[3] = 0;
+        undoFrameMask_[0] = undoFrameMask_[1] = undoFrameMask_[2] = undoFrameMask_[3] = 0;
+        undoSignals_.clear();
+        undoMemories_.clear();
+        undoFrames_.clear();
+        undoFuture_.clear();
+        const bool hadActive = !active_.empty();
+        const bool hadInactive = !inactive_.empty();
+        const bool hadNba = !nba_.empty();
+        if (hadActive) undoActive_ = active_; else undoActive_.clear();
+        if (hadInactive) undoInactive_ = inactive_; else undoInactive_.clear();
+        if (hadNba) undoNba_ = nba_; else undoNba_.clear();
+        executing_ = true;
+        remaining_ = capacity;
+        try {
+            action(*this);
+            executing_ = false;
+            started_ = true;
+            undoSignals_.clear();
+            undoMemories_.clear();
+            undoFrames_.clear();
+            undoFuture_.clear();
+            if (hadActive) undoActive_.clear();
+            if (hadInactive) undoInactive_.clear();
+            if (hadNba) undoNba_.clear();
+        } catch (...) {
+            executing_ = false;
+            now_ = savedNow;
+            pending_ = savedPending;
+            started_ = savedStarted;
+            for (const auto& [s, val] : undoSignals_) signals_[s] = val;
+            for (auto it = undoMemories_.rbegin(); it != undoMemories_.rend(); ++it)
+                memories_[it->mem][it->idx] = it->val;
+            frames_.resize(undoOrigFrameCount_);
+            for (auto& [id, fr] : undoFrames_) frames_[id] = std::move(fr);
+            for (auto& [t, optTick] : undoFuture_) {
+                if (optTick) futureSlots_[t] = std::move(*optTick);
+                else futureSlots_.erase(t);
+            }
+            active_ = std::move(undoActive_);
+            inactive_ = std::move(undoInactive_);
+            nba_ = std::move(undoNba_);
+            undoSignals_.clear();
+            undoMemories_.clear();
+            undoFrames_.clear();
+            undoFuture_.clear();
+            rebuildFutureHeap();
+            rebuildWatchIndexes();
+            throw;
+        }
     }
 public:
     explicit HdlScheduler(std::vector<W> signals, std::vector<std::vector<W>> memories = {},size_t namedEvents=0)
-        :signals_(std::move(signals)),memories_(std::move(memories)),namedCount_(namedEvents) {
+        :signals_(std::move(signals)),memories_(std::move(memories)),
+         signalWatchers_(signals_.size()),memWatchers_(memories_.size()),namedWatchers_(namedEvents),
+         namedCount_(namedEvents) {
         if(signals_.empty() || signals_.size()>256 || memories_.size()>16 || namedCount_>256) throw std::invalid_argument("HDL storage shape");
         for(auto value:signals_) if(value.w<1 || value.w>256) throw std::invalid_argument("HDL signal width");
         for(const auto& memory:memories_) {
@@ -252,10 +458,20 @@ public:
     /// process begins waiting is deliberately not remembered for that process.
     void trigger(size_t event) {
         if(!executing_ || event>=namedCount_) throw std::out_of_range("HDL named trigger");
-        for(size_t id=0;id<frames_.size();++id) {
-            const auto& frame=frames_.at(id);
-            if(frame.waiting && std::find(frame.namedWatches.begin(),frame.namedWatches.end(),event)!=frame.namedWatches.end()) activate(id);
+        const auto& watchers = namedWatchers_[event];
+        if (watchers.empty()) return;
+        size_t triggered[256];
+        size_t count = 0;
+        uint64_t seen[4] = {};
+        for (size_t id : watchers) {
+            const uint64_t bit = uint64_t(1) << (id & 63);
+            if (!(seen[id >> 6] & bit)) {
+                seen[id >> 6] |= bit;
+                triggered[count++] = id;
+            }
         }
+        if (count > 1) std::sort(triggered, triggered + count);
+        for (size_t i = 0; i < count; ++i) activate(triggered[i]);
     }
     void blocking(Write write) { if(!executing_) throw std::logic_error("HDL writes require transaction"); apply(write); }
     /// Reuse the qualified packed-deposit rules to sample a selected address and
@@ -279,20 +495,21 @@ public:
     void nonblocking(Write write,uint64_t ticks=0) {
         if(!executing_) throw std::logic_error("HDL writes require transaction");
         validate(write); const auto target=futureTime(ticks); reserveEvent();
-        if(!ticks) nba_.push_back(std::move(write)); else future_[target].nba.push_back(std::move(write));
+        if(!ticks) nba_.push_back(std::move(write)); else getOrCreateFutureSlot(target).nba.push_back(std::move(write));
     }
     /// A queued occurrence is delivered in the NBA region. A waiter armed after
     /// the trigger statement but before that region can therefore observe it.
     void nonblockingTrigger(size_t event,uint64_t ticks=0) {
         if(!executing_ || event>=namedCount_)throw std::out_of_range("HDL named trigger");
         const auto target=futureTime(ticks);reserveEvent();
-        if(!ticks)nba_.push_back(event);else future_[target].nba.push_back(event);
+        if(!ticks)nba_.push_back(event);else getOrCreateFutureSlot(target).nba.push_back(event);
     }
     /// join_none children become runnable only when the parent suspends/ends.
     /// Completed frames retain identity; the bounded slice caps total frames.
     Step fork(size_t parent,const std::vector<size_t>& entries,Join join) {
         if(!executing_ || int(join)<0 || join>Join::none) throw std::logic_error("invalid HDL fork");
         if(entries.size()>256-frames_.size()) throw std::length_error("HDL process frame capacity");
+        touchFrame(parent);
         auto& owner=frames_.at(parent);owner.joining.clear();owner.join=join;
         if(entries.empty()){owner.join=Join::none;return Step::again();}
         for(auto entry:entries) {
@@ -303,6 +520,7 @@ public:
     }
     Step waitFork(size_t parent) {
         if(!executing_) throw std::logic_error("HDL wait fork outside execution");
+        touchFrame(parent);
         auto& owner=frames_.at(parent);owner.join=Join::all;owner.joining=owner.children;
         if(joinReady(owner)){owner.join=Join::none;owner.joining.clear();return Step::again();}
         return Step::join();
@@ -311,44 +529,68 @@ public:
     /// already sampled NBA updates. Those updates are separate scheduled work.
     void disableFork(size_t parent) {
         if(!executing_) throw std::logic_error("HDL disable fork outside execution");
+        touchFrame(parent);
         std::vector<size_t> killed=frames_.at(parent).children;
+        uint64_t killedMask[4] = {};
         for(size_t i=0;i<killed.size();++i) {
             const auto child=killed[i];
-            killed.insert(killed.end(),frames_[child].children.begin(),frames_[child].children.end());
+            killedMask[child >> 6] |= uint64_t(1) << (child & 63);
+            for (size_t grand : frames_[child].children) killed.push_back(grand);
+            touchFrame(child);
+            if (frames_[child].waiting) unindexWatches(child);
             frames_[child].deferred.clear();frames_[child].finished=true;frames_[child].waiting=false;frames_[child].queued=false;frames_[child].watches.clear();frames_[child].namedWatches.clear();
         }
-        const auto canceled=[&](size_t id){return std::find(killed.begin(),killed.end(),id)!=killed.end();};
+        const auto canceled=[&](size_t id){return (killedMask[id >> 6] & (uint64_t(1) << (id & 63))) != 0;};
         auto erase=[&](auto& queue){auto old=queue.size();std::erase_if(queue,canceled);pending_-=old-queue.size();};
         erase(active_);erase(inactive_);
-        for(auto it=future_.begin();it!=future_.end();) {
+        std::vector<uint64_t> toCheck;
+        toCheck.reserve(futureSlots_.size());
+        for (const auto& [t, _] : futureSlots_) toCheck.push_back(t);
+        for (uint64_t t : toCheck) {
+            auto it = futureSlots_.find(t);
+            if (it == futureSlots_.end()) continue;
+            bool anyCanceled = std::any_of(it->second.active.begin(), it->second.active.end(), canceled);
+            if (!anyCanceled) continue;
+            touchFuture(t);
             erase(it->second.active);
-            if(it->second.active.empty() && it->second.nba.empty()) it=future_.erase(it);else ++it;
+            if (it->second.active.empty() && it->second.nba.empty()) eraseFutureSlot(it);
         }
         frames_[parent].deferred.clear();
     }
     bool eventsPending() const { return pending_!=0; }
     std::optional<uint64_t> nextTimeSlot() const {
         if(!active_.empty() || !inactive_.empty() || !nba_.empty()) return now_;
-        return future_.empty() ? std::nullopt : std::optional<uint64_t>(future_.begin()->first);
+        return hasFuture() ? std::optional<uint64_t>(earliestFuture()) : std::nullopt;
     }
     /// Atomically run through target, including all its supported regions.
     /// Each public advance gets a fresh bounded execution budget; callbacks may
     /// not reenter an advance or store mutable state outside this value object.
     template<class Execute> void runUntil(uint64_t target, Execute execute) {
+        if (executing_) throw std::logic_error("reentrant HDL scheduler advance");
+        if (target < now_) throw std::invalid_argument("HDL time cannot move backwards");
+        if (active_.empty() && inactive_.empty() && nba_.empty() && (!hasFuture() || earliestFuture() > target)) {
+            now_ = target;
+            started_ = true;
+            return;
+        }
         transaction([&](auto& next){next.advance(target,true,execute);});
     }
     /// Process older events before applying future host inputs. Same-tick drives
     /// are an explicit host batch; no IEEE ordering is promised for design races.
     template<class Execute> void driveAt(uint64_t target,const std::vector<Write>& drives,Execute execute) {
+        if (executing_) throw std::logic_error("reentrant HDL scheduler advance");
+        if (target < now_) throw std::invalid_argument("HDL time cannot move backwards");
+        for (const auto& write : drives) validate(write);
         transaction([&](auto& next){
             next.advance(target,false,execute);
             // Import the entire due slot before running host-triggered work.
             // Settling host reactivation first would commit its NBA updates
             // before already-scheduled active processes at this same tick.
-            if(auto due=next.future_.find(target);due!=next.future_.end()){
+            if(auto due=next.futureSlots_.find(target);due!=next.futureSlots_.end()){
+                next.touchFuture(target);
                 next.active_.insert(next.active_.end(),due->second.active.begin(),due->second.active.end());
                 next.nba_.insert(next.nba_.end(),std::make_move_iterator(due->second.nba.begin()),std::make_move_iterator(due->second.nba.end()));
-                next.future_.erase(due);
+                next.eraseFutureSlot(due);
             }
             for(const auto& write:drives)next.apply(write);
             next.settle(execute);

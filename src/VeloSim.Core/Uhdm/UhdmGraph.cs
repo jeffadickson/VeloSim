@@ -383,14 +383,30 @@ public sealed class UhdmDatabase
         }
 
         // Pass 2: Populate every object's Any base and inheritance chain fields.
+        // All factory lists and nodes are pre-allocated and independent per index, so large
+        // databases can populate concurrently while producing an identical deterministic graph.
+        int totalNodes = 0;
+        foreach (var (_, capList) in factoryLists) totalNodes += capList.Count;
+        bool useParallel = totalNodes >= 4096 && Environment.ProcessorCount > 1;
         foreach (var (uhdmType, capList) in factoryLists)
         {
             var nodes = db.factories[uhdmType];
-            for (int i = 0; i < capList.Count; i++)
+            int count = capList.Count;
+            if (useParallel && count >= 512)
             {
-                var node = nodes[i];
-                var curStruct = capList.ReadStruct(i);
-                PopulateChain(db, symbols, node, curStruct);
+                Parallel.For(0, count, i =>
+                {
+                    var curStruct = capList.ReadStruct(i);
+                    PopulateChain(db, symbols, nodes[i], curStruct);
+                });
+            }
+            else
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    var curStruct = capList.ReadStruct(i);
+                    PopulateChain(db, symbols, nodes[i], curStruct);
+                }
             }
         }
 

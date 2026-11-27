@@ -240,35 +240,66 @@ public static class RtlCdcAnalyzer
             set.Add(tr.Destination);
         }
 
-        // 5. Propagate domains through combinational/continuous cones (comb_sig -> source flops)
+        // 5. Propagate domains through combinational/continuous cones via worklist (comb_sig -> source flops)
         var combDependencies = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         CollectCombinationalDependencies(root, combDependencies);
 
-        var signalSourceFlops = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        foreach (string f in flopClock.Keys)
-            signalSourceFlops[f] = new HashSet<string>(StringComparer.Ordinal) { f };
+        var signalSourceFlops = new Dictionary<string, HashSet<string>>(flopClock.Count + combDependencies.Count, StringComparer.Ordinal);
+        var reverseComb = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var combReadSignals = new HashSet<string>(StringComparer.Ordinal);
+        var worklist = new Queue<string>();
+        var inWorklist = new HashSet<string>(StringComparer.Ordinal);
 
-        for (int iter = 0; iter < 32; iter++)
+        foreach (var (dst, reads) in combDependencies)
         {
-            bool changed = false;
-            foreach (var (dst, reads) in combDependencies)
+            if (flopClock.ContainsKey(dst)) continue;
+            foreach (string r in reads)
             {
-                if (flopClock.ContainsKey(dst)) continue;
-                if (!signalSourceFlops.TryGetValue(dst, out var dstSet))
+                combReadSignals.Add(r);
+                if (!reverseComb.TryGetValue(r, out var dependents))
                 {
-                    dstSet = new HashSet<string>(StringComparer.Ordinal);
-                    signalSourceFlops[dst] = dstSet;
+                    dependents = [];
+                    reverseComb[r] = dependents;
                 }
-                foreach (string r in reads)
+                dependents.Add(dst);
+            }
+        }
+
+        foreach (string f in flopClock.Keys)
+        {
+            signalSourceFlops[f] = new HashSet<string>(StringComparer.Ordinal) { f };
+            if (reverseComb.TryGetValue(f, out var deps))
+            {
+                foreach (string d in deps)
+                    if (inWorklist.Add(d)) worklist.Enqueue(d);
+            }
+        }
+
+        int workBudget = Math.Max(64, combDependencies.Count * 32);
+        while (worklist.Count > 0 && workBudget-- > 0)
+        {
+            string dst = worklist.Dequeue();
+            inWorklist.Remove(dst);
+            if (!combDependencies.TryGetValue(dst, out var reads)) continue;
+            if (!signalSourceFlops.TryGetValue(dst, out var dstSet))
+            {
+                dstSet = new HashSet<string>(StringComparer.Ordinal);
+                signalSourceFlops[dst] = dstSet;
+            }
+            bool changed = false;
+            foreach (string r in reads)
+            {
+                if (signalSourceFlops.TryGetValue(r, out var rSet))
                 {
-                    if (signalSourceFlops.TryGetValue(r, out var rSet))
-                    {
-                        foreach (string sf in rSet)
-                            if (dstSet.Add(sf)) changed = true;
-                    }
+                    foreach (string sf in rSet)
+                        if (dstSet.Add(sf)) changed = true;
                 }
             }
-            if (!changed) break;
+            if (changed && reverseComb.TryGetValue(dst, out var deps))
+            {
+                foreach (string d in deps)
+                    if (inWorklist.Add(d)) worklist.Enqueue(d);
+            }
         }
 
         // 6. Track consumers of each flop (for 2-FF synchronizer chain recognition)
@@ -285,11 +316,10 @@ public static class RtlCdcAnalyzer
                 list.Add(tr);
             }
         }
-        var combReadSignals = new HashSet<string>(combDependencies.Values.SelectMany(v => v), StringComparer.Ordinal);
 
         // 7. Detect CDC and RDC crossings
         var crossings = new List<CdcCrossingInfo>();
-        var seenCrossing = new HashSet<string>(StringComparer.Ordinal);
+        var seenCrossing = new HashSet<(string Kind, string Launch, string SrcDom, string Dst, string DstDom)>();
 
         foreach (var tr in transfers)
         {
@@ -313,8 +343,7 @@ public static class RtlCdcAnalyzer
                     // CDC check: launch clock != capture clock
                     if (!effectiveSdc.AreClocksSynchronous(launchClk, tr.ClockDomain))
                     {
-                        string key = $"CDC|{launch}|{launchClk}|{tr.Destination}|{tr.ClockDomain}";
-                        if (!seenCrossing.Add(key)) continue;
+                        if (!seenCrossing.Add(("CDC", launch, launchClk, tr.Destination, tr.ClockDomain))) continue;
 
                         bool isFalsePath = effectiveSdc.IsFalsePath(launch, launchClk, tr.Destination, tr.ClockDomain);
                         int syncStages = isDirectFlopRead && width == 1
@@ -341,8 +370,7 @@ public static class RtlCdcAnalyzer
                         tr.ResetDomain is { Length: > 0 } capRst &&
                         !launchRst.Equals(capRst, StringComparison.Ordinal))
                     {
-                        string rKey = $"RDC|{launch}|{launchRst}|{tr.Destination}|{capRst}";
-                        if (!seenCrossing.Add(rKey)) continue;
+                        if (!seenCrossing.Add(("RDC", launch, launchRst, tr.Destination, capRst))) continue;
 
                         bool isFalsePath = effectiveSdc.IsFalsePath(launch, launchRst, tr.Destination, capRst);
                         crossings.Add(new CdcCrossingInfo(

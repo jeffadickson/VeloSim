@@ -1,14 +1,17 @@
+using System.Collections.Frozen;
 using System.Text;
 using System.Text.Json;
 namespace VeloSim;
 
 public sealed partial class RtlDesign
 {
+    private static readonly FrozenSet<string> RustReservedIdentifiers = new HashSet<string>(
+        "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model finish time time_inc events_pending next_time_slot load_memory_hex load_memory_bin default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint snapshot restore fork got_finish exit_code property_passes property_failures property_vacuous signals_info memories_info signal_by_name get_signal put_signal read_memory write_memory".Split(' '),
+        StringComparer.Ordinal).ToFrozenSet(StringComparer.Ordinal);
+
     internal IReadOnlyDictionary<string, string> RustPortNames()
     {
-        var reserved = (
-            "as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while abstract become box do final macro override priv try typeof unsized virtual yield new eval try_eval final_model finish time time_inc events_pending next_time_slot load_memory_hex load_memory_bin default open_vcd open_vcd_gz open_vcd_filtered open_vcd_gz_filtered dump_vcd close_vcd set_plusargs add_plusarg test_plusargs value_plusargs set_random_seed random_seed next_urandom next_urandom_range next_random force_signal release_signal is_forced save_checkpoint restore_checkpoint snapshot restore fork got_finish exit_code property_passes property_failures property_vacuous signals_info memories_info signal_by_name get_signal put_signal read_memory write_memory"
-        ).Split(' ').ToHashSet(StringComparer.Ordinal);
+        var reserved = RustReservedIdentifiers;
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var signal in Signals.Where(s => s.Direction != "internal"))
@@ -732,6 +735,10 @@ public sealed partial class RtlDesign
         bool hasContainers = Memories.Any(IsContainerMem);
         bool canThrow = CanEvaluateThrow() || hasContainers;
         bool bodyUsesForces = !CombinationalOnly && Statements(Body).Any(e => Kind(e) is "force" or "release");
+        bool combPureInternal = !CombinationalOnly && !bodyUsesForces && !canThrow && !hasRuntimeLoops && !HasBlockingOrContainerOps()
+            && Properties.Count == 0 && PastDepths.Count == 0
+            && SettledSteps.Count > 0
+            && SettledSteps.All(s => Kind(s) == "blocking" && CsExprIsPureInternal(s.GetProperty("value")));
         var procs = CombinationalOnly ? Array.Empty<JsonElement>() : (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]);
         var eventIds = CombinationalOnly ? Array.Empty<int>() : EventSignals.Select(SignalId).ToArray();
         int[] seqIds = CombinationalOnly ? [] : Statements(Body).Where(e => Kind(e) is "nba" or "blocking" && Kind(e.GetProperty("target")) != "index")
@@ -748,11 +755,11 @@ public sealed partial class RtlDesign
             .Distinct().Order().ToArray();
         bool hasFixedMemWrites = !CombinationalOnly && Statements(Body).Any(e => Kind(e) == "nba" && Kind(e.GetProperty("target")) == "index" && !IsContainerMem(Memories[MemoryId(Name(e.GetProperty("target")))]));
 
-        void EmitEvalBody(StringBuilder sb, bool emitForces)
+        void EmitEvalBody(StringBuilder sb, bool emitForces, bool skipPreSettle = false)
         {
             if (hasRuntimeLoops) sb.AppendLine("        let mut budget: usize = 20000;");
             if (emitForces) sb.AppendLine("        self.apply_forces();");
-            sb.AppendLine(canThrow ? "        self.settle()?;" : "        self.settle();");
+            if (!skipPreSettle) sb.AppendLine(canThrow ? "        self.settle()?;" : "        self.settle();");
             if (emitForces) sb.AppendLine("        self.apply_forces();");
             if (Properties.Count > 0 || PastDepths.Count > 0)
             {
@@ -883,6 +890,7 @@ public sealed partial class RtlDesign
         code.AppendLine("    plusargs: PlusargStore,");
         code.AppendLine("    rng: SplitMix64Rng,");
         code.AppendLine($"    forced: Vec<(usize, {wordType})>,");
+        if (combPureInternal) code.AppendLine("    eval_slow: bool,");
         if (Properties.Count > 0)
         {
             code.AppendLine($"    prop_passes: [u64; {Properties.Count}],");
@@ -925,6 +933,7 @@ public sealed partial class RtlDesign
         code.AppendLine("            plusargs: PlusargStore::new(),");
         code.AppendLine("            rng: SplitMix64Rng::new(),");
         code.AppendLine("            forced: Vec::new(),");
+        if (combPureInternal) code.AppendLine("            eval_slow: true,");
         if (Properties.Count > 0)
         {
             code.AppendLine($"            prop_passes: [0u64; {Properties.Count}],");
@@ -1020,8 +1029,9 @@ public sealed partial class RtlDesign
         code.AppendLine("            _ => panic!(\"invalid signal_id for force_signal\"),");
         code.AppendLine("        };");
         code.AppendLine("        if let Some(entry) = self.forced.iter_mut().find(|(id, _)| *id == signal_id) { entry.1 = fv; } else { self.forced.push((signal_id, fv)); }");
+        if (combPureInternal) code.AppendLine("        self.eval_slow = true;");
         code.AppendLine("    }");
-        code.AppendLine("    pub fn release_signal(&mut self, signal_id: usize) { self.forced.retain(|(id, _)| *id != signal_id); }");
+        code.AppendLine($"    pub fn release_signal(&mut self, signal_id: usize) {{ self.forced.retain(|(id, _)| *id != signal_id);{(combPureInternal ? " self.eval_slow = true;" : "")} }}");
         code.AppendLine("    #[inline(always)] fn apply_forces(&mut self) {");
         code.AppendLine("        if self.forced.is_empty() { return; }");
         code.AppendLine("        for idx in 0..self.forced.len() {");
@@ -1092,6 +1102,7 @@ public sealed partial class RtlDesign
             else
                 code.AppendLine($"        for j in 0..self.m{i}.len() {{ self.m{i}[j] = W4::from_w64(mems[{i}][j], {RsMaskHex(Memories[i].Width)}); }}");
         }
+        if (combPureInternal) code.AppendLine("        self.eval_slow = true;");
         code.AppendLine("        Ok(())");
         code.AppendLine("    }");
         code.AppendLine("    #[inline] pub fn snapshot(&self) -> Self { self.clone() }");
@@ -1211,14 +1222,17 @@ public sealed partial class RtlDesign
             code.AppendLine("    pub fn eval(&mut self) {");
             if (!bodyUsesForces)
             {
-                code.AppendLine("        if !self.forced.is_empty() { self.eval_forced(); return; }");
-                EmitEvalBody(code, false);
+                code.AppendLine(combPureInternal
+                    ? "        if self.eval_slow { self.eval_forced(); return; }"
+                    : "        if !self.forced.is_empty() { self.eval_forced(); return; }");
+                EmitEvalBody(code, false, skipPreSettle: combPureInternal);
                 code.AppendLine("    }");
                 code.AppendLine();
                 code.AppendLine("    #[cold]");
                 code.AppendLine("    #[inline(never)]");
                 code.AppendLine("    fn eval_forced(&mut self) {");
-                EmitEvalBody(code, true);
+                EmitEvalBody(code, true, skipPreSettle: false);
+                if (combPureInternal) code.AppendLine("        self.eval_slow = !self.forced.is_empty();");
                 code.AppendLine("    }");
             }
             else
@@ -1288,6 +1302,7 @@ public sealed partial class RtlDesign
         code.AppendLine("    }");
         code.AppendLine("    pub fn write_memory(&mut self, mem_id: usize, addr: usize, value: W64) -> Result<(), &'static str> {");
         code.AppendLine("        if self.finished { return Err(\"model is finished\"); }");
+        string markSlowRs = combPureInternal ? " self.eval_slow = true;" : "";
         code.AppendLine("        match mem_id {");
         for (int i = 0; i < Memories.Count; ++i)
         {
@@ -1296,8 +1311,8 @@ public sealed partial class RtlDesign
                 code.AppendLine($"            {i} => Err(\"indexed VPI write is not supported for associative arrays\"),");
             else
                 code.AppendLine(twoState
-                    ? $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = w2::resize(value.v & !(value.x | value.z), {Memories[i].Width}); Ok(()) }}"
-                    : $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = {(Memories[i].TwoState ? $"W4::lit(value.v & !(value.x | value.z) & {mm})" : $"W4::from_w64(value, {mm})")}; Ok(()) }}");
+                    ? $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = w2::resize(value.v & !(value.x | value.z), {Memories[i].Width});{markSlowRs} Ok(()) }}"
+                    : $"            {i} => {{ let slot = self.m{i}.get_mut(addr).ok_or(\"memory word address out of range\")?; *slot = {(Memories[i].TwoState ? $"W4::lit(value.v & !(value.x | value.z) & {mm})" : $"W4::from_w64(value, {mm})")};{markSlowRs} Ok(()) }}");
         }
         code.AppendLine("            _ => Err(\"memory word address out of range\"),");
         code.AppendLine("        }");
@@ -1305,6 +1320,7 @@ public sealed partial class RtlDesign
         code.AppendLine("    pub fn load_memory_hex(&mut self, mem_id: usize, path: &str, start: usize, end: usize) -> std::io::Result<usize> { self.load_mem(mem_id, path, true, start, end) }");
         code.AppendLine("    pub fn load_memory_bin(&mut self, mem_id: usize, path: &str, start: usize, end: usize) -> std::io::Result<usize> { self.load_mem(mem_id, path, false, start, end) }");
         code.AppendLine("    fn load_mem(&mut self, mem_id: usize, path: &str, hex: bool, start: usize, end: usize) -> std::io::Result<usize> {");
+        if (combPureInternal) code.AppendLine("        self.eval_slow = true;");
         code.AppendLine("        match mem_id {");
         for (int i = 0; i < Memories.Count; ++i)
         {

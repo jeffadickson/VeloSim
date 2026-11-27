@@ -1220,35 +1220,39 @@ pub mod w4s {
     }
     #[inline(always)] pub fn neg(a: W4xN, m: u64) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
-        for i in 0..LANES { if (a.b.v[i] & m) != 0 { ra[i] = m; rb[i] = m; } else { ra[i] = a.a.v[i].wrapping_neg() & m; rb[i] = 0; } }
+        for i in 0..LANES {
+            let unk = if (a.b.v[i] & m) != 0 { m } else { 0 };
+            ra[i] = (a.a.v[i].wrapping_neg() & m) | unk;
+            rb[i] = unk;
+        }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn lnot(a: W4xN) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
-            if (a.a.v[i] & !a.b.v[i]) != 0 { ra[i] = 0; rb[i] = 0; }
-            else if a.b.v[i] != 0 { ra[i] = 1; rb[i] = 1; }
-            else { ra[i] = 1; rb[i] = 0; }
+            let is1 = ((a.a.v[i] & !a.b.v[i]) != 0) as u64;
+            let not1 = is1 ^ 1;
+            ra[i] = not1;
+            rb[i] = ((a.b.v[i] != 0) as u64) & not1;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn bit_and(a: W4xN, b: W4xN, m: u64) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
-            let a0 = !(a.a.v[i] | a.b.v[i]); let b0 = !(b.a.v[i] | b.b.v[i]);
-            let u = (a.b.v[i] | b.b.v[i]) & !(a0 | b0);
-            ra[i] = ((a.a.v[i] & b.a.v[i] & !a.b.v[i] & !b.b.v[i]) | u) & m;
-            rb[i] = u & m;
+            let u = (a.a.v[i] | a.b.v[i]) & (b.a.v[i] | b.b.v[i]) & (a.b.v[i] | b.b.v[i]) & m;
+            ra[i] = ((a.a.v[i] & b.a.v[i]) | u) & m;
+            rb[i] = u;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn bit_or(a: W4xN, b: W4xN, m: u64) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
-            let a1 = a.a.v[i] & !a.b.v[i]; let b1 = b.a.v[i] & !b.b.v[i];
-            let one = a1 | b1;
-            let u = (a.b.v[i] | b.b.v[i]) & !one;
-            ra[i] = (one | u) & m; rb[i] = u & m;
+            let one = (a.a.v[i] & !a.b.v[i]) | (b.a.v[i] & !b.b.v[i]);
+            let ab = a.b.v[i] | b.b.v[i];
+            ra[i] = (one | ab) & m;
+            rb[i] = (ab & !one) & m;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
@@ -1265,47 +1269,81 @@ pub mod w4s {
     #[inline(always)] pub fn land(a: W4xN, b: W4xN) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
-            let a1 = (a.a.v[i] & !a.b.v[i]) != 0; let b1 = (b.a.v[i] & !b.b.v[i]) != 0;
-            let a0 = !a1 && a.b.v[i] == 0; let b0 = !b1 && b.b.v[i] == 0;
-            if a0 || b0 { ra[i] = 0; rb[i] = 0; } else if a1 && b1 { ra[i] = 1; rb[i] = 0; } else { ra[i] = 1; rb[i] = 1; }
+            let a1 = ((a.a.v[i] & !a.b.v[i]) != 0) as u64;
+            let b1 = ((b.a.v[i] & !b.b.v[i]) != 0) as u64;
+            let a0 = ((a.a.v[i] | a.b.v[i]) == 0) as u64;
+            let b0 = ((b.a.v[i] | b.b.v[i]) == 0) as u64;
+            let is0 = a0 | b0;
+            let is1 = a1 & b1;
+            ra[i] = is0 ^ 1;
+            rb[i] = (is0 | is1) ^ 1;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn lor(a: W4xN, b: W4xN) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
-            let a1 = (a.a.v[i] & !a.b.v[i]) != 0; let b1 = (b.a.v[i] & !b.b.v[i]) != 0;
-            let a0 = !a1 && a.b.v[i] == 0; let b0 = !b1 && b.b.v[i] == 0;
-            if a1 || b1 { ra[i] = 1; rb[i] = 0; } else if a0 && b0 { ra[i] = 0; rb[i] = 0; } else { ra[i] = 1; rb[i] = 1; }
+            let a1 = ((a.a.v[i] & !a.b.v[i]) != 0) as u64;
+            let b1 = ((b.a.v[i] & !b.b.v[i]) != 0) as u64;
+            let a0 = ((a.a.v[i] | a.b.v[i]) == 0) as u64;
+            let b0 = ((b.a.v[i] | b.b.v[i]) == 0) as u64;
+            let is1 = a1 | b1;
+            let is0 = a0 & b0;
+            ra[i] = is0 ^ 1;
+            rb[i] = (is0 | is1) ^ 1;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn add(a: W4xN, b: W4xN, m: u64) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
-        for i in 0..LANES { if ((a.b.v[i] | b.b.v[i]) & m) != 0 { ra[i] = m; rb[i] = m; } else { ra[i] = a.a.v[i].wrapping_add(b.a.v[i]) & m; rb[i] = 0; } }
+        for i in 0..LANES {
+            let unk = if ((a.b.v[i] | b.b.v[i]) & m) != 0 { m } else { 0 };
+            ra[i] = (a.a.v[i].wrapping_add(b.a.v[i]) & m) | unk;
+            rb[i] = unk;
+        }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn sub(a: W4xN, b: W4xN, m: u64) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
-        for i in 0..LANES { if ((a.b.v[i] | b.b.v[i]) & m) != 0 { ra[i] = m; rb[i] = m; } else { ra[i] = a.a.v[i].wrapping_sub(b.a.v[i]) & m; rb[i] = 0; } }
+        for i in 0..LANES {
+            let unk = if ((a.b.v[i] | b.b.v[i]) & m) != 0 { m } else { 0 };
+            ra[i] = (a.a.v[i].wrapping_sub(b.a.v[i]) & m) | unk;
+            rb[i] = unk;
+        }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn product(a: W4xN, b: W4xN, m: u64, op: i32) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
+        if op == 0 {
+            for i in 0..LANES {
+                let unk = if ((a.b.v[i] | b.b.v[i]) & m) != 0 { m } else { 0 };
+                ra[i] = (a.a.v[i].wrapping_mul(b.a.v[i]) & m) | unk;
+                rb[i] = unk;
+            }
+            return W4xN { a: Lane { v: ra }, b: Lane { v: rb } };
+        }
         for i in 0..LANES {
             let x = a.a.v[i] & m; let y = b.a.v[i] & m;
-            if ((a.b.v[i] | b.b.v[i]) & m) != 0 || (op != 0 && y == 0) { ra[i] = m; rb[i] = m; }
-            else { ra[i] = match op { 0 => x.wrapping_mul(y) & m, 1 => (x / y) & m, _ => (x % y) & m }; rb[i] = 0; }
+            if ((a.b.v[i] | b.b.v[i]) & m) != 0 || y == 0 { ra[i] = m; rb[i] = m; }
+            else { ra[i] = (if op == 1 { x / y } else { x % y }) & m; rb[i] = 0; }
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn sproduct(a: W4xN, b: W4xN, w: i32, op: i32) -> W4xN {
         let m = mask_w(w);
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
+        if op == 0 {
+            for i in 0..LANES {
+                let unk = if ((a.b.v[i] | b.b.v[i]) & m) != 0 { m } else { 0 };
+                ra[i] = (a.a.v[i].wrapping_mul(b.a.v[i]) & m) | unk;
+                rb[i] = unk;
+            }
+            return W4xN { a: Lane { v: ra }, b: Lane { v: rb } };
+        }
         for i in 0..LANES {
             let x = sext_u64(a.a.v[i], w); let y = sext_u64(b.a.v[i], w);
-            if ((a.b.v[i] | b.b.v[i]) & m) != 0 || (op != 0 && y == 0) { ra[i] = m; rb[i] = m; }
-            else { ra[i] = match op { 0 => (x.wrapping_mul(y) as u64) & m, 1 => (x.wrapping_div(y) as u64) & m, _ => (x.wrapping_rem(y) as u64) & m }; rb[i] = 0; }
+            if ((a.b.v[i] | b.b.v[i]) & m) != 0 || y == 0 { ra[i] = m; rb[i] = m; }
+            else { ra[i] = (if op == 1 { x.wrapping_div(y) } else { x.wrapping_rem(y) } as u64) & m; rb[i] = 0; }
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
@@ -1345,9 +1383,10 @@ pub mod w4s {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
             let u = (a.b.v[i] | b.b.v[i]) & m;
-            if (((a.a.v[i] ^ b.a.v[i]) & !u) & m) != 0 { ra[i] = 0; rb[i] = 0; }
-            else if u != 0 { ra[i] = 1; rb[i] = 1; }
-            else { ra[i] = 1; rb[i] = 0; }
+            let neq = ((((a.a.v[i] ^ b.a.v[i]) & !u) & m) != 0) as u64;
+            let eq_or_u = neq ^ 1;
+            ra[i] = eq_or_u;
+            rb[i] = ((u != 0) as u64) & eq_or_u;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
@@ -1378,44 +1417,48 @@ pub mod w4s {
         for i in 0..LANES {
             let care = m & !b.b.v[i];
             let au = a.b.v[i] & care;
-            if (((a.a.v[i] ^ b.a.v[i]) & care) & !au) != 0 { ra[i] = 0; rb[i] = 0; }
-            else if au != 0 { ra[i] = 1; rb[i] = 1; }
-            else { ra[i] = 1; rb[i] = 0; }
+            let neq = ((((a.a.v[i] ^ b.a.v[i]) & care) & !au) != 0) as u64;
+            let eq_or_u = neq ^ 1;
+            ra[i] = eq_or_u;
+            rb[i] = ((au != 0) as u64) & eq_or_u;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn cmp(a: W4xN, b: W4xN, op: i32) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
-            if (a.b.v[i] | b.b.v[i]) != 0 { ra[i] = 1; rb[i] = 1; }
-            else {
-                let hit = match op { 0 => a.a.v[i] < b.a.v[i], 1 => a.a.v[i] <= b.a.v[i], 2 => a.a.v[i] > b.a.v[i], _ => a.a.v[i] >= b.a.v[i] };
-                ra[i] = if hit { 1 } else { 0 }; rb[i] = 0;
-            }
+            let unk = ((a.b.v[i] | b.b.v[i]) != 0) as u64;
+            let hit = (match op { 0 => a.a.v[i] < b.a.v[i], 1 => a.a.v[i] <= b.a.v[i], 2 => a.a.v[i] > b.a.v[i], _ => a.a.v[i] >= b.a.v[i] }) as u64;
+            ra[i] = hit | unk;
+            rb[i] = unk;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn scmp(a: W4xN, b: W4xN, w: i32, op: i32) -> W4xN {
+        let m = mask_w(w);
+        let flip = if w > 0 { 1u64 << (w - 1) } else { 0 };
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
-            if (a.b.v[i] | b.b.v[i]) != 0 { ra[i] = 1; rb[i] = 1; }
-            else {
-                let x = sext_u64(a.a.v[i], w); let y = sext_u64(b.a.v[i], w);
-                let hit = match op { 0 => x < y, 1 => x <= y, 2 => x > y, _ => x >= y };
-                ra[i] = if hit { 1 } else { 0 }; rb[i] = 0;
-            }
+            let unk = ((a.b.v[i] | b.b.v[i]) != 0) as u64;
+            let x = (a.a.v[i] & m) ^ flip;
+            let y = (b.a.v[i] & m) ^ flip;
+            let hit = (match op { 0 => x < y, 1 => x <= y, 2 => x > y, _ => x >= y }) as u64;
+            ra[i] = hit | unk;
+            rb[i] = unk;
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
     #[inline(always)] pub fn cond(c: W4xN, a: W4xN, b: W4xN, m: u64) -> W4xN {
         let mut ra = [0u64; LANES]; let mut rb = [0u64; LANES];
         for i in 0..LANES {
-            if (c.a.v[i] & !c.b.v[i]) != 0 { ra[i] = a.a.v[i] & m; rb[i] = a.b.v[i] & m; }
-            else if c.b.v[i] == 0 { ra[i] = b.a.v[i] & m; rb[i] = b.b.v[i] & m; }
-            else {
-                let diff = ((a.a.v[i] ^ b.a.v[i]) | (a.b.v[i] ^ b.b.v[i])) & m;
-                ra[i] = (a.a.v[i] & m) | diff; rb[i] = (a.b.v[i] & m) | diff;
-            }
+            let is1 = if (c.a.v[i] & !c.b.v[i]) != 0 { u64::MAX } else { 0 };
+            let is0 = if (c.a.v[i] | c.b.v[i]) == 0 { u64::MAX } else { 0 };
+            let is_u = !(is1 | is0);
+            let aa = a.a.v[i] & m; let ab = a.b.v[i] & m;
+            let ba = b.a.v[i] & m; let bb = b.b.v[i] & m;
+            let diff = ((aa ^ ba) | (ab ^ bb)) & m;
+            ra[i] = (is1 & aa) | (is0 & ba) | (is_u & (aa | diff));
+            rb[i] = (is1 & ab) | (is0 & bb) | (is_u & (ab | diff));
         }
         W4xN { a: Lane { v: ra }, b: Lane { v: rb } }
     }
@@ -1880,32 +1923,41 @@ inline W4xN sresize(W4xN a, int from_w, uint64_t from_m, uint64_t to_m) {
     return r;
 }
 inline W4xN bit_not(W4xN a, uint64_t m) { W4xN r{}; for (int i = 0; i < kLanes; ++i) { uint64_t u = a.b.v[i] & m; r.a.v[i] = ((~a.a.v[i]) | u) & m; r.b.v[i] = u; } return r; }
-inline W4xN neg(W4xN a, uint64_t m) { W4xN r{}; for (int i = 0; i < kLanes; ++i) { if (a.b.v[i] & m) { r.a.v[i] = m; r.b.v[i] = m; } else { r.a.v[i] = (0ULL - a.a.v[i]) & m; r.b.v[i] = 0ULL; } } return r; }
+inline W4xN neg(W4xN a, uint64_t m) {
+    W4xN r{};
+    for (int i = 0; i < kLanes; ++i) {
+        uint64_t unk = (a.b.v[i] & m) ? m : 0ULL;
+        r.a.v[i] = ((0ULL - a.a.v[i]) & m) | unk;
+        r.b.v[i] = unk;
+    }
+    return r;
+}
 inline W4xN lnot(W4xN a) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
-        if (a.a.v[i] & ~a.b.v[i]) { r.a.v[i] = 0ULL; r.b.v[i] = 0ULL; }
-        else if (a.b.v[i]) { r.a.v[i] = 1ULL; r.b.v[i] = 1ULL; }
-        else { r.a.v[i] = 1ULL; r.b.v[i] = 0ULL; }
+        uint64_t is1 = (a.a.v[i] & ~a.b.v[i]) ? 1ULL : 0ULL;
+        uint64_t not1 = is1 ^ 1ULL;
+        r.a.v[i] = not1;
+        r.b.v[i] = (a.b.v[i] ? 1ULL : 0ULL) & not1;
     }
     return r;
 }
 inline W4xN bit_and(W4xN a, W4xN b, uint64_t m) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
-        uint64_t a0 = ~(a.a.v[i] | a.b.v[i]), b0 = ~(b.a.v[i] | b.b.v[i]);
-        uint64_t u = (a.b.v[i] | b.b.v[i]) & ~(a0 | b0);
-        r.a.v[i] = ((a.a.v[i] & b.a.v[i] & ~a.b.v[i] & ~b.b.v[i]) | u) & m;
-        r.b.v[i] = u & m;
+        uint64_t u = (a.a.v[i] | a.b.v[i]) & (b.a.v[i] | b.b.v[i]) & (a.b.v[i] | b.b.v[i]) & m;
+        r.a.v[i] = ((a.a.v[i] & b.a.v[i]) | u) & m;
+        r.b.v[i] = u;
     }
     return r;
 }
 inline W4xN bit_or(W4xN a, W4xN b, uint64_t m) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
-        uint64_t a1 = a.a.v[i] & ~a.b.v[i], b1 = b.a.v[i] & ~b.b.v[i], one = a1 | b1;
-        uint64_t u = (a.b.v[i] | b.b.v[i]) & ~one;
-        r.a.v[i] = (one | u) & m; r.b.v[i] = u & m;
+        uint64_t one = (a.a.v[i] & ~a.b.v[i]) | (b.a.v[i] & ~b.b.v[i]);
+        uint64_t ab = a.b.v[i] | b.b.v[i];
+        r.a.v[i] = (one | ab) & m;
+        r.b.v[i] = (ab & ~one) & m;
     }
     return r;
 }
@@ -1914,38 +1966,79 @@ inline W4xN bit_xnor(W4xN a, W4xN b, uint64_t m) { W4xN r{}; for (int i = 0; i <
 inline W4xN land(W4xN a, W4xN b) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
-        bool a1 = (a.a.v[i] & ~a.b.v[i]) != 0, b1 = (b.a.v[i] & ~b.b.v[i]) != 0;
-        bool a0 = !a1 && a.b.v[i] == 0, b0 = !b1 && b.b.v[i] == 0;
-        if (a0 || b0) { r.a.v[i] = 0; r.b.v[i] = 0; } else if (a1 && b1) { r.a.v[i] = 1; r.b.v[i] = 0; } else { r.a.v[i] = 1; r.b.v[i] = 1; }
+        uint64_t a1 = (a.a.v[i] & ~a.b.v[i]) ? 1ULL : 0ULL;
+        uint64_t b1 = (b.a.v[i] & ~b.b.v[i]) ? 1ULL : 0ULL;
+        uint64_t a0 = ((a.a.v[i] | a.b.v[i]) == 0ULL) ? 1ULL : 0ULL;
+        uint64_t b0 = ((b.a.v[i] | b.b.v[i]) == 0ULL) ? 1ULL : 0ULL;
+        uint64_t is0 = a0 | b0;
+        uint64_t is1 = a1 & b1;
+        r.a.v[i] = is0 ^ 1ULL;
+        r.b.v[i] = (is0 | is1) ^ 1ULL;
     }
     return r;
 }
 inline W4xN lor(W4xN a, W4xN b) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
-        bool a1 = (a.a.v[i] & ~a.b.v[i]) != 0, b1 = (b.a.v[i] & ~b.b.v[i]) != 0;
-        bool a0 = !a1 && a.b.v[i] == 0, b0 = !b1 && b.b.v[i] == 0;
-        if (a1 || b1) { r.a.v[i] = 1; r.b.v[i] = 0; } else if (a0 && b0) { r.a.v[i] = 0; r.b.v[i] = 0; } else { r.a.v[i] = 1; r.b.v[i] = 1; }
+        uint64_t a1 = (a.a.v[i] & ~a.b.v[i]) ? 1ULL : 0ULL;
+        uint64_t b1 = (b.a.v[i] & ~b.b.v[i]) ? 1ULL : 0ULL;
+        uint64_t a0 = ((a.a.v[i] | a.b.v[i]) == 0ULL) ? 1ULL : 0ULL;
+        uint64_t b0 = ((b.a.v[i] | b.b.v[i]) == 0ULL) ? 1ULL : 0ULL;
+        uint64_t is1 = a1 | b1;
+        uint64_t is0 = a0 & b0;
+        r.a.v[i] = is0 ^ 1ULL;
+        r.b.v[i] = (is0 | is1) ^ 1ULL;
     }
     return r;
 }
-inline W4xN add(W4xN a, W4xN b, uint64_t m) { W4xN r{}; for (int i = 0; i < kLanes; ++i) { if ((a.b.v[i] | b.b.v[i]) & m) { r.a.v[i] = m; r.b.v[i] = m; } else { r.a.v[i] = (a.a.v[i] + b.a.v[i]) & m; r.b.v[i] = 0ULL; } } return r; }
-inline W4xN sub(W4xN a, W4xN b, uint64_t m) { W4xN r{}; for (int i = 0; i < kLanes; ++i) { if ((a.b.v[i] | b.b.v[i]) & m) { r.a.v[i] = m; r.b.v[i] = m; } else { r.a.v[i] = (a.a.v[i] - b.a.v[i]) & m; r.b.v[i] = 0ULL; } } return r; }
-inline W4xN product(W4xN a, W4xN b, uint64_t m, int op) {
+inline W4xN add(W4xN a, W4xN b, uint64_t m) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
+        uint64_t unk = ((a.b.v[i] | b.b.v[i]) & m) ? m : 0ULL;
+        r.a.v[i] = ((a.a.v[i] + b.a.v[i]) & m) | unk;
+        r.b.v[i] = unk;
+    }
+    return r;
+}
+inline W4xN sub(W4xN a, W4xN b, uint64_t m) {
+    W4xN r{};
+    for (int i = 0; i < kLanes; ++i) {
+        uint64_t unk = ((a.b.v[i] | b.b.v[i]) & m) ? m : 0ULL;
+        r.a.v[i] = ((a.a.v[i] - b.a.v[i]) & m) | unk;
+        r.b.v[i] = unk;
+    }
+    return r;
+}
+inline W4xN product(W4xN a, W4xN b, uint64_t m, int op) {
+    W4xN r{};
+    if (op == 0) {
+        for (int i = 0; i < kLanes; ++i) {
+            uint64_t unk = ((a.b.v[i] | b.b.v[i]) & m) ? m : 0ULL;
+            r.a.v[i] = ((a.a.v[i] * b.a.v[i]) & m) | unk;
+            r.b.v[i] = unk;
+        }
+        return r;
+    }
+    for (int i = 0; i < kLanes; ++i) {
         uint64_t x = a.a.v[i] & m, y = b.a.v[i] & m;
-        if (((a.b.v[i] | b.b.v[i]) & m) || (op != 0 && y == 0ULL)) { r.a.v[i] = m; r.b.v[i] = m; }
-        else { r.a.v[i] = op == 0 ? ((x * y) & m) : op == 1 ? ((x / y) & m) : ((x % y) & m); r.b.v[i] = 0ULL; }
+        if (((a.b.v[i] | b.b.v[i]) & m) || y == 0ULL) { r.a.v[i] = m; r.b.v[i] = m; }
+        else { r.a.v[i] = (op == 1 ? (x / y) : (x % y)) & m; r.b.v[i] = 0ULL; }
     }
     return r;
 }
 inline W4xN sproduct(W4xN a, W4xN b, int w, int op) {
     uint64_t m = mask_w(w); W4xN r{};
+    if (op == 0) {
+        for (int i = 0; i < kLanes; ++i) {
+            uint64_t unk = ((a.b.v[i] | b.b.v[i]) & m) ? m : 0ULL;
+            r.a.v[i] = ((a.a.v[i] * b.a.v[i]) & m) | unk;
+            r.b.v[i] = unk;
+        }
+        return r;
+    }
     for (int i = 0; i < kLanes; ++i) {
         int64_t x = sext_u64(a.a.v[i], w), y = sext_u64(b.a.v[i], w);
-        if (((a.b.v[i] | b.b.v[i]) & m) || (op != 0 && y == 0)) { r.a.v[i] = m; r.b.v[i] = m; }
-        else if (op == 0) { r.a.v[i] = static_cast<uint64_t>(x * y) & m; r.b.v[i] = 0ULL; }
+        if (((a.b.v[i] | b.b.v[i]) & m) || y == 0) { r.a.v[i] = m; r.b.v[i] = m; }
         else if (x == INT64_MIN && y == -1) { r.a.v[i] = op == 1 ? (static_cast<uint64_t>(x) & m) : 0ULL; r.b.v[i] = 0ULL; }
         else { r.a.v[i] = static_cast<uint64_t>(op == 1 ? (x / y) : (x % y)) & m; r.b.v[i] = 0ULL; }
     }
@@ -1987,9 +2080,10 @@ inline W4xN eq(W4xN a, W4xN b, uint64_t m) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
         uint64_t u = (a.b.v[i] | b.b.v[i]) & m;
-        if (((a.a.v[i] ^ b.a.v[i]) & ~u) & m) { r.a.v[i] = 0; r.b.v[i] = 0; }
-        else if (u) { r.a.v[i] = 1; r.b.v[i] = 1; }
-        else { r.a.v[i] = 1; r.b.v[i] = 0; }
+        uint64_t neq = (((a.a.v[i] ^ b.a.v[i]) & ~u) & m) ? 1ULL : 0ULL;
+        uint64_t eq_or_u = neq ^ 1ULL;
+        r.a.v[i] = eq_or_u;
+        r.b.v[i] = (u ? 1ULL : 0ULL) & eq_or_u;
     }
     return r;
 }
@@ -2015,44 +2109,47 @@ inline W4xN wild_eq(W4xN a, W4xN b, uint64_t m) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
         uint64_t care = m & ~b.b.v[i], au = a.b.v[i] & care;
-        if (((a.a.v[i] ^ b.a.v[i]) & care) & ~au) { r.a.v[i] = 0; r.b.v[i] = 0; }
-        else if (au) { r.a.v[i] = 1; r.b.v[i] = 1; }
-        else { r.a.v[i] = 1; r.b.v[i] = 0; }
+        uint64_t neq = (((a.a.v[i] ^ b.a.v[i]) & care) & ~au) ? 1ULL : 0ULL;
+        uint64_t eq_or_u = neq ^ 1ULL;
+        r.a.v[i] = eq_or_u;
+        r.b.v[i] = (au ? 1ULL : 0ULL) & eq_or_u;
     }
     return r;
 }
 inline W4xN cmp(W4xN a, W4xN b, int op) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
-        if (a.b.v[i] | b.b.v[i]) { r.a.v[i] = 1; r.b.v[i] = 1; }
-        else {
-            bool hit = op == 0 ? (a.a.v[i] < b.a.v[i]) : op == 1 ? (a.a.v[i] <= b.a.v[i]) : op == 2 ? (a.a.v[i] > b.a.v[i]) : (a.a.v[i] >= b.a.v[i]);
-            r.a.v[i] = hit ? 1ULL : 0ULL; r.b.v[i] = 0ULL;
-        }
+        uint64_t unk = (a.b.v[i] | b.b.v[i]) ? 1ULL : 0ULL;
+        bool hit = op == 0 ? (a.a.v[i] < b.a.v[i]) : op == 1 ? (a.a.v[i] <= b.a.v[i]) : op == 2 ? (a.a.v[i] > b.a.v[i]) : (a.a.v[i] >= b.a.v[i]);
+        r.a.v[i] = (hit ? 1ULL : 0ULL) | unk;
+        r.b.v[i] = unk;
     }
     return r;
 }
 inline W4xN scmp(W4xN a, W4xN b, int w, int op) {
+    uint64_t m = mask_w(w);
+    uint64_t flip = w > 0 ? (1ULL << (w - 1)) : 0ULL;
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
-        if (a.b.v[i] | b.b.v[i]) { r.a.v[i] = 1; r.b.v[i] = 1; }
-        else {
-            int64_t x = sext_u64(a.a.v[i], w), y = sext_u64(b.a.v[i], w);
-            bool hit = op == 0 ? (x < y) : op == 1 ? (x <= y) : op == 2 ? (x > y) : (x >= y);
-            r.a.v[i] = hit ? 1ULL : 0ULL; r.b.v[i] = 0ULL;
-        }
+        uint64_t unk = (a.b.v[i] | b.b.v[i]) ? 1ULL : 0ULL;
+        uint64_t x = (a.a.v[i] & m) ^ flip, y = (b.a.v[i] & m) ^ flip;
+        bool hit = op == 0 ? (x < y) : op == 1 ? (x <= y) : op == 2 ? (x > y) : (x >= y);
+        r.a.v[i] = (hit ? 1ULL : 0ULL) | unk;
+        r.b.v[i] = unk;
     }
     return r;
 }
 inline W4xN cond(W4xN c, W4xN a, W4xN b, uint64_t m) {
     W4xN r{};
     for (int i = 0; i < kLanes; ++i) {
-        if (c.a.v[i] & ~c.b.v[i]) { r.a.v[i] = a.a.v[i] & m; r.b.v[i] = a.b.v[i] & m; }
-        else if (c.b.v[i] == 0ULL) { r.a.v[i] = b.a.v[i] & m; r.b.v[i] = b.b.v[i] & m; }
-        else {
-            uint64_t diff = ((a.a.v[i] ^ b.a.v[i]) | (a.b.v[i] ^ b.b.v[i])) & m;
-            r.a.v[i] = (a.a.v[i] & m) | diff; r.b.v[i] = (a.b.v[i] & m) | diff;
-        }
+        uint64_t is1 = (c.a.v[i] & ~c.b.v[i]) ? ~0ULL : 0ULL;
+        uint64_t is0 = ((c.a.v[i] | c.b.v[i]) == 0ULL) ? ~0ULL : 0ULL;
+        uint64_t is_u = ~(is1 | is0);
+        uint64_t aa = a.a.v[i] & m, ab = a.b.v[i] & m;
+        uint64_t ba = b.a.v[i] & m, bb = b.b.v[i] & m;
+        uint64_t diff = ((aa ^ ba) | (ab ^ bb)) & m;
+        r.a.v[i] = (is1 & aa) | (is0 & ba) | (is_u & (aa | diff));
+        r.b.v[i] = (is1 & ab) | (is0 & bb) | (is_u & (ab | diff));
     }
     return r;
 }

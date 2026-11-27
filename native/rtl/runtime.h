@@ -386,7 +386,11 @@ inline void append_text(std::string& out,const W& a){
   for(int i=a.w-1;i>=0;--i){const uint64_t b=uint64_t(1)<<i;*dst++=(z&b)?'z':(x&b)?'x':(v&b)?'1':'0';}
   return;
  }
- for(int i=a.w-1;i>=0;--i){const Bits b=Bits(1)<<i;*dst++=(a.z&b)?'z':(a.x&b)?'x':(a.v&b)?'1':'0';}
+ for(int i=a.w-1;i>=0;--i){
+  const int l=i>>6;
+  const uint64_t b=uint64_t(1)<<(i&63);
+  *dst++=(a.z.limb[l]&b)?'z':(a.x.limb[l]&b)?'x':(a.v.limb[l]&b)?'1':'0';
+ }
 }
 inline std::string text(const W& a){std::string s;append_text(s,a);return s;}
 inline int truth(const W& a) noexcept{
@@ -1201,20 +1205,20 @@ inline void check_assert(uint64_t cond, const char* msg) {
  if (!cond) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
 }
 inline constexpr uint64_t countones(uint64_t a, int w) noexcept {
- uint64_t x = a & mask64_unchecked(w);
- uint64_t c = 0;
- while (x) { x &= (x - 1); ++c; }
- return c;
+ return uint64_t(std::popcount(a & mask64_unchecked(w)));
 }
-inline constexpr uint64_t onehot(uint64_t a, int w) noexcept { return countones(a, w) == 1 ? 1ULL : 0ULL; }
-inline constexpr uint64_t onehot0(uint64_t a, int w) noexcept { return countones(a, w) <= 1 ? 1ULL : 0ULL; }
+inline constexpr uint64_t onehot(uint64_t a, int w) noexcept {
+ const uint64_t x = a & mask64_unchecked(w);
+ return (x != 0ULL && (x & (x - 1ULL)) == 0ULL) ? 1ULL : 0ULL;
+}
+inline constexpr uint64_t onehot0(uint64_t a, int w) noexcept {
+ const uint64_t x = a & mask64_unchecked(w);
+ return (x & (x - 1ULL)) == 0ULL ? 1ULL : 0ULL;
+}
 inline constexpr uint64_t isunknown(uint64_t, int) noexcept { return 0ULL; }
 inline constexpr uint64_t clog2(uint64_t a, int w) noexcept {
- uint64_t x = a & mask64_unchecked(w);
- if (x <= 1) return 0ULL;
- uint64_t v = x - 1, c = 0;
- while (v) { v >>= 1; ++c; }
- return c;
+ const uint64_t x = a & mask64_unchecked(w);
+ return x <= 1ULL ? 0ULL : uint64_t(64 - std::countl_zero(x - 1ULL));
 }
 inline constexpr uint64_t resolve_pair(uint64_t a, uint64_t b, int net_kind, int w) noexcept {
  const uint64_t m = mask64_unchecked(w);
@@ -1244,10 +1248,7 @@ inline W countones(const W& a) noexcept {
  const Bits m = mask_unchecked(a.w);
  const Bits ones = a.v & ~a.x & ~a.z & m;
  uint64_t c = 0;
- for (int i = 0; i < Bits::kLimbs; ++i) {
-  uint64_t x = ones.limb[i];
-  while (x) { x &= (x - 1); ++c; }
- }
+ for (int i = 0; i < Bits::kLimbs; ++i) c += uint64_t(std::popcount(ones.limb[i]));
  return W{Bits(c), Bits(), Bits(), 32};
 }
 inline W onehot(const W& a) noexcept {
@@ -1264,9 +1265,13 @@ inline W clog2(const W& a) noexcept {
  Bits x = a.v & mask_unchecked(a.w);
  if (x <= Bits(1)) return W{Bits(0), Bits(), Bits(), 32};
  Bits v = x - Bits(1);
- uint64_t c = 0;
- while (bool(v)) { v >>= 1; ++c; }
- return W{Bits(c), Bits(), Bits(), 32};
+ for (int i = Bits::kLimbs - 1; i >= 0; --i) {
+  if (v.limb[i] != 0ULL) {
+   uint64_t c = uint64_t(i) * 64ULL + uint64_t(64 - std::countl_zero(v.limb[i]));
+   return W{Bits(c), Bits(), Bits(), 32};
+  }
+ }
+ return W{Bits(0), Bits(), Bits(), 32};
 }
 inline W resolve_pair(const W& a_in, const W& b_in, int net_kind, int w) {
  const W a = a_in.w == w ? a_in : resize(a_in, w);
@@ -1314,16 +1319,16 @@ inline void check_assert(W64 cond, const char* msg) {
  if (!yes(cond)) throw std::runtime_error(msg && *msg ? std::string("RTL assertion failed: ") + msg : "RTL assertion failed");
 }
 inline constexpr W64 countones(W64 a) noexcept {
- uint64_t x = a.v & ~a.x & ~a.z & mask64_unchecked(a.w);
- uint64_t c = 0;
- while (x) { x &= (x - 1); ++c; }
- return W64{c, 0, 0, 32};
+ const uint64_t x = a.v & ~a.x & ~a.z & mask64_unchecked(a.w);
+ return W64{uint64_t(std::popcount(x)), 0, 0, 32};
 }
 inline constexpr W64 onehot(W64 a) noexcept {
- return W64{countones(a).v == 1 ? 1ULL : 0ULL, 0, 0, 1};
+ const uint64_t x = a.v & ~a.x & ~a.z & mask64_unchecked(a.w);
+ return W64{(x != 0ULL && (x & (x - 1ULL)) == 0ULL) ? 1ULL : 0ULL, 0, 0, 1};
 }
 inline constexpr W64 onehot0(W64 a) noexcept {
- return W64{countones(a).v <= 1 ? 1ULL : 0ULL, 0, 0, 1};
+ const uint64_t x = a.v & ~a.x & ~a.z & mask64_unchecked(a.w);
+ return W64{(x & (x - 1ULL)) == 0ULL ? 1ULL : 0ULL, 0, 0, 1};
 }
 inline constexpr W64 isunknown(W64 a) noexcept {
  return W64{((a.x | a.z) & mask64_unchecked(a.w)) ? 1ULL : 0ULL, 0, 0, 1};
@@ -1332,10 +1337,7 @@ inline constexpr W64 clog2(W64 a) noexcept {
  const uint64_t m = mask64_unchecked(a.w);
  if ((a.x | a.z) & m) return W64{0, 0, 0, 32};
  const uint64_t x = a.v & m;
- if (x <= 1) return W64{0, 0, 0, 32};
- uint64_t v = x - 1, c = 0;
- while (v) { v >>= 1; ++c; }
- return W64{c, 0, 0, 32};
+ return W64{x <= 1ULL ? 0ULL : uint64_t(64 - std::countl_zero(x - 1ULL)), 0, 0, 32};
 }
 inline constexpr W64 resolve_pair(W64 a_in, W64 b_in, int net_kind, int w) noexcept {
  const uint64_t m = mask64_unchecked(w);
@@ -1529,15 +1531,14 @@ inline constexpr W4 bbin(W4 a, W4 b, uint64_t m, int op) noexcept {
   return W4{((a.a ^ b.a) | ob) & m, ob};
  }
  if (op == 0) {
-  const uint64_t o0 = ((~a.a & ~a.b) | (~b.a & ~b.b)) & m;
-  const uint64_t o1 = (a.a & ~a.b) & (b.a & ~b.b) & m;
-  const uint64_t ox = ~(o0 | o1) & m;
-  return W4{(o1 | ox) & m, ox};
+  // Exact 16-entry IEEE 4-state AND: 0 dominates, (1,1)->1, all other combinations->X(1,1).
+  const uint64_t oa = (a.a | a.b) & (b.a | b.b) & m;
+  return W4{oa, oa & (a.b | b.b)};
  }
- const uint64_t o1 = ((a.a & ~a.b) | (b.a & ~b.b)) & m;
- const uint64_t o0 = (~a.a & ~a.b) & (~b.a & ~b.b) & m;
- const uint64_t ox = ~(o0 | o1) & m;
- return W4{(o1 | ox) & m, ox};
+ // Exact 16-entry IEEE 4-state OR: 1 dominates, (0,0)->0, all other combinations->X(1,1).
+ const uint64_t oa = (a.a | a.b | b.a | b.b) & m;
+ const uint64_t ob = (a.b | b.b) & (~a.a | a.b) & (~b.a | b.b) & m;
+ return W4{oa, ob};
 }
 inline constexpr bool exact(W4 a, W4 b) noexcept { return a.a == b.a && a.b == b.b; }
 inline constexpr bool casez_match(W4 a, W4 b, uint64_t m) noexcept {

@@ -70,7 +70,9 @@ public sealed class RtlLintContext
         IReadOnlyList<RtlLintStatement> statements,
         IReadOnlyList<RtlLintExpression> expressions,
         LintRuleParameters parameters,
-        Action<LintDiagnostic> sink)
+        Action<LintDiagnostic> sink,
+        IReadOnlyList<FsmInfo>? fsms = null,
+        CdcAnalysisResult? cdc = null)
     {
         SourceFile = sourceFile;
         Clock = clock;
@@ -82,6 +84,8 @@ public sealed class RtlLintContext
         Statements = statements;
         Expressions = expressions;
         Parameters = parameters;
+        Fsms = fsms ?? [];
+        Cdc = cdc ?? CdcAnalysisResult.Empty;
         this.sink = sink;
     }
 
@@ -94,6 +98,8 @@ public sealed class RtlLintContext
     public IReadOnlyList<RtlLintAssignment> Assignments { get; }
     public IReadOnlyList<RtlLintStatement> Statements { get; }
     public IReadOnlyList<RtlLintExpression> Expressions { get; }
+    public IReadOnlyList<FsmInfo> Fsms { get; }
+    public CdcAnalysisResult Cdc { get; }
     public LintRuleParameters Parameters { get; }
 
     public void Report(

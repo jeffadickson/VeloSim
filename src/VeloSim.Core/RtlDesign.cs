@@ -1,6 +1,6 @@
+using System.Collections.Frozen;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 namespace VeloSim;
 
 public sealed record RtlSignal(string Name, int Width, string Direction, string? SourcePath = null, bool Signed = false, bool TwoState = false);
@@ -31,7 +31,34 @@ public sealed partial class RtlDesign
     public RtlDesignLimits Limits { get; }
     public int MaxWordBits => maxObservedWordWidth > 256 ? 512 : 256;
     public bool EventDriven => Kind(Body) == "process" || Kind(Body) == "parallel" && Body.GetProperty("items").EnumerateArray().Any(p => Kind(p) == "process");
-    private IEnumerable<string> EventSignals => (Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body]).Where(p => Kind(p) == "process").SelectMany(p => p.GetProperty("events").EnumerateArray()).Select(e => e.GetProperty("signal").GetString()!).Distinct();
+    private string[]? cachedEventSignals;
+    private IReadOnlyList<string> EventSignals => cachedEventSignals ??= ComputeEventSignals();
+    private string[] ComputeEventSignals()
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var list = new List<string>();
+        void CollectProc(JsonElement p)
+        {
+            if (Kind(p) != "process") return;
+            foreach (var ev in p.GetProperty("events").EnumerateArray())
+            {
+                string s = ev.GetProperty("signal").GetString()!;
+                if (seen.Add(s)) list.Add(s);
+            }
+        }
+        if (Kind(Body) == "parallel")
+            foreach (var p in Body.GetProperty("items").EnumerateArray()) CollectProc(p);
+        else
+            CollectProc(Body);
+        return list.ToArray();
+    }
+    private HashSet<string> BuildEventAndClockSet()
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string s in EventSignals) set.Add(s);
+        if (Clock is not null) set.Add(Clock);
+        return set;
+    }
     private readonly Dictionary<string, int> signalIds;
     private readonly Dictionary<string, int> memoryIds;
     private int nodes;
@@ -56,12 +83,47 @@ public sealed partial class RtlDesign
     }
     public int SignalId(string name) => signalIds.TryGetValue(name, out int id) ? id : throw new IrValidationException("Unknown RTL signal: " + name);
     private int MemoryId(string name) => memoryIds.TryGetValue(name, out int id) ? id : throw new IrValidationException("Unknown RTL memory: " + name);
-    public static bool Identifier(string name) => Regex.IsMatch(name, "^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant);
+    public static bool Identifier(string name)
+    {
+        if (string.IsNullOrEmpty(name) || name.Length > 128) return false;
+        char c0 = name[0];
+        if (!((uint)(c0 - 'A') <= 25 || (uint)(c0 - 'a') <= 25 || c0 == '_')) return false;
+        for (int i = 1; i < name.Length; i++)
+        {
+            char c = name[i];
+            if (!((uint)(c - 'A') <= 25 || (uint)(c - 'a') <= 25 || (uint)(c - '0') <= 9 || c == '_')) return false;
+        }
+        return true;
+    }
+    private static bool IsValidSourcePath(string path)
+    {
+        if (path.Length is 0 or > 1024) return false;
+        for (int i = 0; i < path.Length; i++)
+        {
+            char c = path[i];
+            if (!((uint)(c - 'A') <= 25 || (uint)(c - 'a') <= 25 || (uint)(c - '0') <= 9 || c is '_' or '.' or '$' or '[' or ']' or ':'))
+                return false;
+        }
+        return true;
+    }
     private RtlDesign(string json, RtlDesignLimits limits)
+        : this(ParseJsonRoot(json, limits), json, limits, ownsRoot: true)
+    {
+    }
+    private static JsonDocument ParseJsonRoot(string json, RtlDesignLimits limits)
+    {
+        if (json.Length > limits.MaxIrBytes) throw new IrValidationException("RTL IR too large.");
+        return JsonDocument.Parse(json);
+    }
+    private RtlDesign(JsonDocument? document, string json, RtlDesignLimits limits, bool ownsRoot)
+        : this((document ?? throw new ArgumentNullException(nameof(document))).RootElement, json, limits)
+    {
+        if (ownsRoot) document.Dispose();
+    }
+    private RtlDesign(JsonElement root, string json, RtlDesignLimits limits)
     {
         Limits = limits;
         if (json.Length > limits.MaxIrBytes) throw new IrValidationException("RTL IR too large.");
-        using var document = JsonDocument.Parse(json); var root = document.RootElement;
         JsonShape.Fields(root, ["format", "signals", "memories", "continuous", "clock", "body"], ["combinational", "initialization", "timed", "time_precision", "named_events", "covergroups", "properties"]);
         if (root.GetProperty("format").GetString() != "velosim.rtl.v1") throw new IrValidationException("Unsupported RTL IR.");
         Signals = root.GetProperty("signals").EnumerateArray().Select(e => { JsonShape.Fields(e, ["name", "width", "direction"], ["path", "signed", "two_state"]); return new RtlSignal(Name(e), e.GetProperty("width").GetInt32(), e.GetProperty("direction").GetString()!, e.TryGetProperty("path", out var path) ? path.GetString() : null, e.TryGetProperty("signed",out var sign)&&sign.GetBoolean(),e.TryGetProperty("two_state",out var two)&&two.GetBoolean()); }).ToArray();
@@ -70,10 +132,10 @@ public sealed partial class RtlDesign
         maxObservedWordWidth = Signals.Select(s => s.Width).Concat(Memories.Select(m => m.Width)).DefaultIfEmpty(1).Max();
         signalIds = Signals.Select((s, i) => (s.Name, i)).ToDictionary(s => s.Name, s => s.i, StringComparer.Ordinal); memoryIds = Memories.Select((m, i) => (m.Name, i)).ToDictionary(m => m.Name, m => m.i, StringComparer.Ordinal);
         foreach(var memory in Memories)ValidateMemoryShape(memory);
-        if (Signals.Any(s => s.SourcePath is not null && (s.Direction != "internal" || s.SourcePath.Length > 1024 || !Regex.IsMatch(s.SourcePath, "^[A-Za-z0-9_.$\\[\\]:]+$", RegexOptions.CultureInvariant))) || Signals.Select(s => s.SourcePath ?? s.Name).Distinct(StringComparer.Ordinal).Count() != Signals.Count) throw new IrValidationException("Invalid or duplicate source signal paths.");
+        if (Signals.Any(s => s.SourcePath is not null && (s.Direction != "internal" || !IsValidSourcePath(s.SourcePath))) || Signals.Select(s => s.SourcePath ?? s.Name).Distinct(StringComparer.Ordinal).Count() != Signals.Count) throw new IrValidationException("Invalid or duplicate source signal paths.");
         Clock = root.GetProperty("clock").GetString();
         if (Clock is not null && (Signals[SignalId(Clock)].Width != 1 || Signals[SignalId(Clock)].Direction != "input")) throw new IrValidationException("Clock must be a scalar input.");
-        Body = root.GetProperty("body").Clone(); var sequential = new HashSet<string>();
+        Body = root.GetProperty("body").Clone(); var sequential = new HashSet<string>(StringComparer.Ordinal);
         if (root.TryGetProperty("timed", out var timed))
         {
             Continuous = [];
@@ -88,17 +150,21 @@ public sealed partial class RtlDesign
         ValidateCovergroups(root);
         ValidateStatement(Body, sequential, 0); _ = StatementCost(Body);
         if (EventDriven && Kind(Body) == "parallel" && Body.GetProperty("items").EnumerateArray().Any(p => Kind(p) != "process")) throw new IrValidationException("Explicit and implicit event processes cannot be mixed.");
-        var continuous = root.GetProperty("continuous").EnumerateArray().Select(e => e.Clone()).ToList(); if (continuous.Count > limits.MaxContinuous) throw new IrValidationException("Too many continuous assignments.");
-        var pending = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        foreach (var assignment in continuous)
+        var continuousEl = root.GetProperty("continuous");
+        int continuousCount = continuousEl.GetArrayLength();
+        if (continuousCount > limits.MaxContinuous) throw new IrValidationException("Too many continuous assignments.");
+        var continuousCloned = continuousEl.Clone();
+        var eventSet = BuildEventAndClockSet();
+        var pending = new Dictionary<string, JsonElement>(continuousCount, StringComparer.Ordinal);
+        foreach (var assignment in continuousCloned.EnumerateArray())
         {
             JsonShape.Fields(assignment, ["target", "value"]); var target = assignment.GetProperty("target"); ValidateExpression(target, 0); ValidateExpression(assignment.GetProperty("value"), 0);
-            if (References(assignment.GetProperty("value")).Intersect(EventSignals.Append(Clock)).Any()) throw new IrValidationException("Clock-dependent continuous logic is outside the race-free input-event subset.");
+            if (eventSet.Count > 0 && ContainsAnyReference(assignment.GetProperty("value"), eventSet)) throw new IrValidationException("Clock-dependent continuous logic is outside the race-free input-event subset.");
             if (Kind(target) != "ref" || Signals[SignalId(Name(target))].Direction == "input" || sequential.Contains(Name(target)) || !pending.TryAdd(Name(target), assignment)) throw new IrValidationException("Invalid or conflicting continuous writer.");
         }
         var sorted = SortCombinational(root, sequential, pending);
         var combWriters = SettledSteps.SelectMany(step => Statements(step).Where(e => Kind(e)=="blocking").SelectMany(e => TargetLeaves(e.GetProperty("target"))).Select(TargetOwner)).ToHashSet(StringComparer.Ordinal);
-        Initialization = root.TryGetProperty("initialization",out var initialization) ? initialization.Clone() : Element("{\"kind\":\"block\",\"items\":[]}");
+        Initialization = root.TryGetProperty("initialization",out var initialization) ? initialization.Clone() : EmptyBlockElement;
         var initialWriters=ValidateInitialization(combWriters);
         if (Signals.Any(s => s.Direction != "input" && !sequential.Contains(s.Name) && !combWriters.Contains(s.Name) && !initialWriters.Contains(s.Name))) throw new IrValidationException("Undriven non-input signals are unsupported; net/variable initialization must not be guessed.");
         ValidateProperties(root);
@@ -108,6 +174,11 @@ public sealed partial class RtlDesign
     public static RtlDesign Parse(string json, RtlDesignLimits? limits = null)
     {
         try { return new(json, limits ?? RtlDesignLimits.Bounded); }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or OverflowException or FormatException or ArgumentException && e is not IrValidationException) { throw new IrValidationException("Malformed RTL IR: " + e.Message); }
+    }
+    internal static RtlDesign ParseRoot(JsonElement root, string json, RtlDesignLimits? limits = null)
+    {
+        try { return new(root, json, limits ?? RtlDesignLimits.Bounded); }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or OverflowException or FormatException or ArgumentException && e is not IrValidationException) { throw new IrValidationException("Malformed RTL IR: " + e.Message); }
     }
     private void Budget(int depth) { if (depth > Limits.MaxDepth || ++nodes > Limits.MaxNodes) throw new IrValidationException("RTL node/depth budget exceeded."); }
@@ -205,9 +276,146 @@ public sealed partial class RtlDesign
             }
             return RecordWidth(retWidth);
         }
-        JsonShape.Fields(e, ["kind", "args"]); var args = e.GetProperty("args").EnumerateArray().ToArray();
-        if (Arity(kind) == 0 || args.Length != Arity(kind)) throw new IrValidationException("Unsupported RTL expression.");
-        var widths = args.Select(a => ValidateExpression(a, depth + 1)).ToArray(); var result = Scalar(kind) ? 1 : kind is "countones" or "clog2" ? 32 : kind is "shl" or "shr" or "ashr" ? widths[0] : kind == "cond" ? Math.Max(widths[1], widths[2]) : kind == "concat" ? widths.Sum() : widths.Max(); if (result > Limits.MaxWordWidth) throw new IrValidationException($"Expression exceeds {Limits.MaxWordWidth} bits."); return RecordWidth(result);
+        JsonShape.Fields(e, ["kind", "args"]);
+        int arity = Arity(kind);
+        if (arity == 0) throw new IrValidationException("Unsupported RTL expression.");
+        var argsEl = e.GetProperty("args");
+        if (argsEl.ValueKind != JsonValueKind.Array || argsEl.GetArrayLength() != arity)
+            throw new IrValidationException("Unsupported RTL expression.");
+        int w0 = 0, w1 = 0, w2 = 0, idx = 0;
+        foreach (var a in argsEl.EnumerateArray())
+        {
+            int w = ValidateExpression(a, depth + 1);
+            if (idx == 0) w0 = w;
+            else if (idx == 1) w1 = w;
+            else w2 = w;
+            idx++;
+        }
+        int result = Scalar(kind) ? 1
+            : kind is "countones" or "clog2" ? 32
+            : kind is "shl" or "shr" or "ashr" ? w0
+            : kind == "cond" ? Math.Max(w1, w2)
+            : kind == "concat" ? w0 + w1
+            : arity == 1 ? w0 : arity == 2 ? Math.Max(w0, w1) : Math.Max(w0, Math.Max(w1, w2));
+        if (result > Limits.MaxWordWidth) throw new IrValidationException($"Expression exceeds {Limits.MaxWordWidth} bits.");
+        return RecordWidth(result);
+    }
+    private void CollectReferences(JsonElement e, HashSet<string> sink)
+    {
+        string kind = Kind(e);
+        if (kind is "ref" or "size") sink.Add(Name(e));
+        else if (kind is "past" or "rose" or "fell" or "stable") sink.Add(e.GetProperty("signal").GetString()!);
+        else if (kind is "index" or "exists") { sink.Add(Name(e)); foreach (var index in MemoryIndices(e)) CollectReferences(index, sink); }
+        else if (kind is "bitselect" or "partselect" or "indexedselect")
+        {
+            CollectReferences(e.GetProperty("value"), sink);
+            if (e.TryGetProperty("index", out var index)) CollectReferences(index, sink);
+            if (e.TryGetProperty("base", out var basis)) CollectReferences(basis, sink);
+        }
+        else if (kind == "convert") CollectReferences(e.GetProperty("value"), sink);
+        else if (kind == "urandom_range")
+        {
+            CollectReferences(e.GetProperty("max"), sink);
+            if (e.TryGetProperty("min", out var minEl)) CollectReferences(minEl, sink);
+        }
+        else if (kind == "inside")
+        {
+            CollectReferences(e.GetProperty("value"), sink);
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    CollectReferences(loEl, sink);
+                    CollectReferences(hiEl, sink);
+                }
+                else CollectReferences(it, sink);
+            }
+        }
+        else if (e.TryGetProperty("args", out var args))
+            foreach (var a in args.EnumerateArray()) CollectReferences(a, sink);
+    }
+    private bool ContainsAnyReference(JsonElement e, HashSet<string> targets)
+    {
+        string kind = Kind(e);
+        if (kind is "ref" or "size") return targets.Contains(Name(e));
+        if (kind is "past" or "rose" or "fell" or "stable") return targets.Contains(e.GetProperty("signal").GetString()!);
+        if (kind is "index" or "exists")
+        {
+            if (targets.Contains(Name(e))) return true;
+            foreach (var index in MemoryIndices(e)) if (ContainsAnyReference(index, targets)) return true;
+            return false;
+        }
+        if (kind is "bitselect" or "partselect" or "indexedselect")
+        {
+            if (ContainsAnyReference(e.GetProperty("value"), targets)) return true;
+            if (e.TryGetProperty("index", out var index) && ContainsAnyReference(index, targets)) return true;
+            if (e.TryGetProperty("base", out var basis) && ContainsAnyReference(basis, targets)) return true;
+            return false;
+        }
+        if (kind == "convert") return ContainsAnyReference(e.GetProperty("value"), targets);
+        if (kind == "urandom_range")
+        {
+            if (ContainsAnyReference(e.GetProperty("max"), targets)) return true;
+            return e.TryGetProperty("min", out var minEl) && ContainsAnyReference(minEl, targets);
+        }
+        if (kind == "inside")
+        {
+            if (ContainsAnyReference(e.GetProperty("value"), targets)) return true;
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    if (ContainsAnyReference(loEl, targets) || ContainsAnyReference(hiEl, targets)) return true;
+                }
+                else if (ContainsAnyReference(it, targets)) return true;
+            }
+            return false;
+        }
+        if (e.TryGetProperty("args", out var args))
+            foreach (var a in args.EnumerateArray()) if (ContainsAnyReference(a, targets)) return true;
+        return false;
+    }
+    private bool ReferencesAnyUnassigned(JsonElement e, HashSet<string> owned, HashSet<string> assigned)
+    {
+        string kind = Kind(e);
+        if (kind is "ref" or "size") { string n = Name(e); return owned.Contains(n) && !assigned.Contains(n); }
+        if (kind is "past" or "rose" or "fell" or "stable") { string n = e.GetProperty("signal").GetString()!; return owned.Contains(n) && !assigned.Contains(n); }
+        if (kind is "index" or "exists")
+        {
+            string n = Name(e);
+            if (owned.Contains(n) && !assigned.Contains(n)) return true;
+            foreach (var index in MemoryIndices(e)) if (ReferencesAnyUnassigned(index, owned, assigned)) return true;
+            return false;
+        }
+        if (kind is "bitselect" or "partselect" or "indexedselect")
+        {
+            if (ReferencesAnyUnassigned(e.GetProperty("value"), owned, assigned)) return true;
+            if (e.TryGetProperty("index", out var index) && ReferencesAnyUnassigned(index, owned, assigned)) return true;
+            if (e.TryGetProperty("base", out var basis) && ReferencesAnyUnassigned(basis, owned, assigned)) return true;
+            return false;
+        }
+        if (kind == "convert") return ReferencesAnyUnassigned(e.GetProperty("value"), owned, assigned);
+        if (kind == "urandom_range")
+        {
+            if (ReferencesAnyUnassigned(e.GetProperty("max"), owned, assigned)) return true;
+            return e.TryGetProperty("min", out var minEl) && ReferencesAnyUnassigned(minEl, owned, assigned);
+        }
+        if (kind == "inside")
+        {
+            if (ReferencesAnyUnassigned(e.GetProperty("value"), owned, assigned)) return true;
+            foreach (var it in e.GetProperty("items").EnumerateArray())
+            {
+                if (it.TryGetProperty("lo", out var loEl) && it.TryGetProperty("hi", out var hiEl))
+                {
+                    if (ReferencesAnyUnassigned(loEl, owned, assigned) || ReferencesAnyUnassigned(hiEl, owned, assigned)) return true;
+                }
+                else if (ReferencesAnyUnassigned(it, owned, assigned)) return true;
+            }
+            return false;
+        }
+        if (e.TryGetProperty("args", out var args))
+            foreach (var a in args.EnumerateArray()) if (ReferencesAnyUnassigned(a, owned, assigned)) return true;
+        return false;
     }
     private IEnumerable<string> References(JsonElement e)
     {
@@ -383,24 +591,120 @@ public sealed partial class RtlDesign
             default: throw new IrValidationException("Unsupported RTL statement.");
         }
     }
-    private static IEnumerable<JsonElement> Statements(JsonElement e)
+    private static void CollectStatements(JsonElement e, List<JsonElement> dst)
     {
-        yield return e;
-        IEnumerable<JsonElement> children=Kind(e) switch {
-            "block" or "parallel"=>e.GetProperty("items").EnumerateArray().ToArray(),
-            "process" or "repeat" or "runtime_repeat" or "while" or "do"=>[e.GetProperty("body")],"if"=>[e.GetProperty("then"),e.GetProperty("else")],
-            "case"=>e.GetProperty("items").EnumerateArray().Select(i=>i.GetProperty("body")),_=>[]};
-        foreach(var child in children)foreach(var statement in Statements(child))yield return statement;
+        dst.Add(e);
+        switch (Kind(e))
+        {
+            case "block":
+            case "parallel":
+                foreach (var item in e.GetProperty("items").EnumerateArray())
+                    CollectStatements(item, dst);
+                break;
+            case "process":
+            case "repeat":
+            case "runtime_repeat":
+            case "while":
+            case "do":
+                CollectStatements(e.GetProperty("body"), dst);
+                break;
+            case "if":
+                CollectStatements(e.GetProperty("then"), dst);
+                CollectStatements(e.GetProperty("else"), dst);
+                break;
+            case "case":
+                foreach (var item in e.GetProperty("items").EnumerateArray())
+                    CollectStatements(item.GetProperty("body"), dst);
+                break;
+        }
+    }
+    private static List<JsonElement> Statements(JsonElement e)
+    {
+        var list = new List<JsonElement>();
+        CollectStatements(e, list);
+        return list;
+    }
+    private static void CollectTargetOwners(JsonElement target, HashSet<string> dst)
+    {
+        if (Kind(target) == "concat")
+        {
+            foreach (var child in target.GetProperty("args").EnumerateArray())
+                CollectTargetOwners(child, dst);
+        }
+        else
+        {
+            dst.Add(TargetOwner(target));
+        }
     }
     private void ValidateBlockingIsolation()
     {
-        var processes=Kind(Body)=="parallel"?Body.GetProperty("items").EnumerateArray().ToArray():[Body];
-        var reads=processes.Select(p=>Statements(p).SelectMany(StatementReferences).ToHashSet(StringComparer.Ordinal)).ToArray();
-        for(int i=0;i<processes.Length;++i){
-            var statements=Statements(processes[i]).ToArray();var blocking=statements.Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).Concat(statements.Where(e=>Kind(e) is "allocate" or "delete").Select(Name)).Concat(QueueDestinations(statements)).Concat(AssociativeDestinations(statements)).ToHashSet(StringComparer.Ordinal);
-            var nonblocking=statements.Where(e=>Kind(e)=="nba").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);
-            if(blocking.Overlaps(nonblocking))throw new IrValidationException("A word cannot mix blocking and nonblocking assignments.");
-            if(Enumerable.Range(0,processes.Length).Any(j=>j!=i&&blocking.Overlaps(reads[j]))||SettledSteps.SelectMany(Statements).Any(a=>new[]{"value","condition"}.Where(n=>a.TryGetProperty(n,out _)).Any(n=>References(a.GetProperty(n)).Any(blocking.Contains))))throw new IrValidationException("Blocking destinations must be isolated from other processes and continuous logic.");
+        var processes = Kind(Body) == "parallel" ? Body.GetProperty("items").EnumerateArray().ToArray() : [Body];
+
+        // Precompute combinational reads once instead of per-process.
+        var combReads = new HashSet<string>(StringComparer.Ordinal);
+        var stepBuf = new List<JsonElement>();
+        foreach (var step in SettledSteps)
+        {
+            stepBuf.Clear();
+            CollectStatements(step, stepBuf);
+            foreach (var st in stepBuf)
+            {
+                if (st.TryGetProperty("value", out var valEl) && valEl.ValueKind == JsonValueKind.Object) CollectReferences(valEl, combReads);
+                if (st.TryGetProperty("condition", out var condEl) && condEl.ValueKind == JsonValueKind.Object) CollectReferences(condEl, combReads);
+            }
+        }
+
+        // Track per-signal reader ownership across processes: -1 means read by 2+ processes; >= 0 means read only by process idx.
+        var readerOwner = new Dictionary<string, int>(StringComparer.Ordinal);
+        var procStatements = new List<JsonElement>[processes.Length];
+        var procReads = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < processes.Length; i++)
+        {
+            var stmts = Statements(processes[i]);
+            procStatements[i] = stmts;
+            procReads.Clear();
+            foreach (var st in stmts)
+                CollectStatementReferences(st, procReads);
+            foreach (string r in procReads)
+            {
+                if (readerOwner.TryGetValue(r, out int existing))
+                {
+                    if (existing != i) readerOwner[r] = -1;
+                }
+                else
+                {
+                    readerOwner[r] = i;
+                }
+            }
+        }
+
+        var blocking = new HashSet<string>(StringComparer.Ordinal);
+        var nonblocking = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < processes.Length; ++i)
+        {
+            var statements = procStatements[i];
+            blocking.Clear();
+            nonblocking.Clear();
+            foreach (var st in statements)
+            {
+                string k = Kind(st);
+                if (k == "blocking")
+                    CollectTargetOwners(st.GetProperty("target"), blocking);
+                else if (k == "nba")
+                    CollectTargetOwners(st.GetProperty("target"), nonblocking);
+                else if (k is "allocate" or "delete")
+                    blocking.Add(Name(st));
+            }
+            blocking.UnionWith(QueueDestinations(statements));
+            blocking.UnionWith(AssociativeDestinations(statements));
+
+            if (blocking.Overlaps(nonblocking))
+                throw new IrValidationException("A word cannot mix blocking and nonblocking assignments.");
+            foreach (string b in blocking)
+            {
+                if (combReads.Contains(b) || (readerOwner.TryGetValue(b, out int owner) && owner != i))
+                    throw new IrValidationException("Blocking destinations must be isolated from other processes and continuous logic.");
+            }
         }
     }
     private long StatementCost(JsonElement e)
@@ -935,17 +1239,29 @@ public sealed partial class RtlDesign
         code.AppendLine("settle();\n}");
         foreach (string signal in EventSignals) { int id = SignalId(signal); code.AppendLine($"previous_events[{id}]=s[{id}];"); }
     }
+    private static readonly FrozenSet<string> CppReservedIdentifiers = (
+        "alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish fatal exitCode evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part select_indexed deposit_indexed parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index execution_budget execution_step repeat_count array_index dynamic_allocate dynamic_read queue_push queue_pop queue_delete queue_write assoc_read assoc_write assoc_delete assoc_exists assoc_traverse assoc_find assoc_key assoc localAssoc nextAssoc AssociativeStorage lit lit256 lit512 MemLog wildeq wildneq casez_match casex_match coveragePoints writeCoverageJson CoveragePoint openVcd openVcdGz dumpVcd closeVcd setPlusargs addPlusarg plusargs testPlusargs valuePlusargs setRandomSeed randomSeed nextUrandom nextUrandomRange nextRandom forceSignal releaseSignal isForced enableToggleCoverage toggleCoverage ToggleCoverage memoryCount memoryDepth memoryWidth readMemoryWord writeMemoryWord countones onehot onehot0 isunknown clog2 resolve_pair resolve_finalize resolve_net NetKind registerCovergroup sampleCovergroup covergroups registerProperty recordPropertyPass recordPropertyFail recordPropertyVacuous propertyStats ThreadPool " +
+        "scheduler eventsPending nextTimeSlot execute engine frame candidate nextS nextMem drives HdlScheduler " +
+        "snapshot restore fork enableTimeTravel recordTimeTravel timeTravelDepth rewindTimeTravel dumpTimeTravelVcd dumpTimeTravelOnFailure ModelSnapshot")
+        .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+        .ToFrozenSet(StringComparer.Ordinal);
+
     public IReadOnlyDictionary<string, string> ExternalPortNames()
     {
-        var reserved = ("alignas alignof and and_eq asm atomic_cancel atomic_commit atomic_noexcept auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public reflexpr register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch synchronized template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq eval final evaluate settle previous_clock s mem time timeInc name signals get put lifetime checkThread useVpi loadVpi gotFinish finish fatal exitCode evalNeeded requestEval started state std vsrtl Model Port W Signal word mask resize unknown select_bit select_part select_indexed deposit_indexed parse text truth yes logical_not logical_and logical_or bit_not bit_binary exact equal compare shift reduce product conditional arithmetic concat read write Bits signed_resize signed_compare signed_shift signed_product negative previous_events edge_event two_state memory_index execution_budget execution_step repeat_count array_index dynamic_allocate dynamic_read queue_push queue_pop queue_delete queue_write assoc_read assoc_write assoc_delete assoc_exists assoc_traverse assoc_find assoc_key assoc localAssoc nextAssoc AssociativeStorage lit lit256 lit512 MemLog wildeq wildneq casez_match casex_match coveragePoints writeCoverageJson CoveragePoint openVcd openVcdGz dumpVcd closeVcd setPlusargs addPlusarg plusargs testPlusargs valuePlusargs setRandomSeed randomSeed nextUrandom nextUrandomRange nextRandom forceSignal releaseSignal isForced enableToggleCoverage toggleCoverage ToggleCoverage memoryCount memoryDepth memoryWidth readMemoryWord writeMemoryWord countones onehot onehot0 isunknown clog2 resolve_pair resolve_finalize resolve_net NetKind registerCovergroup sampleCovergroup covergroups registerProperty recordPropertyPass recordPropertyFail recordPropertyVacuous propertyStats ThreadPool").Split(' ').ToHashSet(StringComparer.Ordinal);
-        reserved.UnionWith("scheduler eventsPending nextTimeSlot execute engine frame candidate nextS nextMem drives HdlScheduler".Split(' '));
-        reserved.UnionWith("snapshot restore fork enableTimeTravel recordTimeTravel timeTravelDepth rewindTimeTravel dumpTimeTravelVcd dumpTimeTravelOnFailure ModelSnapshot".Split(' '));
-        var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal); var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var signal in Signals.Where(s => s.Direction != "internal"))
+        var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var signal in Signals)
         {
+            if (signal.Direction == "internal") continue;
             string field = signal.Name;
-            if (reserved.Contains(field) || field.StartsWith('_') || field.Contains("__", StringComparison.Ordinal)) { field = "port_" + field.TrimStart('_'); while (field.Contains("__", StringComparison.Ordinal)) field = field.Replace("__", "_", StringComparison.Ordinal); while (used.Contains(field) || reserved.Contains(field)) field = "port_" + field; }
-            used.Add(field); result.Add(signal.Name, field);
+            if (CppReservedIdentifiers.Contains(field) || field.StartsWith('_') || field.Contains("__", StringComparison.Ordinal))
+            {
+                field = "port_" + field.TrimStart('_');
+                while (field.Contains("__", StringComparison.Ordinal)) field = field.Replace("__", "_", StringComparison.Ordinal);
+                while (used.Contains(field) || CppReservedIdentifiers.Contains(field)) field = "port_" + field;
+            }
+            used.Add(field);
+            result.Add(signal.Name, field);
         }
         return result;
     }

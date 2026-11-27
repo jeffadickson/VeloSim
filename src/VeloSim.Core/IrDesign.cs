@@ -103,13 +103,47 @@ public sealed class IrDesign
 
 internal static class JsonShape
 {
-    public static void Fields(JsonElement element, string[] required, string[]? optional = null)
+    public static void Fields(JsonElement element, ReadOnlySpan<string> required, ReadOnlySpan<string> optional = default)
     {
         if (element.ValueKind != JsonValueKind.Object) throw new IrValidationException("Expected JSON object.");
+        int reqLen = required.Length;
+        int optLen = optional.Length;
+        if (reqLen + optLen <= 64)
+        {
+            ulong seen = 0;
+            foreach (var p in element.EnumerateObject())
+            {
+                int idx = -1;
+                for (int i = 0; i < reqLen; i++)
+                {
+                    if (p.NameEquals(required[i])) { idx = i; break; }
+                }
+                if (idx < 0)
+                {
+                    for (int j = 0; j < optLen; j++)
+                    {
+                        if (p.NameEquals(optional[j])) { idx = reqLen + j; break; }
+                    }
+                }
+                if (idx < 0) throw new IrValidationException("Unexpected or duplicate field: " + p.Name);
+                ulong bit = 1UL << idx;
+                if ((seen & bit) != 0) throw new IrValidationException("Unexpected or duplicate field: " + p.Name);
+                seen |= bit;
+            }
+            ulong reqMask = reqLen == 64 ? ulong.MaxValue : ((1UL << reqLen) - 1UL);
+            if ((seen & reqMask) != reqMask) throw new IrValidationException("Required field missing.");
+            return;
+        }
+
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var p in element.EnumerateObject())
-            if (!names.Add(p.Name) || (!required.Contains(p.Name) && !(optional?.Contains(p.Name) ?? false)))
-                throw new IrValidationException("Unexpected or duplicate field: " + p.Name);
-        if (required.Any(n => !names.Contains(n))) throw new IrValidationException("Required field missing.");
+        {
+            bool allowed = false;
+            for (int i = 0; i < reqLen; i++) if (p.NameEquals(required[i])) { allowed = true; break; }
+            if (!allowed) for (int j = 0; j < optLen; j++) if (p.NameEquals(optional[j])) { allowed = true; break; }
+            if (!allowed || !names.Add(p.Name)) throw new IrValidationException("Unexpected or duplicate field: " + p.Name);
+        }
+        for (int i = 0; i < reqLen; i++)
+            if (!names.Contains(required[i])) throw new IrValidationException("Required field missing.");
     }
 }

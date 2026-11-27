@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Text;
 using System.Text.Json;
 namespace VeloSim;
@@ -12,6 +13,10 @@ public enum RtlTargetLanguage
 
 public sealed partial class RtlDesign
 {
+    private static readonly FrozenSet<string> CSharpReservedIdentifiers = new HashSet<string>(
+        "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Finish Time TimeInc EventsPending NextTimeSlot LoadMemoryHex LoadMemoryBin OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs Plusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal GotFinish ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint Snapshot Restore Fork ITimeTravelModel TimeTravelRecorder ModelName Signals Memories SignalByName GetSignal PutSignal ReadMemory WriteMemory W4 W4Ops MemLog4 W64 W64Ops W2Ops ContainerOps MemFileIO HdlSched HdlSchedState HdlFrame HdlStep HdlWrite HdlWatch HdlEdge HdlJoin VcdWriter PlusargStore SplitMix64Rng CheckpointIO IVpiModel VpiDirection VpiSignalInfo VpiMemoryInfo VpiCbReason VpiCbHandle VpiCbEvent VpiLookup VpiContext VpiSession".Split(' '),
+        StringComparer.Ordinal).ToFrozenSet(StringComparer.Ordinal);
+
     internal bool CanUsePortable64(RtlStateMode stateMode)
     {
         if (CollectDpiCalls().Count > 0 || Covergroups.Count > 0) return false;
@@ -29,9 +34,7 @@ public sealed partial class RtlDesign
 
     internal IReadOnlyDictionary<string, string> CSharpPortNames()
     {
-        var reserved = (
-            "abstract as base bool break byte case catch char checked class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach goto if implicit in int interface internal is lock long namespace new null object operator out override params private protected public readonly ref return sbyte sealed short sizeof stackalloc static string struct switch this throw true try typeof uint ulong unchecked unsafe ushort using virtual void volatile while Eval Final Finish Time TimeInc EventsPending NextTimeSlot LoadMemoryHex LoadMemoryBin OpenVcd OpenVcdGz DumpVcd CloseVcd SetPlusargs AddPlusarg TestPlusargs ValuePlusargs Plusargs SetRandomSeed RandomSeed NextUrandom NextUrandomRange NextRandom ForceSignal ReleaseSignal IsForced Fatal GotFinish ExitCode PropertyPasses PropertyFailures PropertyVacuous SaveCheckpoint RestoreCheckpoint Snapshot Restore Fork ITimeTravelModel TimeTravelRecorder ModelName Signals Memories SignalByName GetSignal PutSignal ReadMemory WriteMemory W4 W4Ops MemLog4 W64 W64Ops W2Ops ContainerOps MemFileIO HdlSched HdlSchedState HdlFrame HdlStep HdlWrite HdlWatch HdlEdge HdlJoin VcdWriter PlusargStore SplitMix64Rng CheckpointIO IVpiModel VpiDirection VpiSignalInfo VpiMemoryInfo VpiCbReason VpiCbHandle VpiCbEvent VpiLookup VpiContext VpiSession"
-        ).Split(' ').ToHashSet(StringComparer.Ordinal);
+        var reserved = CSharpReservedIdentifiers;
         var used = Signals.Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var signal in Signals.Where(s => s.Direction != "internal"))
@@ -165,7 +168,7 @@ public sealed partial class RtlDesign
     {
         string k = Kind(e);
         if (k == "ref") return Signals[SignalId(Name(e))].Direction != "input";
-        if (k is "urandom" or "urandom_range" or "random" or "test_plusargs" or "past" or "rose" or "fell" or "stable") return false;
+        if (k is "urandom" or "urandom_range" or "random" or "test_plusargs" or "past" or "rose" or "fell" or "stable" or "dpi_call") return false;
         if (e.TryGetProperty("value", out var v) && !CsExprIsPureInternal(v)) return false;
         if (e.TryGetProperty("index", out var ix) && !CsExprIsPureInternal(ix)) return false;
         if (e.TryGetProperty("base", out var bs) && !CsExprIsPureInternal(bs)) return false;

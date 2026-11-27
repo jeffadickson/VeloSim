@@ -257,8 +257,8 @@ struct WorkerPool {
  size_t active_workers = 0;
  size_t total = 0;
  size_t chunk = 1;
- std::atomic<size_t> cursor{0};
- std::atomic<size_t> remaining{0};
+ alignas(64) std::atomic<size_t> cursor{0};
+ alignas(64) std::atomic<size_t> remaining{0};
  const Proc* procs = nullptr;
  const uint32_t* active = nullptr;
  const Word* sig = nullptr;
@@ -330,6 +330,7 @@ struct Engine {
  std::vector<std::vector<uint32_t>> rising_procs, falling_procs;
  std::vector<Word> pre;
  std::vector<uint32_t> seen_stamp;
+ std::vector<uint8_t> dst_used;
  std::vector<uint32_t> active;
  std::vector<Word> results;
  uint32_t drive_gen = 0;
@@ -357,6 +358,7 @@ int vs_ir_signal(void* p, uint32_t width, uint64_t value, uint64_t xmask, uint64
   e.rising_procs.emplace_back();
   e.falling_procs.emplace_back();
   e.seen_stamp.push_back(0);
+  e.dst_used.push_back(0);
   return int(e.sig.size() - 1);
  } catch (...) { return -1; }
 }
@@ -366,12 +368,13 @@ int vs_ir_process_v2(void* p, uint32_t clk, uint32_t dst, uint32_t a, uint32_t b
  const auto n = e.sig.size();
  if (clk >= n || dst >= n || a >= n || b >= n || reset >= n || e.sig[clk].width != 1) return -1;
  if ((op == 2 || op == 3 || op == 5) && e.sig[reset].width != 1) return -1;
- for (const auto& q : e.proc) if (q.dst == dst) return -2;
+ if (e.dst_used[dst]) return -2;
  try {
   const uint32_t idx = uint32_t(e.proc.size());
   e.proc.push_back(Proc{clk, dst, a, reset, b, edge, op});
   if (edge == 0) e.rising_procs[clk].push_back(idx);
   else e.falling_procs[clk].push_back(idx);
+  e.dst_used[dst] = 1;
   return 0;
  } catch (...) { return -1; }
 }

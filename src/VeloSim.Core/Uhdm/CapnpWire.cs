@@ -247,8 +247,7 @@ public sealed class CapnpMessageReader
     internal void AccountWords(long words)
     {
         if (words < 0) throw new InvalidDataException("Negative Cap'n Proto word count.");
-        remainingWords -= Math.Max(1, words);
-        if (remainingWords < 0)
+        if (Interlocked.Add(ref remainingWords, -Math.Max(1, words)) < 0)
             throw new InvalidDataException("Cap'n Proto traversal word budget exceeded.");
     }
 

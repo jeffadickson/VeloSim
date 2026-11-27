@@ -136,9 +136,11 @@ When `--config` is not passed (unless `--no-config` is specified), VeloSim autom
 - Waiver matching supports linear-time, ReDoS-safe glob wildcards (`*`, `?`, `**`) across `code`, `file`, `signal`, `context`, and `message`.
 - Setting `"warn_unused_waivers": true` (or passing `--warn-unused-waivers`) emits `UNUSEDWAIVER` for waivers that matched 0 findings and `EXPIREDWAIVER` for waivers past their `YYYY-MM-DD` `expires` date.
 
-## Tier 2 & Tier 3 Extensibility (`IRtlLintRule` & Cameo DSL Readiness)
+## Tier 2 (C#) & Tier 3 (Cameo DSL) Custom Rules
 
-Custom rules implement [`IRtlLintRule`](../src/VeloSim.Core/RtlLintExtensibility.cs) (or use [`RtlLintRuleRegistry`](../src/VeloSim.Core/RtlLintExtensibility.cs)) against [`RtlLintContext`](../src/VeloSim.Core/RtlLintExtensibility.cs), which exposes strongly-typed read-only tables of `Signals`, `Memories`, `Assignments`, `Statements`, `Expressions`, `Parameters`, and raw `Root` IR JSON.
+### Tier 2: C# `IRtlLintRule` API
+
+Custom rules implement [`IRtlLintRule`](../src/VeloSim.Core/RtlLintExtensibility.cs) (or use [`RtlLintRuleRegistry`](../src/VeloSim.Core/RtlLintExtensibility.cs)) against [`RtlLintContext`](../src/VeloSim.Core/RtlLintExtensibility.cs), which exposes strongly-typed read-only tables of `Signals`, `Memories`, `Assignments`, `Statements`, `Expressions`, `Fsms`, `Cdc`, `Parameters`, and raw `Root` IR JSON.
 
 ```csharp
 var registry = new RtlLintRuleRegistry()
@@ -151,4 +153,29 @@ var registry = new RtlLintRuleRegistry()
 var report = RtlLinter.LintJson(irJson, new LintOptions(Wall: true, CustomRules: registry.Rules));
 ```
 
-Every registered `IRtlLintRule` automatically inherits profiles, Phase-Based Linting, `velosim-lint.json` severity overrides, custom `annotations`, scoped waivers, baseline ratcheting, RTL Quality Score, JSON reports, and SARIF 2.1.0 export—providing a direct compilation target for Tier 3 **Cameo DSL** rules from `teal-cs`.
+### Tier 3: Cameo DSL Custom Rule Packs (`--rules <pack.cameo>`)
+
+VeloSim embeds the **Cameo** scripting language (`external/Cameo-script`, `Cameo.Runtime`, 100% NativeAOT-safe with zero reflection) as its Tier 3 custom lint rule DSL:
+
+- **Statically type-checked** against VeloSim's built-in `LintContext` prelude (`SignalInfo`, `MemoryInfo`, `AssignmentInfo`, `StatementInfo`, `ExpressionInfo`, `FsmInfo`, `ClockDomainInfo`, `CdcCrossingInfo`, `RtlHelpers`) before any RTL runs.
+- **Strictly hermetic & deterministic** (`CameoLibraries.Hermetic`, `FilePolicy.DenyAll`, no network/process/filesystem/clock/RNG access, deeply `freeze()`-d IR context tables, deterministic `--cameo-max-steps` budget).
+- **Hardware-native helpers & parameterization**: built-in `rtl.glob()`, `rtl.matches()`, `rtl.is_pow2()`, `rtl.clog2()`, shorthand `ctx.error()` / `ctx.warn()` / `ctx.info()`, and `ctx.param_int()` / `ctx.param_str()` / `ctx.param_bool()` backed by `"cameo_params"` in `velosim-lint.json`.
+- **Full platform integration**: every Cameo rule automatically inherits Phase-Based Linting (`phase`), guideline traceability (`standards` + `annotations`), `velosim-lint.json` severity overrides, scoped waivers, baselines, RTL Quality Score, JSON, and SARIF 2.1.0 output.
+
+```sh
+# Scaffold a starter Cameo rule pack or export velosim_lint.d.tl for Cameo's VS Code extension
+VeloSim.Tools lint --init-rule rules/team_rules.cameo
+VeloSim.Tools lint --emit-cameo-prelude velosim_lint.d.tl
+
+# Statically type-check a Cameo rule pack in CI (no RTL needed)
+VeloSim.Tools lint --check-rules --rules examples/lint_rules/soc_policies.cameo
+
+# Inspect built-in + Cameo rules together (45 built-in + custom Cameo rules)
+VeloSim.Tools lint --list-rules --rules examples/lint_rules/soc_policies.cameo
+
+# Run VeloSim lint with one or more Cameo rule packs (or configure "rule_scripts" in velosim-lint.json)
+VeloSim.Tools lint design.rtl.json --rules examples/lint_rules/soc_policies.cameo --profile do254 --sarif
+```
+
+See [examples/lint_rules/soc_policies.cameo](../examples/lint_rules/soc_policies.cameo) for a complete runnable rule pack covering memory depth checks, arithmetic area budgets, FSM safety, and multi-bit CDC bans.
+

@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><IsAotCompatible>true</IsAotCompatible><AllowUnsafeBlocks>true</AllowUnsafeBlocks></PropertyGroup>
-  <ItemGroup><PackageReference Include="System.CommandLine" Version="2.0.14" /></ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.14" />
+    <ProjectReference Include="../../external/Cameo-script/src/Cameo.Runtime/Cameo.Runtime.csproj" />
+  </ItemGroup>
 </Project>

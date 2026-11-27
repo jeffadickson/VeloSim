@@ -48,6 +48,7 @@ public sealed partial class UhdmRtlLowerer
     private int nodes;
     private readonly Dictionary<UhdmNode, string> flatSymbols = new(ReferenceEqualityComparer.Instance);
     private readonly SortedDictionary<string, UhdmNode> flatDeclarations = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<UhdmNode>> flatDeclsByCanonicalKey = new(StringComparer.Ordinal);
     private int declarationAliasChecks;
     private Dictionary<string, string> activeSymbols = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> clockAliases = new(StringComparer.Ordinal);
@@ -498,6 +499,8 @@ public sealed partial class UhdmRtlLowerer
         return a.Count > 0;
     }
 
+    private int flatDeclsIndexedCount = -1;
+
     private UhdmNode? BoundVariableReference(UhdmNode h)
     {
         if (insideCall || h.VpiType is not (UhdmVpi.VpiRefObj or UhdmVpi.VpiRefVar)) return null;
@@ -505,14 +508,30 @@ public sealed partial class UhdmRtlLowerer
         if (actual is not null && flatSymbols.ContainsKey(actual)) return null;
         if (!syntaxVariableReferences.TryGetValue(LexicalKey(h), out var source)) return null;
         Need(source is not null, "ambiguous original variable reference");
+        if (flatDeclsIndexedCount != flatDeclarations.Count)
+        {
+            flatDeclsByCanonicalKey.Clear();
+            foreach (var (_, decl) in flatDeclarations)
+            {
+                string key = CanonicalKey(decl);
+                if (!flatDeclsByCanonicalKey.TryGetValue(key, out var list))
+                {
+                    list = [];
+                    flatDeclsByCanonicalKey[key] = list;
+                }
+                list.Add(decl);
+            }
+            flatDeclsIndexedCount = flatDeclarations.Count;
+        }
         string expected = CanonicalKey(source!);
+        if (!flatDeclsByCanonicalKey.TryGetValue(expected, out var candidates)) return null;
         foreach (var scope in parameterVisibleScopes)
         {
             UhdmNode? result = null;
-            foreach (var (_, decl) in flatDeclarations)
+            foreach (var decl in candidates)
             {
                 Need(++syntaxSymbolChecks <= 1_000_000, "original variable binding budget exceeded");
-                if (OwnedParameter(decl, scope) && CanonicalKey(decl) == expected)
+                if (OwnedParameter(decl, scope))
                 {
                     Need(result is null || ReferenceEquals(result, decl), "ambiguous scoped original variable");
                     result = decl;
@@ -775,7 +794,9 @@ public sealed partial class UhdmRtlLowerer
     private string Expr(UhdmNode? h, int depth = 0)
     {
         string value = ExprCore(h, depth);
-        OutputBudget(value);
+        Need(value.Length <= limits.MaxJsonBytes, "normalized RTL exceeds byte limit");
+        if (depth == 0 || value.Length > limits.MaxJsonBytes / 2)
+            OutputBudget(value);
         return value;
     }
 

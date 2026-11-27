@@ -5,6 +5,7 @@ namespace VeloSim;
 public sealed partial class RtlDesign
 {
     private static readonly string[] CombinationalExprFields = ["value", "condition", "count"];
+    private static readonly JsonElement EmptyBlockElement = Element("{\"kind\":\"block\",\"items\":[]}");
 
     // Each step owns complete words. The DAG settles once in dependency order;
     // a procedural block is never retriggered by its own blocking writes.
@@ -13,50 +14,147 @@ public sealed partial class RtlDesign
 
     private List<JsonElement> SortCombinational(JsonElement root, HashSet<string> sequential, Dictionary<string, JsonElement> continuous)
     {
-        var steps = new List<JsonElement>();
-        foreach (var assignment in continuous.Values)
-            steps.Add(Element("{\"kind\":\"blocking\",\"target\":"+assignment.GetProperty("target").GetRawText()+",\"value\":"+assignment.GetProperty("value").GetRawText()+"}"));
+        var steps = new List<JsonElement>(continuous.Count);
+        if (continuous.Count > 0)
+        {
+            var sb = new StringBuilder(continuous.Count * 96);
+            sb.Append('[');
+            bool first = true;
+            foreach (var assignment in continuous.Values)
+            {
+                if (!first) sb.Append(',');
+                first = false;
+                sb.Append("{\"kind\":\"blocking\",\"target\":");
+                sb.Append(assignment.GetProperty("target").GetRawText());
+                sb.Append(",\"value\":");
+                sb.Append(assignment.GetProperty("value").GetRawText());
+                sb.Append('}');
+            }
+            sb.Append(']');
+            foreach (var step in Element(sb.ToString()).EnumerateArray())
+                steps.Add(step);
+        }
         if (root.TryGetProperty("combinational", out var blocks))
         {
-            if(blocks.ValueKind!=JsonValueKind.Array || blocks.GetArrayLength()>Limits.MaxContinuous) throw new IrValidationException($"Combinational block count must be 0..{Limits.MaxContinuous}.");
-            foreach(var block in blocks.EnumerateArray())
+            if (blocks.ValueKind != JsonValueKind.Array || blocks.GetArrayLength() > Limits.MaxContinuous) throw new IrValidationException($"Combinational block count must be 0..{Limits.MaxContinuous}.");
+            var clonedBlocks = blocks.Clone();
+            foreach (var block in clonedBlocks.EnumerateArray())
             {
                 HashSet<string> owned = [with(StringComparer.Ordinal)];
-                ValidateStatement(block,owned,2); _=StatementCost(block);
+                ValidateStatement(block, owned, 2); _ = StatementCost(block);
                 HashSet<string> assigned = [with(StringComparer.Ordinal)];
-                ValidateCombFlow(block,owned,assigned);
-                if(!owned.SetEquals(assigned)) throw new IrValidationException("Combinational destinations require assignment on every path.");
-                steps.Add(block.Clone());
+                ValidateCombFlow(block, owned, assigned);
+                if (!owned.SetEquals(assigned)) throw new IrValidationException("Combinational destinations require assignment on every path.");
+                steps.Add(block);
             }
         }
-        foreach(var step in steps.Where(e=>Kind(e)=="blocking")){var owned=TargetLeaves(step.GetProperty("target")).Select(TargetOwner).ToHashSet(StringComparer.Ordinal);ValidateCombFlow(step,owned,[with(StringComparer.Ordinal)]);}
-        if(steps.Sum(StatementCost)>Limits.MaxNodes)throw new IrValidationException("Expanded combinational statement budget exceeded.");
-        Dictionary<string,int> owners = [with(StringComparer.Ordinal)];
-        var writes=steps.Select(step=>Statements(step).Where(e=>Kind(e)=="blocking").SelectMany(e=>TargetLeaves(e.GetProperty("target"))).Select(TargetOwner).ToHashSet(StringComparer.Ordinal)).ToArray();
-        for(int i=0;i<steps.Count;i++) foreach(var word in writes[i])
-            if(sequential.Contains(word)||!owners.TryAdd(word,i))throw new IrValidationException("Conflicting combinational writer.");
-        var reads=steps.Select(step=>Statements(step).SelectMany(e=>CombinationalExprFields.Where(n=>e.TryGetProperty(n,out var v)&&v.ValueKind==JsonValueKind.Object).SelectMany(n=>References(e.GetProperty(n)))).ToHashSet(StringComparer.Ordinal)).ToArray();
-        foreach(var read in reads)if(read.Intersect(EventSignals.Append(Clock)).Any())throw new IrValidationException("Clock-dependent combinational logic is outside the race-free subset.");
-        var pending=Enumerable.Range(0,steps.Count).ToHashSet();var ordered=new List<JsonElement>();var levels=new List<IReadOnlyList<JsonElement>>();
-        while(pending.Count>0)
+        var ownedBuf = new HashSet<string>(StringComparer.Ordinal);
+        var assignedBuf = new HashSet<string>(StringComparer.Ordinal);
+        long combCost = 0;
+        foreach (var step in steps)
         {
-            var ready=pending.Where(i=>!reads[i].Any(n=>owners.TryGetValue(n,out int owner)&&owner!=i&&pending.Contains(owner))).ToArray();
-            if(ready.Length==0)throw new IrValidationException("Combinational feedback is unsupported.");
-            var levelSteps = new List<JsonElement>(ready.Length);
-            foreach(int i in ready){ordered.Add(steps[i]);levelSteps.Add(steps[i]);pending.Remove(i);}
-            levels.Add(levelSteps);
+            if (Kind(step) == "blocking")
+            {
+                ownedBuf.Clear();
+                assignedBuf.Clear();
+                CollectTargetOwners(step.GetProperty("target"), ownedBuf);
+                ValidateCombFlow(step, ownedBuf, assignedBuf);
+            }
+            combCost += StatementCost(step);
         }
-        SettledSteps=ordered;
-        SettledLevels=levels;
+        if (combCost > Limits.MaxNodes) throw new IrValidationException("Expanded combinational statement budget exceeded.");
+
+        var owners = new Dictionary<string, int>(steps.Count, StringComparer.Ordinal);
+        var reads = new HashSet<string>[steps.Count];
+        var eventSet = BuildEventAndClockSet();
+        var stepBuf = new List<JsonElement>();
+        for (int i = 0; i < steps.Count; i++)
+        {
+            stepBuf.Clear();
+            CollectStatements(steps[i], stepBuf);
+            ownedBuf.Clear();
+            var r = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var stmt in stepBuf)
+            {
+                if (Kind(stmt) == "blocking")
+                    CollectTargetOwners(stmt.GetProperty("target"), ownedBuf);
+                for (int f = 0; f < CombinationalExprFields.Length; f++)
+                {
+                    if (stmt.TryGetProperty(CombinationalExprFields[f], out var v) && v.ValueKind == JsonValueKind.Object)
+                        CollectReferences(v, r);
+                }
+            }
+            foreach (var word in ownedBuf)
+                if (sequential.Contains(word) || !owners.TryAdd(word, i)) throw new IrValidationException("Conflicting combinational writer.");
+            if (eventSet.Count > 0 && r.Overlaps(eventSet))
+                throw new IrValidationException("Clock-dependent combinational logic is outside the race-free subset.");
+            reads[i] = r;
+        }
+
+        // O(V + E) levelized Kahn's topological sort preserving deterministic index order within each level.
+        int nSteps = steps.Count;
+        var inDegree = new int[nSteps];
+        var dependents = new List<int>?[nSteps];
+        for (int i = 0; i < nSteps; i++)
+        {
+            HashSet<int>? seenOwners = null;
+            foreach (string name in reads[i])
+            {
+                if (owners.TryGetValue(name, out int owner) && owner != i)
+                {
+                    seenOwners ??= [];
+                    if (seenOwners.Add(owner))
+                    {
+                        inDegree[i]++;
+                        (dependents[owner] ??= []).Add(i);
+                    }
+                }
+            }
+        }
+
+        var currentLevel = new List<int>();
+        for (int i = 0; i < nSteps; i++)
+            if (inDegree[i] == 0) currentLevel.Add(i);
+
+        var ordered = new List<JsonElement>(nSteps);
+        var levels = new List<IReadOnlyList<JsonElement>>();
+        var nextLevel = new List<int>();
+        while (currentLevel.Count > 0)
+        {
+            currentLevel.Sort();
+            var levelSteps = new List<JsonElement>(currentLevel.Count);
+            nextLevel.Clear();
+            foreach (int idx in currentLevel)
+            {
+                ordered.Add(steps[idx]);
+                levelSteps.Add(steps[idx]);
+                if (dependents[idx] is { } deps)
+                {
+                    foreach (int dep in deps)
+                    {
+                        if (--inDegree[dep] == 0)
+                            nextLevel.Add(dep);
+                    }
+                }
+            }
+            levels.Add(levelSteps);
+            (currentLevel, nextLevel) = (nextLevel, currentLevel);
+        }
+        if (ordered.Count != nSteps)
+            throw new IrValidationException("Combinational feedback is unsupported.");
+
+        SettledSteps = ordered;
+        SettledLevels = levels;
         // Preserve the continuous-only public inventory; execution uses the unified graph.
-        return ordered.Where(e=>Kind(e)=="blocking"&&Kind(e.GetProperty("target"))=="ref"&&continuous.ContainsKey(Name(e.GetProperty("target")))).Select(e=>continuous[Name(e.GetProperty("target"))]).ToList();
+        return ordered.Where(e => Kind(e) == "blocking" && Kind(e.GetProperty("target")) == "ref" && continuous.ContainsKey(Name(e.GetProperty("target")))).Select(e => continuous[Name(e.GetProperty("target"))]).ToList();
     }
 
     private void ValidateCombFlow(JsonElement statement, HashSet<string> owned, HashSet<string> assigned)
     {
         void Read(JsonElement expression)
         {
-            if(References(expression).Any(n=>owned.Contains(n)&&!assigned.Contains(n)))throw new IrValidationException("Combinational storage read before definite assignment.");
+            if (ReferencesAnyUnassigned(expression, owned, assigned))
+                throw new IrValidationException("Combinational storage read before definite assignment.");
         }
         switch(Kind(statement))
         {
@@ -121,7 +219,7 @@ public sealed partial class RtlDesign
         }
         foreach (var level in SettledLevels)
         {
-            bool allSimpleRef = level.Count >= 2 && level.All(st => Kind(st) == "blocking" && Kind(st.GetProperty("target")) == "ref");
+            bool allSimpleRef = level.Count >= 32 && level.All(st => Kind(st) == "blocking" && Kind(st.GetProperty("target")) == "ref");
             if (!allSimpleRef)
             {
                 foreach (var step in level) EmitSettleStep(code, step, coverage);

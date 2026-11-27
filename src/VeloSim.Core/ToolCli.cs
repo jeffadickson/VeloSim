@@ -377,11 +377,13 @@ var options = CliOptions.Parse(args, 1);
     }
     private static async Task<int> RunLintAsync(string[] args, TextWriter output, IProcessRunner? runner, CancellationToken cancellationToken)
     {
-        bool wall = false, werror = false, noFatal = false, slangOnly = false, largeDesign = false, jsonOutput = false, sarifOutput = false, listRules = false, noConfig = false, warnUnusedWaivers = false, stopOnPhaseError = false;
-        string? top = null, slangExe = null, astJsonPath = null, outputPath = null, configPath = null, baselinePath = null, writeBaselinePath = null, initConfigPath = null, sdcPath = null, dumpFsmPath = null, dumpCdcPath = null, emitCdcSvaPath = null;
+        bool wall = false, werror = false, noFatal = false, slangOnly = false, largeDesign = false, jsonOutput = false, sarifOutput = false, listRules = false, noConfig = false, warnUnusedWaivers = false, stopOnPhaseError = false, checkRules = false;
+        string? top = null, slangExe = null, astJsonPath = null, outputPath = null, configPath = null, baselinePath = null, writeBaselinePath = null, initConfigPath = null, sdcPath = null, dumpFsmPath = null, dumpCdcPath = null, emitCdcSvaPath = null, initRulePath = null, emitCameoPreludePath = null;
         LintProfile? profile = null;
         IReadOnlySet<LintPhase>? phases = null;
         LintGroupBy groupBy = LintGroupBy.None;
+        long? cameoMaxSteps = null;
+        var ruleScripts = new List<string>();
         var enabledRules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var disabledRules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var errorRules = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -389,7 +391,7 @@ var options = CliOptions.Parse(args, 1);
         var defines = new List<string>();
         var sources = new List<string>();
 
-        const string usage = "Usage: lint [<file.rtl.json|file.sv|file.uhdm> ... | --ast-json <ast.json>] [--top <module>] [--profile default|wall|signoff|fourstate|do254|starc|iso26262|lowrisc] [--phase rtl,fsm,cdc,style|all] [--stop-on-phase-error] [--sdc <file.sdc>] [--group-by none|rule|signal|file|phase] [--dump-fsm <path.json>] [--dump-cdc <path.json>] [--emit-cdc-sva <path.sv>] [--config <velosim-lint.json>|--no-config] [-Wall] [-Werror] [-Wno-fatal] [-W<RULE>] [-Wno-<RULE>] [-Werror-<RULE>] [--baseline <file>] [--write-baseline <file>] [--warn-unused-waivers] [--lint-only] [--slang-only] [--slang <path>] [-I <dir>] [-D <macro>] [--large-design] [--json|--sarif] [--output <path>] | lint --list-rules [--json] | lint --init-config <path>";
+        const string usage = "Usage: lint [<file.rtl.json|file.sv|file.uhdm> ... | --ast-json <ast.json>] [--top <module>] [--profile default|wall|signoff|fourstate|do254|starc|iso26262|lowrisc] [--phase rtl,fsm,cdc,style|all] [--stop-on-phase-error] [--sdc <file.sdc>] [--rules <rules.cameo>] [--cameo-max-steps <N>] [--group-by none|rule|signal|file|phase] [--dump-fsm <path.json>] [--dump-cdc <path.json>] [--emit-cdc-sva <path.sv>] [--config <velosim-lint.json>|--no-config] [-Wall] [-Werror] [-Wno-fatal] [-W<RULE>] [-Wno-<RULE>] [-Werror-<RULE>] [--baseline <file>] [--write-baseline <file>] [--warn-unused-waivers] [--lint-only] [--slang-only] [--slang <path>] [-I <dir>] [-D <macro>] [--large-design] [--json|--sarif] [--output <path>] | lint --list-rules [--rules <rules.cameo>] [--json] | lint --check-rules --rules <rules.cameo> | lint --init-config <path> | lint --init-rule <path.cameo> | lint --emit-cameo-prelude <path.d.tl>";
 
         for (int i = 1; i < args.Length; i++)
         {
@@ -417,10 +419,12 @@ var options = CliOptions.Parse(args, 1);
             if (tok is "--no-config") { noConfig = true; continue; }
             if (tok is "--warn-unused-waivers") { warnUnusedWaivers = true; continue; }
             if (tok is "--stop-on-phase-error") { stopOnPhaseError = true; continue; }
+            if (tok is "--check-rules") { checkRules = true; continue; }
 
             if (tok is "--top" or "--slang" or "--ast-json" or "--output" or "--incdir" or "-I" or "--define" or "-D"
                 or "--profile" or "--config" or "--baseline" or "--write-baseline" or "--init-config"
-                or "--phase" or "--sdc" or "--group-by" or "--dump-fsm" or "--dump-cdc" or "--emit-cdc-sva")
+                or "--phase" or "--sdc" or "--group-by" or "--dump-fsm" or "--dump-cdc" or "--emit-cdc-sva"
+                or "--rules" or "--cameo-max-steps" or "--init-rule" or "--emit-cameo-prelude")
             {
                 if (++i >= args.Length) throw new ArgumentException("Incomplete lint option: " + tok);
                 switch (tok)
@@ -440,6 +444,14 @@ var options = CliOptions.Parse(args, 1);
                     case "--dump-fsm": dumpFsmPath = args[i]; break;
                     case "--dump-cdc": dumpCdcPath = args[i]; break;
                     case "--emit-cdc-sva": emitCdcSvaPath = args[i]; break;
+                    case "--rules": ruleScripts.Add(args[i]); break;
+                    case "--init-rule": initRulePath = args[i]; break;
+                    case "--emit-cameo-prelude": emitCameoPreludePath = args[i]; break;
+                    case "--cameo-max-steps":
+                        if (!long.TryParse(args[i], NumberStyles.None, CultureInfo.InvariantCulture, out long steps) || steps <= 0)
+                            throw new ArgumentException("Invalid --cameo-max-steps value (expected positive integer): " + args[i]);
+                        cameoMaxSteps = steps;
+                        break;
                     case "--incdir":
                     case "-I": includeDirs.Add(args[i]); break;
                     case "--define":
@@ -482,9 +494,72 @@ var options = CliOptions.Parse(args, 1);
         if (jsonOutput && sarifOutput)
             throw new ArgumentException("Cannot combine --json and --sarif output formats.");
 
+        if (initRulePath is not null)
+        {
+            string fullRule = Path.GetFullPath(initRulePath);
+            if (Path.GetDirectoryName(fullRule) is { Length: > 0 } ruleDir) Directory.CreateDirectory(ruleDir);
+            await File.WriteAllTextAsync(fullRule, CameoLintRulePack.DefaultRuleTemplate() + Environment.NewLine, cancellationToken).ConfigureAwait(false);
+            output.WriteLine(fullRule);
+            return 0;
+        }
+
+        if (emitCameoPreludePath is not null)
+        {
+            string fullPre = Path.GetFullPath(emitCameoPreludePath);
+            if (Path.GetDirectoryName(fullPre) is { Length: > 0 } preDir) Directory.CreateDirectory(preDir);
+            await File.WriteAllTextAsync(fullPre, CameoLintRulePack.PreludeDeclaration + Environment.NewLine, cancellationToken).ConfigureAwait(false);
+            output.WriteLine(fullPre);
+            return 0;
+        }
+
+        LintConfig? config = null;
+        if (configPath is not null)
+        {
+            config = LintConfig.LoadFile(configPath);
+        }
+        else if (!noConfig && !listRules && initConfigPath is null)
+        {
+            string? discovered = LintConfig.Discover(astJsonPath ?? sources.FirstOrDefault());
+            if (discovered is not null) config = LintConfig.LoadFile(discovered);
+        }
+
+        var allRuleScripts = new List<string>();
+        if (config?.RuleScripts is { Count: > 0 } cfgScripts) allRuleScripts.AddRange(cfgScripts);
+        allRuleScripts.AddRange(ruleScripts);
+
+        if (checkRules)
+        {
+            if (allRuleScripts.Count == 0)
+                throw new ArgumentException("--check-rules requires at least one --rules <file.cameo> script or config rule_scripts.");
+            int totalErrors = 0;
+            foreach (string scriptPath in allRuleScripts)
+            {
+                var errs = CameoLintRulePack.CheckFile(scriptPath);
+                if (errs.Count == 0)
+                {
+                    output.WriteLine($"ok: {scriptPath}");
+                }
+                else
+                {
+                    totalErrors += errs.Count;
+                    foreach (var err in errs)
+                        output.WriteLine($"error: {err}");
+                }
+            }
+            return totalErrors == 0 ? 0 : 1;
+        }
+
         if (listRules)
         {
-            string catalog = jsonOutput ? LintRuleCatalog.FormatRulesJson() + Environment.NewLine : LintRuleCatalog.FormatRulesText();
+            List<IRtlLintRule>? extraRules = null;
+            if (allRuleScripts.Count > 0)
+            {
+                extraRules = [];
+                long steps = cameoMaxSteps ?? config?.CameoMaxSteps ?? CameoLintRulePack.DefaultMaxSteps;
+                foreach (string scriptPath in allRuleScripts)
+                    extraRules.AddRange(CameoLintRulePack.LoadFile(scriptPath, steps).Rules);
+            }
+            string catalog = jsonOutput ? LintRuleCatalog.FormatRulesJson(extraRules) + Environment.NewLine : LintRuleCatalog.FormatRulesText(extraRules);
             await output.WriteAsync(catalog.AsMemory(), cancellationToken).ConfigureAwait(false);
             return 0;
         }
@@ -500,17 +575,6 @@ var options = CliOptions.Parse(args, 1);
 
         if (astJsonPath is null && sources.Count == 0)
             throw new ArgumentException(usage);
-
-        LintConfig? config = null;
-        if (configPath is not null)
-        {
-            config = LintConfig.LoadFile(configPath);
-        }
-        else if (!noConfig)
-        {
-            string? discovered = LintConfig.Discover(astJsonPath ?? sources.FirstOrDefault());
-            if (discovered is not null) config = LintConfig.LoadFile(discovered);
-        }
 
         LintBaseline? baseline = baselinePath is not null ? LintBaseline.LoadFile(baselinePath) : null;
         SdcConstraints? sdc = sdcPath is not null ? SdcConstraints.LoadFile(sdcPath) : null;
@@ -534,7 +598,9 @@ var options = CliOptions.Parse(args, 1);
             StopOnPhaseError: stopOnPhaseError,
             Sdc: sdc,
             HasExplicitSdc: sdc is not null,
-            GroupBy: groupBy);
+            GroupBy: groupBy,
+            CameoRuleScripts: ruleScripts.Count > 0 ? ruleScripts : null,
+            CameoMaxSteps: cameoMaxSteps);
 
         LintReport report;
         if (astJsonPath is not null)

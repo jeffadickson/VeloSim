@@ -967,13 +967,12 @@ public static class W2x{{sLanes}}Ops
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static {{vt}} SCmp({{vt}} a, {{vt}} b, int w, int op)
     {
-        static ulong OneLane(ulong x, ulong y, int w, int op)
-        {
-            long sx = SExt(x, w), sy = SExt(y, w);
-            bool r = op == 0 ? sx < sy : op == 1 ? sx <= sy : op == 2 ? sx > sy : sx >= sy;
-            return r ? 1UL : 0UL;
-        }
-        return {{laneCreate("OneLane(a.GetElement($L),b.GetElement($L),w,op)")}};
+        ulong m = Mask(w);
+        {{vt}} mv = {{vs}}.Create(m);
+        {{vt}} flip = {{vs}}.Create(w > 0 ? (1UL << (w - 1)) : 0UL);
+        {{vt}} ua = (a & mv) ^ flip;
+        {{vt}} ub = (b & mv) ^ flip;
+        return (op == 0 ? {{vs}}.LessThan(ua, ub) : op == 1 ? {{vs}}.LessThanOrEqual(ua, ub) : op == 2 ? {{vs}}.GreaterThan(ua, ub) : {{vs}}.GreaterThanOrEqual(ua, ub)) & One;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -984,10 +983,10 @@ public static class W2x{{sLanes}}Ops
     public static {{vt}} Product({{vt}} a, {{vt}} b, int w, int op)
     {
         ulong m = Mask(w);
+        if (op == 0) return (a * b) & {{vs}}.Create(m);
         static ulong OneLane(ulong x, ulong y, ulong m, int op)
         {
             x &= m; y &= m;
-            if (op == 0) return unchecked(x * y) & m;
             if (y == 0UL) return 0UL;
             return (op == 1 ? (x / y) : (x % y)) & m;
         }
@@ -998,10 +997,10 @@ public static class W2x{{sLanes}}Ops
     public static {{vt}} SProduct({{vt}} a, {{vt}} b, int w, int op)
     {
         ulong m = Mask(w);
+        if (op == 0) return (a * b) & {{vs}}.Create(m);
         static ulong OneLane(ulong x, ulong y, int w, ulong m, int op)
         {
             long sx = SExt(x, w), sy = SExt(y, w);
-            if (op == 0) return unchecked((ulong)sx * (ulong)sy) & m;
             if (sy == 0L) return 0UL;
             if (sx == long.MinValue && sy == -1L) return op == 1 ? ((ulong)sx & m) : 0UL;
             return (ulong)(op == 1 ? (sx / sy) : (sx % sy)) & m;
@@ -1033,18 +1032,19 @@ public static class W2x{{sLanes}}Ops
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static {{vt}} Red({{vt}} a, int w, int op)
     {
-        ulong m = Mask(w);
-        static ulong OneLane(ulong x, ulong m, int op)
-        {
-            x &= m;
-            if (op == 0) return x == m ? 1UL : 0UL;
-            if (op == 1) return x == m ? 0UL : 1UL;
-            if (op == 2) return x != 0UL ? 1UL : 0UL;
-            if (op == 3) return x != 0UL ? 0UL : 1UL;
-            bool odd = (BitOperations.PopCount(x) & 1) != 0;
-            return (odd ^ (op == 5)) ? 1UL : 0UL;
-        }
-        return {{laneCreate("OneLane(a.GetElement($L),m,op)")}};
+        {{vt}} mv = {{vs}}.Create(Mask(w));
+        {{vt}} x = a & mv;
+        if (op == 0) return {{vs}}.Equals(x, mv) & One;
+        if (op == 1) return ~{{vs}}.Equals(x, mv) & One;
+        if (op == 2) return ~{{vs}}.Equals(x, {{vs}}<ulong>.Zero) & One;
+        if (op == 3) return {{vs}}.Equals(x, {{vs}}<ulong>.Zero) & One;
+        x ^= {{vs}}.ShiftRightLogical(x, 32);
+        x ^= {{vs}}.ShiftRightLogical(x, 16);
+        x ^= {{vs}}.ShiftRightLogical(x, 8);
+        x ^= {{vs}}.ShiftRightLogical(x, 4);
+        x ^= {{vs}}.ShiftRightLogical(x, 2);
+        x ^= {{vs}}.ShiftRightLogical(x, 1);
+        return (op == 5 ? ~x : x) & One;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1093,9 +1093,9 @@ public static class W2x{{sLanes}}Ops
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static {{vt}} CountOnes({{vt}} a, int w) { ulong m = Mask(w); return {{laneCreate("(ulong)BitOperations.PopCount(a.GetElement($L)&m)")}}; }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static {{vt}} OneHot({{vt}} a, int w) { ulong m = Mask(w); return {{laneCreate("(BitOperations.PopCount(a.GetElement($L)&m)==1?1UL:0UL)")}}; }
+    public static {{vt}} OneHot({{vt}} a, int w) { var x = a & {{vs}}.Create(Mask(w)); return ({{vs}}.Equals(x & (x - One), {{vs}}<ulong>.Zero) & ~{{vs}}.Equals(x, {{vs}}<ulong>.Zero)) & One; }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static {{vt}} OneHot0({{vt}} a, int w) { ulong m = Mask(w); return {{laneCreate("(BitOperations.PopCount(a.GetElement($L)&m)<=1?1UL:0UL)")}}; }
+    public static {{vt}} OneHot0({{vt}} a, int w) { var x = a & {{vs}}.Create(Mask(w)); return {{vs}}.Equals(x & (x - One), {{vs}}<ulong>.Zero) & One; }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static {{vt}} CLog2({{vt}} a, int w) { ulong m = Mask(w); static ulong L(ulong x) => x <= 1UL ? 0UL : (ulong)(64 - BitOperations.LeadingZeroCount(x - 1UL)); return {{laneCreate("L(a.GetElement($L)&m)")}}; }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1449,23 +1449,38 @@ public static class W4x{{sLanes}}Ops
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4x{{sLanes}} Red(W4x{{sLanes}} a, ulong m, int op)
     {
-        static W4 L(ulong aa, ulong ab, ulong m, int op)
+        var mv = {{vs}}.Create(m);
+        var u = a.B & mv;
+        var v = a.A & ~u & mv;
+        var hasU = ~{{vs}}.Equals(u, {{vs}}<ulong>.Zero);
+        if (op == 0 || op == 1)
         {
-            ulong u = ab & m, v = aa & ~u & m;
-            if (op == 0 || op == 1) { if ((~(v | u) & m) != 0UL) return new W4(op == 1 ? 1UL : 0UL, 0UL); return u != 0UL ? new W4(1UL, 1UL) : new W4(op == 0 ? 1UL : 0UL, 0UL); }
-            if (op == 2 || op == 3) { if (v != 0UL) return new W4(op == 2 ? 1UL : 0UL, 0UL); return u != 0UL ? new W4(1UL, 1UL) : new W4(op == 3 ? 1UL : 0UL, 0UL); }
-            if (u != 0UL) return new W4(1UL, 1UL);
-            return new W4((((BitOperations.PopCount(v) & 1) != 0) ^ (op == 5)) ? 1UL : 0UL, 0UL);
+            var has0 = ~{{vs}}.Equals((v | u) & mv, mv);
+            var unk = ~has0 & hasU;
+            return new W4x{{sLanes}}(((op == 1 ? has0 : ~has0) | unk) & One, unk & One);
         }
-        return FromLanes({{laneArgs("L(a.A.GetElement($L),a.B.GetElement($L),m,op)")}});
+        if (op == 2 || op == 3)
+        {
+            var has1 = ~{{vs}}.Equals(v, {{vs}}<ulong>.Zero);
+            var unk = ~has1 & hasU;
+            return new W4x{{sLanes}}(((op == 2 ? has1 : ~has1) | unk) & One, unk & One);
+        }
+        v ^= {{vs}}.ShiftRightLogical(v, 32);
+        v ^= {{vs}}.ShiftRightLogical(v, 16);
+        v ^= {{vs}}.ShiftRightLogical(v, 8);
+        v ^= {{vs}}.ShiftRightLogical(v, 4);
+        v ^= {{vs}}.ShiftRightLogical(v, 2);
+        v ^= {{vs}}.ShiftRightLogical(v, 1);
+        var par = op == 5 ? ~v : v;
+        return new W4x{{sLanes}}((par | hasU) & One, hasU & One);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4x{{sLanes}} CountOnes(W4x{{sLanes}} a, ulong m) { var o = a.A & ~a.B & {{vs}}.Create(m); return new W4x{{sLanes}}({{laneCreate("(ulong)BitOperations.PopCount(o.GetElement($L))")}}, {{vs}}<ulong>.Zero); }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W4x{{sLanes}} OneHot(W4x{{sLanes}} a, ulong m) { var o = a.A & ~a.B & {{vs}}.Create(m); return new W4x{{sLanes}}({{laneCreate("(BitOperations.PopCount(o.GetElement($L))==1?1UL:0UL)")}}, {{vs}}<ulong>.Zero); }
+    public static W4x{{sLanes}} OneHot(W4x{{sLanes}} a, ulong m) { var o = a.A & ~a.B & {{vs}}.Create(m); return new W4x{{sLanes}}(({{vs}}.Equals(o & (o - One), {{vs}}<ulong>.Zero) & ~{{vs}}.Equals(o, {{vs}}<ulong>.Zero)) & One, {{vs}}<ulong>.Zero); }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static W4x{{sLanes}} OneHot0(W4x{{sLanes}} a, ulong m) { var o = a.A & ~a.B & {{vs}}.Create(m); return new W4x{{sLanes}}({{laneCreate("(BitOperations.PopCount(o.GetElement($L))<=1?1UL:0UL)")}}, {{vs}}<ulong>.Zero); }
+    public static W4x{{sLanes}} OneHot0(W4x{{sLanes}} a, ulong m) { var o = a.A & ~a.B & {{vs}}.Create(m); return new W4x{{sLanes}}({{vs}}.Equals(o & (o - One), {{vs}}<ulong>.Zero) & One, {{vs}}<ulong>.Zero); }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static W4x{{sLanes}} IsUnknown(W4x{{sLanes}} a, ulong m) => new W4x{{sLanes}}(~{{vs}}.Equals(a.B & {{vs}}.Create(m), {{vs}}<ulong>.Zero) & One, {{vs}}<ulong>.Zero);
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -5,15 +5,25 @@ namespace VeloSim;
 
 public sealed partial class RtlDesign
 {
+    private static readonly string[] StatementRefFields = ["value", "target", "condition", "count", "index"];
+
+    private void CollectStatementReferences(JsonElement e, HashSet<string> result)
+    {
+        for (int i = 0; i < StatementRefFields.Length; i++)
+            if (e.TryGetProperty(StatementRefFields[i], out var expression) && expression.ValueKind == JsonValueKind.Object)
+                CollectReferences(expression, result);
+        string kind = Kind(e);
+        if (kind == "assoc_traverse") result.Add(Name(e));
+        else if (kind == "display" && e.TryGetProperty("args", out var dispArgs))
+            foreach (var arg in dispArgs.EnumerateArray())
+                CollectReferences(arg, result);
+    }
+
     private IEnumerable<string> StatementReferences(JsonElement e)
     {
-        foreach(string field in new[]{"value","target","condition","count","index"})
-            if(e.TryGetProperty(field,out var expression)&&expression.ValueKind==JsonValueKind.Object)
-                foreach(var name in References(expression))yield return name;
-        if(Kind(e)=="assoc_traverse")yield return Name(e);
-        if(Kind(e)=="display"&&e.TryGetProperty("args",out var dispArgs))
-            foreach(var arg in dispArgs.EnumerateArray())
-                foreach(var name in References(arg))yield return name;
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        CollectStatementReferences(e, result);
+        return result;
     }
     private static void ValidateAssociativeMetadata(RtlMemory memory)
     {

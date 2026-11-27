@@ -332,7 +332,10 @@ public sealed record LintConfig(
     IReadOnlyDictionary<string, LintRuleAction>? Rules = null,
     IReadOnlyDictionary<string, string>? Annotations = null,
     LintRuleParameters? Parameters = null,
-    IReadOnlyList<LintWaiver>? Waivers = null)
+    IReadOnlyList<LintWaiver>? Waivers = null,
+    IReadOnlyList<string>? RuleScripts = null,
+    long? CameoMaxSteps = null,
+    IReadOnlyDictionary<string, string>? CameoParams = null)
 {
     public const string SchemaVersion = "velosim.lint.config.v1";
     public const string DefaultFileName = "velosim-lint.json";
@@ -427,6 +430,21 @@ public sealed record LintConfig(
             }
         }
 
+        if (contract.CameoMaxSteps is <= 0)
+            throw new ArgumentException("cameo_max_steps must be positive.");
+
+        IReadOnlyList<string>? ruleScripts = contract.RuleScripts is { Length: > 0 }
+            ? contract.RuleScripts.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).ToList().AsReadOnly()
+            : null;
+
+        Dictionary<string, string>? cameoParams = null;
+        if (contract.CameoParams is { Count: > 0 })
+        {
+            cameoParams = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (k, v) in contract.CameoParams)
+                if (!string.IsNullOrWhiteSpace(k)) cameoParams[k.Trim()] = v ?? "";
+        }
+
         return new LintConfig(
             Profile: profile,
             WarningsAsErrors: contract.WarningsAsErrors ?? false,
@@ -438,14 +456,29 @@ public sealed record LintConfig(
             Rules: ruleMap,
             Annotations: annotations,
             Parameters: parameters,
-            Waivers: waivers?.AsReadOnly());
+            Waivers: waivers?.AsReadOnly(),
+            RuleScripts: ruleScripts,
+            CameoMaxSteps: contract.CameoMaxSteps,
+            CameoParams: cameoParams);
     }
 
     public static LintConfig LoadFile(string path)
     {
         if (!File.Exists(path))
             throw new FileNotFoundException("Lint configuration file not found: " + path, path);
-        return Parse(File.ReadAllText(path));
+        var cfg = Parse(File.ReadAllText(path));
+        string? baseDir = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (!string.IsNullOrEmpty(baseDir))
+        {
+            string Resolve(string p) => Path.IsPathRooted(p) ? p : Path.GetFullPath(Path.Combine(baseDir, p));
+            cfg = cfg with
+            {
+                SdcFile = cfg.SdcFile is { Length: > 0 } ? Resolve(cfg.SdcFile) : null,
+                SlangWaiverFile = cfg.SlangWaiverFile is { Length: > 0 } ? Resolve(cfg.SlangWaiverFile) : null,
+                RuleScripts = cfg.RuleScripts is { Count: > 0 } ? cfg.RuleScripts.Select(Resolve).ToList().AsReadOnly() : null
+            };
+        }
+        return cfg;
     }
 
     public static string? Discover(string? targetFile, string? workingDirectory = null)

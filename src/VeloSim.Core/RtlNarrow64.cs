@@ -467,6 +467,10 @@ public sealed partial class RtlDesign
         var eventIds = EventSignals.Select(SignalId).ToArray();
         var coverage = enableCoverage ? new List<(string Id, string Kind)>() : null;
         bool canReenter = dpiCalls.Count > 0 || Statements(Body).Any(st => Kind(st) is "display" or "finish" or "fatal" or "force" or "release");
+        bool combPureInternal = !CombinationalOnly && !canReenter && !canThrow && !hasRuntimeLoops
+            && Properties.Count == 0 && PastDepths.Count == 0
+            && SettledSteps.Count > 0
+            && SettledSteps.All(s => Kind(s) == "blocking" && CsExprIsPureInternal(s.GetProperty("value")));
 
         void EmitStep64(StringBuilder sb, JsonElement step)
         {
@@ -487,7 +491,7 @@ public sealed partial class RtlDesign
         {
             foreach (var level in SettledLevels)
             {
-                if (level.Count < 2) { foreach (var step in level) EmitStep64(bodyCode, step); continue; }
+                if (level.Count < 32) { foreach (var step in level) EmitStep64(bodyCode, step); continue; }
                 bodyCode.AppendLine($"_vs_pool.parallel_for({level.Count},[&](size_t _lvl_i){{switch(_lvl_i){{");
                 for (int idx = 0; idx < level.Count; ++idx)
                 {
@@ -503,7 +507,8 @@ public sealed partial class RtlDesign
         bodyCode.AppendLine("}\nvoid syncFromBase() override {");
         for (int i = 0; i < Signals.Count; ++i)
             bodyCode.AppendLine($"_vs_s[{i}]=vsrtl::w4::to(s[{i}],{CppMaskHex(Signals[i].Width)});");
-        bodyCode.AppendLine("}\nvoid evaluate() override {");
+        if (combPureInternal) bodyCode.AppendLine("_vs_need_settle=true;");
+        bodyCode.AppendLine(combPureInternal ? "}\ninline void evaluateCore(bool _vs_force_settle){" : "}\nvoid evaluate() override {");
         if (dpiCalls.Count > 0) bodyCode.AppendLine("struct _VsDpiScope{svScope prev;explicit _VsDpiScope(svScope s):prev(svSetScope(s)){}~_VsDpiScope(){svSetScope(prev);}} _vs_dpi_scope(static_cast<svScope>(this));");
         if (hasRuntimeLoops) bodyCode.AppendLine("execution_budget=20000;");
         if (canThrow)
@@ -514,7 +519,10 @@ public sealed partial class RtlDesign
                 bodyCode.Append($"vsrtl::w4::W4 saved_m{i}[{Memories[i].Depth}];std::memcpy(saved_m{i},_vs_m{i},sizeof(_vs_m{i}));");
             bodyCode.AppendLine("try{");
         }
-        bodyCode.AppendLine("settle();");
+        if (combPureInternal)
+            bodyCode.AppendLine("if(_vs_force_settle||_vs_need_settle)[[unlikely]]{settle();_vs_need_settle=false;}");
+        else
+            bodyCode.AppendLine("settle();");
         EmitCppPropertyEvaluation(bodyCode, ex => Expression64(ex), ex => $"vsrtl::w4::yes({ex})", sid => $"_vs_s[{sid}]", (cid, edge) => $"vsrtl::w4::edge(_vs_pclk_{cid},_vs_s[{cid}],{(edge == "posedge" ? "true" : "false")})", true, false);
         for (int p = 0; p < procs.Length; ++p)
         {
@@ -551,7 +559,11 @@ public sealed partial class RtlDesign
             if (hasFixedMemWrites) bodyCode.Append("_vs_mlog.count=0;_vs_mlog.overflow.clear();");
             bodyCode.AppendLine("throw;}");
         }
-        bodyCode.AppendLine("}\nvoid saveExtraState(std::vector<uint8_t>& out) const override {");
+        if (combPureInternal)
+            bodyCode.AppendLine("}\nvoid evaluate() override { evaluateCore(true); }");
+        else
+            bodyCode.AppendLine("}");
+        bodyCode.AppendLine("void saveExtraState(std::vector<uint8_t>& out) const override {");
         bodyCode.AppendLine("out.clear();");
         bodyCode.AppendLine("{const auto* p=reinterpret_cast<const uint8_t*>(_vs_prev);out.insert(out.end(),p,p+sizeof(_vs_prev));}");
         for (int i = 0; i < Memories.Count; ++i)
@@ -562,13 +574,14 @@ public sealed partial class RtlDesign
         for (int i = 0; i < Memories.Count; ++i)
             bodyCode.AppendLine($"if(off+sizeof(_vs_m{i})>len)throw std::runtime_error(\"checkpoint W4 memory size mismatch\");std::memcpy(_vs_m{i},data+off,sizeof(_vs_m{i}));off+=sizeof(_vs_m{i});");
         bodyCode.AppendLine("if(off!=len)throw std::runtime_error(\"checkpoint W4 extra trailing bytes\");");
+        if (combPureInternal) bodyCode.AppendLine("_vs_need_settle=true;");
         bodyCode.AppendLine("}");
         if (Memories.Count > 0)
         {
             bodyCode.AppendLine("bool loadDerivedMemory(size_t mem_id,const std::string& path,bool hex,size_t start_addr,size_t end_addr,size_t& loaded) override {");
             bodyCode.AppendLine("switch(mem_id){");
             for (int i = 0; i < Memories.Count; ++i)
-                bodyCode.AppendLine($"case {i}: loaded=vsrtl::load_mem_file_flat(_vs_m{i},{Memories[i].Depth},{Memories[i].Width},path,hex,start_addr,end_addr,{(Memories[i].TwoState ? "true" : "false")});return true;");
+                bodyCode.AppendLine($"case {i}: loaded=vsrtl::load_mem_file_flat(_vs_m{i},{Memories[i].Depth},{Memories[i].Width},path,hex,start_addr,end_addr,{(Memories[i].TwoState ? "true" : "false")});{(combPureInternal ? "_vs_need_settle=true;" : "")}return true;");
             bodyCode.AppendLine("default: return false;}}");
             bodyCode.AppendLine($"size_t memoryCount() const override {{ return {Memories.Count}; }}");
             bodyCode.AppendLine("size_t memoryDepth(size_t mem_id) const override { switch(mem_id){");
@@ -584,7 +597,7 @@ public sealed partial class RtlDesign
             for (int i = 0; i < Memories.Count; ++i)
             {
                 string mm = CppMaskHex(Memories[i].Width);
-                bodyCode.AppendLine($"case {i}: if(addr>={Memories[i].Depth})throw std::out_of_range(\"memory word address out of range\");_vs_m{i}[addr]={(Memories[i].TwoState ? $"vsrtl::w4::two_state(vsrtl::w4::to(value,{mm}),{mm})" : $"vsrtl::w4::to(value,{mm})")};markDirty();return;");
+                bodyCode.AppendLine($"case {i}: if(addr>={Memories[i].Depth})throw std::out_of_range(\"memory word address out of range\");_vs_m{i}[addr]={(Memories[i].TwoState ? $"vsrtl::w4::two_state(vsrtl::w4::to(value,{mm}),{mm})" : $"vsrtl::w4::to(value,{mm})")};{(combPureInternal ? "_vs_need_settle=true;" : "")}markDirty();return;");
             }
             bodyCode.AppendLine("default: throw std::out_of_range(\"memory word address out of range\"); }}");
         }
@@ -598,6 +611,8 @@ public sealed partial class RtlDesign
             bodyCode.AppendLine("fast_dirty=false;");
             if (canThrow)
                 bodyCode.AppendLine($"try{{this->{className}::evaluate();}}catch(...){{fast_dirty=true;throw;}}");
+            else if (combPureInternal)
+                bodyCode.AppendLine($"this->{className}::evaluateCore(false);");
             else
                 bodyCode.AppendLine($"this->{className}::evaluate();");
             bodyCode.AppendLine("return;}");
@@ -656,6 +671,7 @@ public sealed partial class RtlDesign
         code.AppendLine($"class {className} final : public vsrtl::Model {{");
         if (threads > 1) code.AppendLine($"vsrtl::ThreadPool _vs_pool{{{threads}}};");
         if (hasRuntimeLoops || hasInit) code.AppendLine("size_t execution_budget=20000;");
+        if (combPureInternal) code.AppendLine("bool _vs_need_settle=true;");
         code.AppendLine($"vsrtl::w4::W4 _vs_s[{Signals.Count}];");
         code.AppendLine($"vsrtl::w4::W4 _vs_prev[{Signals.Count}];");
         for (int i = 0; i < Memories.Count; ++i)

@@ -60,7 +60,9 @@ public sealed record LintOptions(
     bool StopOnPhaseError = false,
     SdcConstraints? Sdc = null,
     bool HasExplicitSdc = false,
-    LintGroupBy GroupBy = LintGroupBy.None)
+    LintGroupBy GroupBy = LintGroupBy.None,
+    IReadOnlyList<string>? CameoRuleScripts = null,
+    long? CameoMaxSteps = null)
 {
     public static LintOptions Default { get; } = new();
     public static LintOptions All { get; } = new(Wall: true);
@@ -85,6 +87,9 @@ public sealed record LintOptions(
 
     public bool EffectiveStopOnPhaseError =>
         StopOnPhaseError || (Config?.StopOnPhaseError ?? false);
+
+    public long EffectiveCameoMaxSteps =>
+        CameoMaxSteps ?? Config?.CameoMaxSteps ?? CameoLintRulePack.DefaultMaxSteps;
 }
 
 public static class LintRuleCatalog
@@ -382,7 +387,8 @@ public sealed record LintReport(
     LintQualityMetrics? Quality = null,
     string? StoppedAtPhase = null,
     IReadOnlyList<FsmInfo>? Fsms = null,
-    CdcAnalysisResult? Cdc = null)
+    CdcAnalysisResult? Cdc = null,
+    IReadOnlyList<LintRuleInfo>? CustomRuleInfos = null)
 {
     public const string SarifSchemaUri = "https://json.schemastore.org/sarif-2.1.0.json";
     public const string SarifVersion = "2.1.0";
@@ -403,7 +409,7 @@ public sealed record LintReport(
         }
         else
         {
-            var groups = Diagnostics.GroupBy(d => groupBy switch
+            IEnumerable<IGrouping<string, LintDiagnostic>> groups = Diagnostics.GroupBy(d => groupBy switch
             {
                 LintGroupBy.Rule => d.Code,
                 LintGroupBy.Signal => d.Location?.Signal ?? "<design>",
@@ -411,6 +417,18 @@ public sealed record LintReport(
                 LintGroupBy.Phase => "phase:" + (d.Phase ?? "rtl"),
                 _ => d.Code
             }, StringComparer.OrdinalIgnoreCase);
+
+            if (groupBy == LintGroupBy.Phase)
+            {
+                groups = groups.OrderBy(g => g.Key.ToLowerInvariant() switch
+                {
+                    "phase:rtl" => 0,
+                    "phase:fsm" => 1,
+                    "phase:cdc" => 2,
+                    "phase:style" => 3,
+                    _ => 4
+                });
+            }
 
             foreach (var g in groups)
             {
@@ -551,8 +569,30 @@ public sealed record LintReport(
     /// </summary>
     public string ToSarif(IEnumerable<IRtlLintRule>? customRules = null)
     {
-        var customMap = customRules?.ToDictionary(r => r.Info.Code, r => r.Info, StringComparer.OrdinalIgnoreCase);
-        var ruleIds = Diagnostics.Select(d => d.Code).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+        Dictionary<string, LintRuleInfo>? customMap = null;
+        if (CustomRuleInfos is { Count: > 0 })
+        {
+            customMap = new Dictionary<string, LintRuleInfo>(StringComparer.OrdinalIgnoreCase);
+            foreach (var info in CustomRuleInfos) customMap[info.Code] = info;
+        }
+        if (customRules is not null)
+        {
+            customMap ??= new Dictionary<string, LintRuleInfo>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in customRules) customMap[r.Info.Code] = r.Info;
+        }
+        var tagsByRule = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var d in Diagnostics)
+        {
+            if (!tagsByRule.TryGetValue(d.Code, out var set))
+            {
+                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                tagsByRule[d.Code] = set;
+            }
+            if (d.GuidelineTags is { Count: > 0 })
+                foreach (string gt in d.GuidelineTags) set.Add(gt);
+        }
+
+        var ruleIds = tagsByRule.Keys.Order(StringComparer.OrdinalIgnoreCase).ToArray();
         var sarifRules = new List<SarifRuleContract>(ruleIds.Length);
         foreach (string id in ruleIds)
         {
@@ -564,12 +604,9 @@ public sealed record LintReport(
             SarifMessageContract? help = !string.IsNullOrWhiteSpace(info?.Hint) ? new SarifMessageContract(info.Hint) : null;
             string defLevel = ToSarifLevel(info?.DefaultSeverity ?? LintSeverity.Warning);
 
-            var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var tags = tagsByRule[id];
             if (info?.Standards is { Count: > 0 })
                 foreach (string s in info.Standards) tags.Add(s);
-            foreach (var d in Diagnostics.Where(x => x.Code.Equals(id, StringComparison.OrdinalIgnoreCase)))
-                if (d.GuidelineTags is { Count: > 0 })
-                    foreach (string gt in d.GuidelineTags) tags.Add(gt);
 
             var props = new SarifRulePropertiesContract(
                 tags.Count > 0 ? tags.Order(StringComparer.OrdinalIgnoreCase).ToArray() : null,
@@ -698,62 +735,172 @@ public static class RtlLinter
                 return Finalize(raw, opts);
             }
 
-            var ctx = new IrLintContext(root, sourceFile, opts.EffectiveParameters, raw);
+            bool collectFacts = opts.CustomRules is { Count: > 0 }
+                || opts.CameoRuleScripts is { Count: > 0 }
+                || opts.Config?.RuleScripts is { Count: > 0 };
+            var ctx = new IrLintContext(root, sourceFile, opts.EffectiveParameters, raw, collectFacts);
             ctx.Run();
             designElements = ctx.DesignElementCount;
 
-            // Phase 2: Automatic FSM Extraction & Verification
             var phases = opts.EffectivePhases;
-            if (phases is null || phases.Contains(LintPhase.Fsm))
+            bool runFsm = phases is null || phases.Contains(LintPhase.Fsm);
+            bool runCdc = phases is null || phases.Contains(LintPhase.ClockResetCdc);
+
+            var sdc = opts.Sdc;
+            bool hasExplicitSdc = opts.HasExplicitSdc || sdc is not null;
+            if (runCdc && sdc is null && !string.IsNullOrWhiteSpace(opts.Config?.SdcFile))
             {
-                var (extractedFsms, fsmDiags) = RtlFsmAnalyzer.Analyze(root, ctx.SignalWidths, sourceFile);
+                sdc = SdcConstraints.LoadFile(opts.Config.SdcFile);
+                hasExplicitSdc = true;
+            }
+
+            IReadOnlyList<LintDiagnostic>? fsmDiags = null;
+            List<LintDiagnostic>? parseBackstopDiags = null;
+
+            // Phase 2 (FSM), Phase 3 (CDC/RDC/DFT/SDC), and the fail-closed RtlDesign.ParseRoot backstop
+            // are strictly read-only over the parsed JsonDocument root; execute them concurrently on
+            // multi-core machines and merge diagnostics in deterministic phase order.
+            var signalWidths = runFsm ? ctx.SignalWidths : null;
+            var signalMeta = runCdc ? ctx.SignalMeta : null;
+
+            void RunFsmPass()
+            {
+                if (!runFsm) return;
+                var (extractedFsms, diags) = RtlFsmAnalyzer.Analyze(root, signalWidths!, sourceFile);
                 fsms = extractedFsms;
-                raw.AddRange(fsmDiags);
+                fsmDiags = diags;
             }
 
-            // Phase 3: Clock/Reset Tree Auto-Detection, CDC/RDC, DFT & SDC Audit
-            if (phases is null || phases.Contains(LintPhase.ClockResetCdc))
+            void RunCdcPass()
             {
-                var sdc = opts.Sdc;
-                bool hasExplicitSdc = opts.HasExplicitSdc || sdc is not null;
-                if (sdc is null && !string.IsNullOrWhiteSpace(opts.Config?.SdcFile))
+                if (!runCdc) return;
+                cdc = RtlCdcAnalyzer.Analyze(root, signalMeta!, sdc, hasExplicitSdc, sourceFile);
+            }
+
+            void RunBackstopParse()
+            {
+                var diags = new List<LintDiagnostic>();
+                try
                 {
-                    sdc = SdcConstraints.LoadFile(opts.Config.SdcFile);
-                    hasExplicitSdc = true;
+                    var parsed = RtlDesign.ParseRoot(root, json, limits);
+                    foreach (string td in parsed.TimingDiagnostics)
+                    {
+                        if (td.StartsWith("VS-RACE-WW:", StringComparison.Ordinal))
+                            diags.Add(new("RACEWW", LintSeverity.Warning, td["VS-RACE-WW:".Length..].Trim(), "ir", new LintLocation(File: sourceFile, Context: "timed")));
+                        else if (td.StartsWith("VS-RACE-RW:", StringComparison.Ordinal))
+                            diags.Add(new("RACERW", LintSeverity.Warning, td["VS-RACE-RW:".Length..].Trim(), "ir", new LintLocation(File: sourceFile, Context: "timed")));
+                        else
+                            diags.Add(new("RACEWW", LintSeverity.Warning, td, "ir", new LintLocation(File: sourceFile, Context: "timed")));
+                    }
                 }
-                cdc = RtlCdcAnalyzer.Analyze(root, ctx.SignalMeta, sdc, hasExplicitSdc, sourceFile);
-                raw.AddRange(cdc.Diagnostics);
-            }
-
-            // Execute Tier 2 C# / Tier 3 Cameo custom IR rules against the populated read-only context
-            if (opts.CustomRules is { Count: > 0 })
-            {
-                var lintCtx = ctx.BuildExtensibilityContext();
-                foreach (var rule in opts.CustomRules)
-                    rule.Analyze(lintCtx);
-            }
-
-            // Run canonical RtlDesign.Parse as a final fail-closed backstop to catch any
-            // contract violation not already explained by a more specific structural diagnostic,
-            // and to pull in conservative timed race diagnostics (VS-RACE-WW / VS-RACE-RW).
-            try
-            {
-                var parsed = RtlDesign.Parse(json, limits);
-                foreach (string td in parsed.TimingDiagnostics)
+                catch (IrValidationException ex)
                 {
-                    if (td.StartsWith("VS-RACE-WW:", StringComparison.Ordinal))
-                        raw.Add(new("RACEWW", LintSeverity.Warning, td["VS-RACE-WW:".Length..].Trim(), "ir", new LintLocation(File: sourceFile, Context: "timed")));
-                    else if (td.StartsWith("VS-RACE-RW:", StringComparison.Ordinal))
-                        raw.Add(new("RACERW", LintSeverity.Warning, td["VS-RACE-RW:".Length..].Trim(), "ir", new LintLocation(File: sourceFile, Context: "timed")));
+                    if (!ctx.HasStructuralEquivalent(ex.Message))
+                        diags.Add(new("VALIDERROR", LintSeverity.Error, ex.Message, "ir", new LintLocation(File: sourceFile)));
+                }
+                parseBackstopDiags = diags;
+            }
+
+            if (designElements >= 64 && Environment.ProcessorCount > 1)
+            {
+                Parallel.Invoke(RunFsmPass, RunCdcPass, RunBackstopParse);
+            }
+            else
+            {
+                RunFsmPass();
+                RunCdcPass();
+                RunBackstopParse();
+            }
+
+            if (fsmDiags is { Count: > 0 }) raw.AddRange(fsmDiags);
+            if (cdc is { Diagnostics.Count: > 0 }) raw.AddRange(cdc.Diagnostics);
+
+            // Execute Tier 2 C# and Tier 3 Cameo DSL custom IR rules against the populated read-only context
+            List<IRtlLintRule>? allCustomRules = opts.CustomRules is { Count: > 0 } ? [.. opts.CustomRules] : null;
+            var cameoScripts = new List<string>();
+            if (opts.Config?.RuleScripts is { Count: > 0 } cfgScripts) cameoScripts.AddRange(cfgScripts);
+            if (opts.CameoRuleScripts is { Count: > 0 } optScripts) cameoScripts.AddRange(optScripts);
+
+            if (cameoScripts.Count > 0)
+            {
+                allCustomRules ??= [];
+                long maxSteps = opts.EffectiveCameoMaxSteps;
+                foreach (string scriptPath in cameoScripts)
+                {
+                    try
+                    {
+                        var pack = CameoLintRulePack.LoadFile(scriptPath, maxSteps);
+                        allCustomRules.AddRange(pack.Rules);
+                    }
+                    catch (Exception ex) when (ex is CameoLintScriptException or FileNotFoundException or IOException or ArgumentException)
+                    {
+                        raw.Add(new("CAMEOERROR", LintSeverity.Error, ex.Message, "cameo", new LintLocation(File: scriptPath)));
+                    }
+                }
+            }
+
+            if (allCustomRules is { Count: > 0 })
+            {
+                var lintCtx = ctx.BuildExtensibilityContext(fsms, cdc);
+                var uniquePacks = new List<CameoLintRulePack>();
+                var seenPacks = new HashSet<CameoLintRulePack>(ReferenceEqualityComparer.Instance);
+                var managedRules = new List<IRtlLintRule>();
+                foreach (var rule in allCustomRules)
+                {
+                    if (rule is CameoLintRulePack.CameoLintRule cameoRule)
+                    {
+                        if (seenPacks.Add(cameoRule.Pack))
+                            uniquePacks.Add(cameoRule.Pack);
+                    }
                     else
-                        raw.Add(new("RACEWW", LintSeverity.Warning, td, "ir", new LintLocation(File: sourceFile, Context: "timed")));
+                    {
+                        managedRules.Add(rule);
+                    }
                 }
+
+                if (uniquePacks.Count == 1)
+                {
+                    try
+                    {
+                        uniquePacks[0].ExecuteBatch(lintCtx, null, opts.Config?.CameoParams);
+                    }
+                    catch (CameoLintScriptException ex)
+                    {
+                        raw.Add(new("CAMEOERROR", LintSeverity.Error, ex.Message, "cameo", new LintLocation(File: uniquePacks[0].SourceName)));
+                    }
+                }
+                else if (uniquePacks.Count > 1)
+                {
+                    var perPackDiags = new List<LintDiagnostic>[uniquePacks.Count];
+                    Parallel.For(0, uniquePacks.Count, idx =>
+                    {
+                        var localDiags = new List<LintDiagnostic>();
+                        var packCtx = new RtlLintContext(
+                            lintCtx.SourceFile, lintCtx.Clock, lintCtx.IsTimed, lintCtx.Root,
+                            lintCtx.Signals, lintCtx.Memories, lintCtx.Assignments, lintCtx.Statements,
+                            lintCtx.Expressions, lintCtx.Parameters, localDiags.Add, lintCtx.Fsms, lintCtx.Cdc);
+                        try
+                        {
+                            uniquePacks[idx].ExecuteBatch(packCtx, null, opts.Config?.CameoParams);
+                        }
+                        catch (CameoLintScriptException ex)
+                        {
+                            localDiags.Add(new("CAMEOERROR", LintSeverity.Error, ex.Message, "cameo", new LintLocation(File: uniquePacks[idx].SourceName)));
+                        }
+                        perPackDiags[idx] = localDiags;
+                    });
+                    for (int idx = 0; idx < perPackDiags.Length; idx++)
+                        raw.AddRange(perPackDiags[idx]);
+                }
+
+                foreach (var rule in managedRules)
+                    rule.Analyze(lintCtx);
+
+                if (!ReferenceEquals(allCustomRules, opts.CustomRules))
+                    opts = opts with { CustomRules = allCustomRules.AsReadOnly() };
             }
-            catch (IrValidationException ex)
-            {
-                if (!ctx.HasStructuralEquivalent(ex.Message))
-                    raw.Add(new("VALIDERROR", LintSeverity.Error, ex.Message, "ir", new LintLocation(File: sourceFile)));
-            }
+
+            if (parseBackstopDiags is { Count: > 0 }) raw.AddRange(parseBackstopDiags);
         }
 
         return Finalize(raw, opts, designElements, fsms, cdc);
@@ -816,7 +963,17 @@ public static class RtlLinter
                     LintProfile.LowRisc => "LOWRISC",
                     _ => null
                 };
-                if (profileStdPrefix is not null)
+                bool isCustomRule = customRuleMap is not null && customRuleMap.ContainsKey(code);
+                if (isCustomRule)
+                {
+                    foreach (string s in info.Standards)
+                    {
+                        tags ??= [];
+                        if (!tags.Contains(s, StringComparer.OrdinalIgnoreCase))
+                            tags.Add(s);
+                    }
+                }
+                else if (profileStdPrefix is not null)
                 {
                     foreach (string s in info.Standards)
                     {
@@ -985,7 +1142,8 @@ public static class RtlLinter
             quality,
             stoppedAtPhase,
             fsms,
-            cdc);
+            cdc,
+            customRuleMap?.Values.ToList().AsReadOnly());
     }
 
     private sealed class IrLintContext
@@ -1011,9 +1169,11 @@ public static class RtlLinter
         private readonly HashSet<string> nonAsyncReads = new(StringComparer.Ordinal);
 
         // Fact tables for Tier 2 IRtlLintRule / Tier 3 Cameo DSL extensibility
+        private readonly bool collectFacts;
         private readonly List<RtlLintAssignment> collectedAssignments = [];
         private readonly List<RtlLintStatement> collectedStatements = [];
         private readonly List<RtlLintExpression> collectedExpressions = [];
+        private int statementCount;
 
         private string? clock;
         private bool isTimed;
@@ -1025,15 +1185,16 @@ public static class RtlLinter
         private bool sawUndriven;
         private bool sawAssignIn;
 
-        public IrLintContext(JsonElement root, string? sourceFile, LintRuleParameters parameters, List<LintDiagnostic> diagnostics)
+        public IrLintContext(JsonElement root, string? sourceFile, LintRuleParameters parameters, List<LintDiagnostic> diagnostics, bool collectFacts = true)
         {
             this.root = root;
             this.sourceFile = sourceFile;
             this.parameters = parameters;
             this.diagnostics = diagnostics;
+            this.collectFacts = collectFacts;
         }
 
-        public int DesignElementCount => signalList.Count + memoryList.Count + collectedStatements.Count;
+        public int DesignElementCount => signalList.Count + memoryList.Count + statementCount;
         public IReadOnlyDictionary<string, int> SignalWidths => signals.ToDictionary(kv => kv.Key, kv => kv.Value.Width, StringComparer.Ordinal);
         public IReadOnlyDictionary<string, (int Width, string Direction)> SignalMeta =>
             signals.ToDictionary(kv => kv.Key, kv => (kv.Value.Width, kv.Value.Direction), StringComparer.Ordinal);
@@ -1057,7 +1218,7 @@ public static class RtlLinter
             return false;
         }
 
-        public RtlLintContext BuildExtensibilityContext()
+        public RtlLintContext BuildExtensibilityContext(IReadOnlyList<FsmInfo>? fsms = null, CdcAnalysisResult? cdc = null)
         {
             var sigViews = signalList.Select(s => new RtlLintSignal(
                 s.Name, s.Width, s.Direction, s.Signed, s.TwoState, s.SourcePath,
@@ -1077,7 +1238,9 @@ public static class RtlLinter
                 collectedStatements.AsReadOnly(),
                 collectedExpressions.AsReadOnly(),
                 parameters,
-                d => diagnostics.Add(d));
+                d => diagnostics.Add(d),
+                fsms,
+                cdc);
         }
 
         public void Run()
@@ -1255,38 +1418,46 @@ public static class RtlLinter
             var naming = parameters.Naming;
             if (naming is null || !naming.HasAnyPattern) return;
 
-            static bool FailsRegex(string? pattern, string value)
-            {
-                if (string.IsNullOrWhiteSpace(pattern)) return false;
-                return !Regex.IsMatch(value, pattern, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
-            }
+            static Regex? Compile(string? pattern) =>
+                string.IsNullOrWhiteSpace(pattern) ? null : new Regex(pattern, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+            Regex? clockRx = Compile(naming.ClockPattern);
+            Regex? resetRx = Compile(naming.ResetPattern);
+            Regex? signalRx = Compile(naming.SignalPattern);
+            Regex? inputRx = Compile(naming.InputPattern);
+            Regex? outputRx = Compile(naming.OutputPattern);
+            Regex? internalRx = Compile(naming.InternalPattern);
+            Regex? memoryRx = Compile(naming.MemoryPattern);
 
             foreach (var sig in signalList)
             {
-                if (sig.Name == clock && FailsRegex(naming.ClockPattern, sig.Name))
+                if (sig.Name == clock && clockRx is not null && !clockRx.IsMatch(sig.Name))
                     Emit("NAMING", LintSeverity.Warning, $"Clock signal '{sig.Name}' does not match configured clock_pattern '{naming.ClockPattern}'.", sig.Name, "declaration");
 
-                if (asyncEventSignals.Contains(sig.Name) && sig.Name != clock && FailsRegex(naming.ResetPattern, sig.Name))
+                if (asyncEventSignals.Contains(sig.Name) && sig.Name != clock && resetRx is not null && !resetRx.IsMatch(sig.Name))
                     Emit("NAMING", LintSeverity.Warning, $"Reset/event signal '{sig.Name}' does not match configured reset_pattern '{naming.ResetPattern}'.", sig.Name, "declaration");
 
-                if (FailsRegex(naming.SignalPattern, sig.Name))
+                if (signalRx is not null && !signalRx.IsMatch(sig.Name))
                     Emit("NAMING", LintSeverity.Warning, $"Signal '{sig.Name}' does not match configured signal_pattern '{naming.SignalPattern}'.", sig.Name, "declaration");
 
-                string? dirPattern = sig.Direction switch
+                (Regex? dirRx, string? dirPattern) = sig.Direction switch
                 {
-                    "input" => naming.InputPattern,
-                    "output" => naming.OutputPattern,
-                    "internal" => naming.InternalPattern,
-                    _ => null
+                    "input" => (inputRx, naming.InputPattern),
+                    "output" => (outputRx, naming.OutputPattern),
+                    "internal" => (internalRx, naming.InternalPattern),
+                    _ => (null, null)
                 };
-                if (FailsRegex(dirPattern, sig.Name))
+                if (dirRx is not null && !dirRx.IsMatch(sig.Name))
                     Emit("NAMING", LintSeverity.Warning, $"{sig.Direction} signal '{sig.Name}' does not match configured {sig.Direction}_pattern '{dirPattern}'.", sig.Name, "declaration");
             }
 
-            foreach (var mem in memoryList)
+            if (memoryRx is not null)
             {
-                if (FailsRegex(naming.MemoryPattern, mem.Name))
-                    Emit("NAMING", LintSeverity.Warning, $"Memory '{mem.Name}' does not match configured memory_pattern '{naming.MemoryPattern}'.", mem.Name, "declaration");
+                foreach (var mem in memoryList)
+                {
+                    if (!memoryRx.IsMatch(mem.Name))
+                        Emit("NAMING", LintSeverity.Warning, $"Memory '{mem.Name}' does not match configured memory_pattern '{naming.MemoryPattern}'.", mem.Name, "declaration");
+                }
             }
         }
 
@@ -1585,25 +1756,54 @@ public static class RtlLinter
                 foreach (string w in steps[i].Writes)
                     owners.TryAdd(w, i);
 
-            var pending = Enumerable.Range(0, steps.Count).ToHashSet();
-            while (pending.Count > 0)
+            int n = steps.Count;
+            var inDegree = new int[n];
+            var dependents = new List<int>?[n];
+            for (int i = 0; i < n; i++)
             {
-                var ready = pending
-                    .Where(i => !steps[i].Reads.Any(n => owners.TryGetValue(n, out int owner) && owner != i && pending.Contains(owner)))
-                    .ToArray();
-                if (ready.Length == 0)
+                HashSet<int>? seenOwners = null;
+                foreach (string r in steps[i].Reads)
                 {
-                    var cyclicSignals = pending
-                        .SelectMany(i => steps[i].Writes)
-                        .Distinct(StringComparer.Ordinal)
-                        .Order(StringComparer.Ordinal)
-                        .ToArray();
-                    sawCombLoop = true;
-                    string list = string.Join(", ", cyclicSignals);
-                    Emit("UNOPTFLAT", LintSeverity.Error, $"Combinational feedback loop detected involving: {list}.", cyclicSignals.FirstOrDefault(), "combinational");
-                    break;
+                    if (owners.TryGetValue(r, out int owner) && owner != i)
+                    {
+                        seenOwners ??= [];
+                        if (seenOwners.Add(owner))
+                        {
+                            inDegree[i]++;
+                            (dependents[owner] ??= []).Add(i);
+                        }
+                    }
                 }
-                foreach (int i in ready) pending.Remove(i);
+            }
+
+            var queue = new Queue<int>();
+            for (int i = 0; i < n; i++)
+                if (inDegree[i] == 0) queue.Enqueue(i);
+
+            int resolved = 0;
+            while (queue.Count > 0)
+            {
+                int cur = queue.Dequeue();
+                resolved++;
+                if (dependents[cur] is { } deps)
+                {
+                    foreach (int dep in deps)
+                        if (--inDegree[dep] == 0) queue.Enqueue(dep);
+                }
+            }
+
+            if (resolved < n)
+            {
+                var cyclicSet = new HashSet<string>(StringComparer.Ordinal);
+                for (int i = 0; i < n; i++)
+                {
+                    if (inDegree[i] > 0)
+                        foreach (string w in steps[i].Writes) cyclicSet.Add(w);
+                }
+                var cyclicSignals = cyclicSet.Order(StringComparer.Ordinal).ToArray();
+                sawCombLoop = true;
+                string list = string.Join(", ", cyclicSignals);
+                Emit("UNOPTFLAT", LintSeverity.Error, $"Combinational feedback loop detected involving: {list}.", cyclicSignals.FirstOrDefault(), "combinational");
             }
         }
 
@@ -1695,7 +1895,9 @@ public static class RtlLinter
             string? kind = TryString(stmt, "kind");
             if (kind is null) return;
 
-            collectedStatements.Add(new RtlLintStatement(kind, context, depth, inClockedProcess, stmt));
+            ++statementCount;
+            if (collectFacts)
+                collectedStatements.Add(new RtlLintStatement(kind, context, depth, inClockedProcess, stmt));
 
             switch (kind)
             {
@@ -2024,8 +2226,11 @@ public static class RtlLinter
             bool? tSigned = TryExprSigned(target);
             bool? vSigned = TryExprSigned(value);
 
-            collectedAssignments.Add(new RtlLintAssignment(
-                targetDesc, targetOwner, tw, vw, tSigned, vSigned, isBlocking, inClockedProcess, context, target, value));
+            if (collectFacts)
+            {
+                collectedAssignments.Add(new RtlLintAssignment(
+                    targetDesc, targetOwner, tw, vw, tSigned, vSigned, isBlocking, inClockedProcess, context, target, value));
+            }
 
             // SELFASSIGN: x = x or x <= x
             if (TryString(target, "kind") == "ref" && TryString(value, "kind") == "ref" &&
@@ -2083,7 +2288,8 @@ public static class RtlLinter
             string? kind = TryString(expr, "kind");
             if (kind is null) return;
 
-            collectedExpressions.Add(new RtlLintExpression(kind, context, TryExprWidth(expr), TryExprSigned(expr), expr));
+            if (collectFacts)
+                collectedExpressions.Add(new RtlLintExpression(kind, context, TryExprWidth(expr), TryExprSigned(expr), expr));
 
             switch (kind)
             {

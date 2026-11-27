@@ -32,7 +32,7 @@ internal sealed record LintReportContract(string Schema, string Status, string P
 internal sealed record LintNamingConfigContract(string? SignalPattern, string? InputPattern, string? OutputPattern, string? InternalPattern, string? MemoryPattern, string? ClockPattern, string? ResetPattern);
 internal sealed record LintRuleParamsContract(int? MaxIfDepth, string[]? UnusedIgnorePatterns, bool? AllowLiteralWidthExpand, int? MaxSignalWidth, int? MaxMemoryDepth, LintNamingConfigContract? Naming);
 internal sealed record LintWaiverContract(string? Id, string Code, string? File, string? Signal, string? Context, string? Message, string? Reason, string? Owner, string? Expires);
-internal sealed record LintConfigContract(string? Schema, string? Profile, bool? WarningsAsErrors, bool? WarnUnusedWaivers, string? SlangWaiverFile, string? SdcFile, string[]? Phases, bool? StopOnPhaseError, Dictionary<string, string>? Rules, Dictionary<string, string>? Annotations, LintRuleParamsContract? Params, LintWaiverContract[]? Waivers);
+internal sealed record LintConfigContract(string? Schema, string? Profile, bool? WarningsAsErrors, bool? WarnUnusedWaivers, string? SlangWaiverFile, string? SdcFile, string[]? Phases, bool? StopOnPhaseError, Dictionary<string, string>? Rules, Dictionary<string, string>? Annotations, LintRuleParamsContract? Params, LintWaiverContract[]? Waivers, string[]? RuleScripts = null, long? CameoMaxSteps = null, Dictionary<string, string>? CameoParams = null);
 
 internal sealed record LintBaselineEntryContract(string Fingerprint, string Code, string Source, string? File, string? Signal, string? Context, string Message);
 internal sealed record LintBaselineContract(string Schema, int Count, LintBaselineEntryContract[] Entries);

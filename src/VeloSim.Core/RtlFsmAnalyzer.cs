@@ -231,6 +231,21 @@ public static class RtlFsmAnalyzer
         if (resetState is not null && stateSet.Add(resetState))
             declaredStates.Insert(0, resetState);
 
+        // Build O(T) adjacency map and escape set so BFS and deadlock checks are O(S + T)
+        var outgoing = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var hasEscape = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var t in transitions)
+        {
+            if (!outgoing.TryGetValue(t.FromState, out var list))
+            {
+                list = [];
+                outgoing[t.FromState] = list;
+            }
+            list.Add(t.ToState);
+            if (t.ToState != t.FromState)
+                hasEscape.Add(t.FromState);
+        }
+
         // Compute unreachable states via BFS from ResetState
         var unreachable = new List<string>();
         HashSet<string> reachable;
@@ -242,10 +257,11 @@ public static class RtlFsmAnalyzer
             while (queue.Count > 0)
             {
                 string cur = queue.Dequeue();
-                foreach (var t in transitions)
+                if (outgoing.TryGetValue(cur, out var nexts))
                 {
-                    if (t.FromState == cur && reachable.Add(t.ToState))
-                        queue.Enqueue(t.ToState);
+                    foreach (string nxt in nexts)
+                        if (reachable.Add(nxt))
+                            queue.Enqueue(nxt);
                 }
             }
             foreach (string st in declaredStates)
@@ -261,9 +277,8 @@ public static class RtlFsmAnalyzer
         var deadlocks = new List<string>();
         foreach (string st in declaredStates)
         {
-            if (!reachable.Contains(st)) continue;
-            bool hasEscape = transitions.Any(t => t.FromState == st && t.ToState != st);
-            if (!hasEscape) deadlocks.Add(st);
+            if (reachable.Contains(st) && !hasEscape.Contains(st))
+                deadlocks.Add(st);
         }
 
         fsm = new FsmInfo(

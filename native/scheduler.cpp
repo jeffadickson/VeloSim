@@ -34,7 +34,8 @@ struct WorkerPool {
  uint64_t generation = 0;
  bool stop = false;
  size_t active_workers = 0, total = 0, chunk = 1;
- std::atomic<size_t> cursor{0}, remaining{0};
+ alignas(64) std::atomic<size_t> cursor{0};
+ alignas(64) std::atomic<size_t> remaining{0};
  const Process* procs = nullptr;
  const uint32_t* active = nullptr;
  const uint8_t* pre = nullptr;
@@ -100,7 +101,7 @@ struct WorkerPool {
  }
 };
 struct Sim {
- std::vector<uint8_t> sig, pre, results;
+ std::vector<uint8_t> sig, pre, results, dst_used;
  std::vector<uint32_t> seen_stamp, active;
  std::vector<Process> procs;
  std::vector<std::vector<uint32_t>> rising_procs, falling_procs;
@@ -117,6 +118,7 @@ void* vs_sched_new(uint32_t n) noexcept {
   auto s = std::make_unique<Sim>();
   s->sig.assign(n, X);
   s->seen_stamp.assign(n, 0);
+  s->dst_used.assign(n, 0);
   s->rising_procs.resize(n);
   s->falling_procs.resize(n);
   return s.release();
@@ -133,12 +135,13 @@ int vs_sched_add(void* p, uint32_t clk, uint32_t dst, uint32_t a, uint32_t b, ui
  if (!p || edge > 1 || op > 4) return -1;
  auto& s = *static_cast<Sim*>(p);
  if (clk >= s.sig.size() || dst >= s.sig.size() || a >= s.sig.size() || b >= s.sig.size()) return -1;
- for (const auto& q : s.procs) if (q.dst == dst) return -2;
+ if (s.dst_used[dst]) return -2;
  try {
   const uint32_t idx = uint32_t(s.procs.size());
   s.procs.push_back({clk, dst, a, b, edge, op});
   if (edge == 0) s.rising_procs[clk].push_back(idx);
   else s.falling_procs[clk].push_back(idx);
+  s.dst_used[dst] = 1;
   return 0;
  } catch (...) { return -1; }
 }
